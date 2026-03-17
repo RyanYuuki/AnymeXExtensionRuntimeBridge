@@ -8,6 +8,7 @@ import 'package:isar_community/isar.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'AnymeXBridge.dart';
 import 'ExtensionManager.dart';
 import 'Logger.dart';
 import 'Services/LnReader/JsEngine/JsEngine.dart';
@@ -91,6 +92,11 @@ class AnymeXExtensionBridge {
 
     Get.lazyPut<ExtensionManager>(() => ExtensionManager());
     _initialized = true;
+
+    final apkPath = getVal<String>('runtime_host_path');
+    if (apkPath != null) {
+      await AnymeXRuntimeBridge.loadAnymeXRuntimeHost(apkPath);
+    }
   }
 
   static Future<Isar> _openIsar(GetDirectory getDirectory) async {

@@ -103,36 +103,15 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             runtimeBridge = null
             bridgeClass = null
 
-            val cacheApk = File(ctx.filesDir, "anymex_runtime_host.apk")
-            val optimizedDir = File(ctx.cacheDir, "anymex_dex")
-            
-            if (cacheApk.exists()) cacheApk.delete()
-            if (optimizedDir.exists()) optimizedDir.deleteRecursively()
-            optimizedDir.mkdirs()
-
-            Log.d(TAG, "Copying APK to internal storage...")
-            val inputStream: InputStream? = if (apkPath.startsWith("content://")) {
-                Log.d(TAG, "Detected content URI, using ContentResolver")
-                ctx.contentResolver.openInputStream(Uri.parse(apkPath))
-            } else {
-                Log.d(TAG, "Detected file path, using FileInputStream")
-                File(apkPath).inputStream()
-            }
-
-            if (inputStream == null) {
-                Log.e(TAG, "Failed to open input stream for $apkPath")
+            val cacheApk = File(apkPath)
+            if (!cacheApk.exists()) {
+                Log.e(TAG, "APK does not exist at path: $apkPath")
                 return false
             }
 
-            inputStream.use { input ->
-                FileOutputStream(cacheApk).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            
-            val totalBytes = cacheApk.length()
-            Log.i(TAG, "APK copied successfully ($totalBytes bytes) to ${cacheApk.absolutePath}")
-            cacheApk.setReadOnly()
+            val optimizedDir = File(ctx.cacheDir, "anymex_dex")
+            if (optimizedDir.exists()) optimizedDir.deleteRecursively()
+            optimizedDir.mkdirs()
 
             val loader = ChildFirstClassLoader(
                 cacheApk.absolutePath,
