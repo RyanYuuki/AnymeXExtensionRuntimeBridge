@@ -1,21 +1,21 @@
-MIT License
+# Unabandon Public License (UPL)
 
-Copyright (c) 2026 Ryan _
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+```
+    Preamble
+```
+This Unabandon Public License (UPL) is designed to ensure the continued development and public availability of source code based on works released under the GNU General Public License Version 3 (GPLv3) while upholding the core principles of GPLv3. This license extends GPLv3 by mandating public accessibility of source code for any derivative works.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+```
+    Body
+```
+1. **Incorporation of GPLv3:** This UPL incorporates all terms and conditions of the GNU General Public License Version 3 (GPLv3) as published by the Free Software Foundation. You can find the complete text of GPLv3 at [https://www.gnu.org/licenses/licenses.en.html](https://www.gnu.org/licenses/licenses.en.html).
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. **Public Source Requirement:** In addition to the terms of GPLv3, the source code for any software distributed under this license, including modifications and derivative works, must be publicly available. Public availability means the source code must be accessible to anyone through a publicly accessible repository or download link without any access restrictions or fees.
+
+3. **Source Code Availability:** The source code must be made publicly available using a recognized open-source hosting platform (e.g., GitHub, GitLab) or be downloadable from a publicly accessible website. The chosen method must clearly identify the source code and its corresponding licensed work.
+
+```
+    Termination
+```
+This UPL terminates automatically if the terms and conditions are not followed by the licensee.
