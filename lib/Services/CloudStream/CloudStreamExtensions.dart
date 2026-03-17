@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 
 import '../../Logger.dart';
 import '../../Settings/KvStore.dart';
 import '../../anymex_extension_runtime_bridge.dart';
 import 'CloudStreamSourceMethods.dart';
-import 'Models/CloudStreamSource.dart';
 
 List<dynamic> _decodeJsonList(String body) => jsonDecode(body) as List<dynamic>;
 Map<String, dynamic> _decodeJsonMap(String body) =>
@@ -36,6 +37,39 @@ class CloudStreamExtensions extends Extension {
   bool get supportsNovel => false;
   @override
   bool get supportsManga => false;
+
+  @override
+  Future<void> initialize() async {
+    await platform.invokeMethod('initialize');
+    await loadPersistedPlugins();
+    await super.initialize();
+  }
+
+  Future<void> loadPersistedPlugins() async {
+    try {
+      final dir =
+          await AnymeXExtensionBridge.context.getCloudStreamPluginDirectory();
+      if (dir == null) return;
+
+      if (await dir.exists()) {
+        final files = dir
+            .listSync()
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.cs3'));
+        for (final file in files) {
+          try {
+            await platform.invokeMethod('loadPlugin', {'path': file.path});
+            Logger.log("Loaded persisted CloudStream plugin: ${file.path}");
+          } catch (e) {
+            Logger.log(
+                "Failed to load persisted CloudStream plugin ${file.path}: $e");
+          }
+        }
+      }
+    } catch (e) {
+      Logger.log("Error loading persisted CloudStream plugins: $e");
+    }
+  }
 
   @override
   Future<void> fetchAnimeExtensions() async {
@@ -106,12 +140,29 @@ class CloudStreamExtensions extends Extension {
       try {
         Logger.log(
             "Downloading CloudStream plugin: ${source.name} from ${source.pluginUrl}");
+
+        final response = await http.get(Uri.parse(source.pluginUrl!));
+        if (response.statusCode != 200) {
+          throw Exception(
+              "Failed to download plugin: HTTP ${response.statusCode}");
+        }
+
+        final dir =
+            await AnymeXExtensionBridge.context.getCloudStreamPluginDirectory();
+        if (dir == null) {
+          throw Exception("Failed to get CloudStream plugin directory");
+        }
+
+        final filename = '${source.internalName ?? source.name}.cs3';
+        final file = File(p.join(dir.path, filename));
+        await file.writeAsBytes(response.bodyBytes);
+
+        Logger.log("Saved CloudStream plugin to ${file.path}");
+
         final bool success = await platform.invokeMethod(
-          'downloadPlugin',
+          'loadPlugin',
           {
-            'pluginUrl': source.pluginUrl,
-            'internalName': source.internalName ?? source.name,
-            'repositoryUrl': source.repo ?? '',
+            'path': file.path,
           },
         );
 
@@ -120,7 +171,7 @@ class CloudStreamExtensions extends Extension {
           await fetchInstalledAnimeExtensions();
           await fetchAnimeExtensions();
         } else {
-          throw Exception("Bridge failed to download plugin");
+          throw Exception("Bridge failed to load plugin");
         }
       } catch (e) {
         Logger.log("Error installing CloudStream source ${source.name}: $e");
@@ -134,6 +185,18 @@ class CloudStreamExtensions extends Extension {
     if (source is CloudStreamSource) {
       try {
         Logger.log("Uninstalling CloudStream plugin: ${source.name}");
+
+        final dir =
+            await AnymeXExtensionBridge.context.getCloudStreamPluginDirectory();
+        if (dir != null) {
+          final filename = '${source.internalName ?? source.name}.cs3';
+          final file = File(p.join(dir.path, filename));
+          if (await file.exists()) {
+            await file.delete();
+            Logger.log("Deleted plugin file: ${file.path}");
+          }
+        }
+
         await platform.invokeMethod(
           'deletePlugin',
           {

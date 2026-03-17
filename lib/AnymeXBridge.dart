@@ -4,6 +4,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'Logger.dart';
+import 'Settings/KvStore.dart';
+
 class AnymeXRuntimeBridge {
   static const _channel = MethodChannel('anymeXBridge');
 
@@ -21,7 +24,17 @@ class AnymeXRuntimeBridge {
           await _channel.invokeMethod<bool>('loadAnymeXRuntimeHost', {
         'path': apkPath,
       });
-      return result ?? false;
+      final bool isLoaded = result ?? false;
+
+      if (isLoaded) {
+        try {
+          setVal('runtime_host_path', apkPath);
+        } catch (e) {
+          Logger.log('Failed to save runtime host APK path to KvStore: $e');
+        }
+      }
+
+      return isLoaded;
     } catch (e) {
       print('Failed to load Runtime Host APK from $apkPath: $e');
       return false;

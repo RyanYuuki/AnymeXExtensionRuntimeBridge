@@ -8,6 +8,7 @@ import 'package:isar_community/isar.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'AnymeXBridge.dart';
 import 'ExtensionManager.dart';
 import 'Logger.dart';
 import 'Services/LnReader/JsEngine/JsEngine.dart';
@@ -48,8 +49,9 @@ class AnymeXExtensionBridge {
       }
 
       final Directory root = Directory(p.join(base.path, appFolderName));
-      final Directory dir =
-          subPath == null ? root : Directory(p.join(root.path, subPath));
+      final Directory dir = subPath == null
+          ? root
+          : Directory(p.join(root.path, subPath));
 
       if (!await dir.exists()) {
         await dir.create(recursive: true);
@@ -79,8 +81,9 @@ class AnymeXExtensionBridge {
 
     final isar = isarInstance ?? await _openIsar(getDirectory);
 
-    final webViewEnv =
-        Platform.isWindows ? await _createWebViewEnv(getDirectory) : null;
+    final webViewEnv = Platform.isWindows
+        ? await _createWebViewEnv(getDirectory)
+        : null;
 
     context = BridgeContext(
       isar: isar,
@@ -91,6 +94,11 @@ class AnymeXExtensionBridge {
 
     Get.lazyPut<ExtensionManager>(() => ExtensionManager());
     _initialized = true;
+
+    final apkPath = getVal<String>('runtime_host_path');
+    if (apkPath != null) {
+      await AnymeXRuntimeBridge.loadAnymeXRuntimeHost(apkPath);
+    }
   }
 
   static Future<Isar> _openIsar(GetDirectory getDirectory) async {
@@ -113,14 +121,12 @@ class AnymeXExtensionBridge {
 
     if (!p.isAbsolute(dir.path)) {
       throw StateError(
-          'Isar directory must be an absolute path; got: "${dir.path}". '
-          'If you built it via string interpolation, use Directory(path.join(base.path, subPath)) ');
+        'Isar directory must be an absolute path; got: "${dir.path}". '
+        'If you built it via string interpolation, use Directory(path.join(base.path, subPath)) ',
+      );
     }
 
-    return Isar.open(
-      isarSchema,
-      directory: dir.path,
-    );
+    return Isar.open(isarSchema, directory: dir.path);
   }
 
   static Future<WebViewEnvironment?> _createWebViewEnv(
@@ -140,17 +146,13 @@ class AnymeXExtensionBridge {
     if (!p.isAbsolute(dir.path)) return null;
 
     return WebViewEnvironment.create(
-      settings: WebViewEnvironmentSettings(
-        userDataFolder: dir.path,
-      ),
+      settings: WebViewEnvironmentSettings(userDataFolder: dir.path),
     );
   }
 
   static void _assertInitialized() {
     if (!_initialized) {
-      throw StateError(
-        'AnymeXExtensionBridge.init() must be called first',
-      );
+      throw StateError('AnymeXExtensionBridge.init() must be called first');
     }
   }
 
@@ -159,9 +161,7 @@ class AnymeXExtensionBridge {
     return context.isar;
   }
 
-  static const isarSchema = [
-    KvEntrySchema,
-  ];
+  static const isarSchema = [KvEntrySchema];
 
   static void Function(String log, bool show) onLog = (log, _) {
     debugPrint('AnymeXExtensionBridge: $log');
@@ -176,11 +176,12 @@ class AnymeXExtensionBridge {
 }
 
 /// {@macro get_directory_contract}
-typedef GetDirectory = Future<Directory?> Function({
-  String? subPath,
-  bool useCustomPath,
-  bool useSystemPath,
-});
+typedef GetDirectory =
+    Future<Directory?> Function({
+      String? subPath,
+      bool useCustomPath,
+      bool useSystemPath,
+    });
 
 class BridgeContext {
   final Isar isar;
@@ -194,6 +195,16 @@ class BridgeContext {
     this.webViewEnvironment,
     required this.getDirectory,
   });
+
+  /// Only for android platform, dont calll this shit if you're running on other platforms
+  Future<Directory?> getCloudStreamPluginDirectory() async {
+    if (!Platform.isAndroid) return null;
+    return await getDirectory(
+      subPath: 'cloudstream_plugins',
+      useCustomPath: true,
+      useSystemPath: false,
+    );
+  }
 }
 
 /// {@template get_directory_contract}
