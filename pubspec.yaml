@@ -54,10 +54,10 @@ flutter:
                 package: com.ryan.runtimebridge
                 pluginClass: AnymeXBridgePlugin
             ios:
-                pluginClass: AnymexExtensionRuntimeBridgePlugin
+                pluginClass: AnymexBridgePlugin
             linux:
                 pluginClass: AnymexExtensionRuntimeBridgePlugin
             macos:
-                pluginClass: AnymexExtensionRuntimeBridgePlugin
+                pluginClass: AnymexBridgePlugin
             windows:
-                pluginClass: AnymexExtensionRuntimeBridgePlugin
+                pluginClass: AnymexBridgePlugin
