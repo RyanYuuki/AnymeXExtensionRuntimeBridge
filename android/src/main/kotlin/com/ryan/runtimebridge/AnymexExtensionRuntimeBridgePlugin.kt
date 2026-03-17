@@ -103,36 +103,25 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             runtimeBridge = null
             bridgeClass = null
 
-            val cacheApk = File(ctx.filesDir, "anymex_runtime_host.apk")
-            val optimizedDir = File(ctx.cacheDir, "anymex_dex")
-            
-            if (cacheApk.exists()) cacheApk.delete()
-            if (optimizedDir.exists()) optimizedDir.deleteRecursively()
-            optimizedDir.mkdirs()
-
-            Log.d(TAG, "Copying APK to internal storage...")
-            val inputStream: InputStream? = if (apkPath.startsWith("content://")) {
-                Log.d(TAG, "Detected content URI, using ContentResolver")
-                ctx.contentResolver.openInputStream(Uri.parse(apkPath))
-            } else {
-                Log.d(TAG, "Detected file path, using FileInputStream")
-                File(apkPath).inputStream()
-            }
-
-            if (inputStream == null) {
-                Log.e(TAG, "Failed to open input stream for $apkPath")
+            val originalApk = File(apkPath)
+            if (!originalApk.exists()) {
+                Log.e(TAG, "APK does not exist at path: $apkPath")
                 return false
             }
 
-            inputStream.use { input ->
+            val cacheApk = File(ctx.filesDir, "anymex_runtime_host.apk")
+            if (cacheApk.exists()) cacheApk.delete()
+
+            originalApk.inputStream().use { input ->
                 FileOutputStream(cacheApk).use { output ->
                     input.copyTo(output)
                 }
             }
-            
-            val totalBytes = cacheApk.length()
-            Log.i(TAG, "APK copied successfully ($totalBytes bytes) to ${cacheApk.absolutePath}")
             cacheApk.setReadOnly()
+
+            val optimizedDir = File(ctx.cacheDir, "anymex_dex")
+            if (optimizedDir.exists()) optimizedDir.deleteRecursively()
+            optimizedDir.mkdirs()
 
             val loader = ChildFirstClassLoader(
                 cacheApk.absolutePath,
@@ -281,24 +270,12 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         scope.launch {
             try {
                 val res: Any? = when (call.method) {
-                    "loadLocalPlugins" -> call("csLoadLocalPlugins", ctx)
                     "loadPlugin" -> {
                         val path = call.argument<String>("path")
                             ?: return@launch withContext(Dispatchers.Main) {
                                 result.error("INVALID_ARG", "path required", null)
                             }
                         call("csLoadPlugin", ctx, path)
-                    }
-                    "downloadPlugin" -> {
-                        call("csDownloadPlugin", ctx,
-                            call.argument<String>("pluginUrl") ?: "",
-                            call.argument<String>("internalName") ?: "",
-                            call.argument<String>("repositoryUrl") ?: "")
-                    }
-                    "deletePlugin" -> {
-                        call("csDeletePlugin", ctx,
-                            call.argument<String>("internalName") ?: "",
-                            call.argument<String>("repositoryUrl") ?: "")
                     }
                     "search" -> {
                         call("csSearch", ctx,
@@ -315,6 +292,13 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                         call("csGetVideoList", ctx,
                             call.argument<String>("apiName") ?: "",
                             call.argument<String>("url") ?: "")
+                    }
+                    "deletePlugin" -> {
+                        val internalName = call.argument<String>("internalName")
+                            ?: return@launch withContext(Dispatchers.Main) {
+                                result.error("INVALID_ARG", "internalName required", null)
+                            }
+                        call("csUnloadPlugin", internalName)
                     }
                     "getExtensionSettings" -> {
                         call("csGetExtensionSettings", ctx,
