@@ -26,5 +26,4 @@ A new Flutter plugin project.
 
   s.platform = :osx, '10.11'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
-  s.swift_version = '5.0'
 end
