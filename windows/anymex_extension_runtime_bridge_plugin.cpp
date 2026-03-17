@@ -1,4 +1,4 @@
-#include "include/anymex_extension_runtime_bridge/anymex_extension_runtime_bridge_plugin.h"
+#include <anymex_extension_runtime_bridge/anymex_extension_runtime_bridge_plugin.h>
 
 // This must be included before many other Windows headers.
 #include <windows.h>
