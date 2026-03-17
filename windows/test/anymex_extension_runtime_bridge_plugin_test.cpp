@@ -22,8 +22,8 @@ using flutter::MethodResultFunctions;
 
 }  // namespace
 
-TEST(AnymeXBridgePlugin, GetPlatformVersion) {
-  AnymeXBridgePlugin plugin;
+TEST(AnymeXExtensionRuntimeBridgePlugin, GetPlatformVersion) {
+  AnymeXExtensionRuntimeBridgePlugin plugin;
   // Save the reply value from the success callback.
   std::string result_string;
   plugin.HandleMethodCall(

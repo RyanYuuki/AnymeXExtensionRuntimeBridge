@@ -11,10 +11,10 @@ G_BEGIN_DECLS
 #define FLUTTER_PLUGIN_EXPORT
 #endif
 
-typedef struct _AnymeXBridgePlugin AnymeXBridgePlugin;
+typedef struct _AnymeXExtensionRuntimeBridgePlugin AnymeXExtensionRuntimeBridgePlugin;
 typedef struct {
   GObjectClass parent_class;
-} AnymeXBridgePluginClass;
+} AnymeXExtensionRuntimeBridgePluginClass;
 
 FLUTTER_PLUGIN_EXPORT GType anymex_extension_runtime_bridge_plugin_get_type();
 

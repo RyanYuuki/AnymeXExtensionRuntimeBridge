@@ -24,7 +24,7 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.lang.reflect.InvocationHandler
 
-class AnymeXBridgePlugin : FlutterPlugin, ActivityAware {
+class AnymeXExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
     private val TAG = "AnymeXBridge"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

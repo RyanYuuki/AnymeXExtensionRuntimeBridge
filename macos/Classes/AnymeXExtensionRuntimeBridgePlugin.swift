@@ -1,10 +1,10 @@
 import Cocoa
 import FlutterMacOS
 
-public class AnymeXBridgePlugin: NSObject, FlutterPlugin {
+public class AnymeXExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "anymex_extension_runtime_bridge", binaryMessenger: registrar.messenger)
-    let instance = AnymeXBridgePlugin()
+    let instance = AnymeXExtensionRuntimeBridgePlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
 

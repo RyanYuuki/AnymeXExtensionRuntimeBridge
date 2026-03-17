@@ -10,17 +10,17 @@
 
 #define anymex_extension_runtime_bridge_PLUGIN(obj) \
   (G_TYPE_CHECK_INSTANCE_CAST((obj), anymex_extension_runtime_bridge_plugin_get_type(), \
-                               AnymeXBridgePlugin))
+                               AnymeXExtensionRuntimeBridgePlugin))
 
-struct _AnymeXBridgePlugin {
+struct _AnymeXExtensionRuntimeBridgePlugin {
   GObject parent_instance;
 };
 
-G_DEFINE_TYPE(AnymeXBridgePlugin, anymex_extension_runtime_bridge_plugin, g_object_get_type())
+G_DEFINE_TYPE(AnymeXExtensionRuntimeBridgePlugin, anymex_extension_runtime_bridge_plugin, g_object_get_type())
 
 // Called when a method call is received from Flutter.
 static void anymex_extension_runtime_bridge_plugin_handle_method_call(
-    AnymeXBridgePlugin* self,
+    AnymeXExtensionRuntimeBridgePlugin* self,
     FlMethodCall* method_call) {
   g_autoptr(FlMethodResponse) response = nullptr;
 
@@ -47,20 +47,20 @@ static void anymex_extension_runtime_bridge_plugin_dispose(GObject* object) {
   G_OBJECT_CLASS(anymex_extension_runtime_bridge_plugin_parent_class)->dispose(object);
 }
 
-static void anymex_extension_runtime_bridge_plugin_class_init(AnymeXBridgePluginClass* klass) {
+static void anymex_extension_runtime_bridge_plugin_class_init(AnymeXExtensionRuntimeBridgePluginClass* klass) {
   G_OBJECT_CLASS(klass)->dispose = anymex_extension_runtime_bridge_plugin_dispose;
 }
 
-static void anymex_extension_runtime_bridge_plugin_init(AnymeXBridgePlugin* self) {}
+static void anymex_extension_runtime_bridge_plugin_init(AnymeXExtensionRuntimeBridgePlugin* self) {}
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
                            gpointer user_data) {
-  AnymeXBridgePlugin* plugin = anymex_extension_runtime_bridge_PLUGIN(user_data);
+  AnymeXExtensionRuntimeBridgePlugin* plugin = anymex_extension_runtime_bridge_PLUGIN(user_data);
   anymex_extension_runtime_bridge_plugin_handle_method_call(plugin, method_call);
 }
 
 void anymex_extension_runtime_bridge_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
-  AnymeXBridgePlugin* plugin = anymex_extension_runtime_bridge_PLUGIN(
+  AnymeXExtensionRuntimeBridgePlugin* plugin = anymex_extension_runtime_bridge_PLUGIN(
       g_object_new(anymex_extension_runtime_bridge_plugin_get_type(), nullptr));
 
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();

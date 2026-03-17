@@ -8,17 +8,17 @@
 
 namespace anymex_extension_runtime_bridge {
 
-class AnymeXBridgePlugin : public flutter::Plugin {
+class AnymeXExtensionRuntimeBridgePlugin : public flutter::Plugin {
  public:
   static void RegisterWithRegistrar(flutter::PluginRegistrarWindows *registrar);
 
-  AnymeXBridgePlugin();
+  AnymeXExtensionRuntimeBridgePlugin();
 
-  virtual ~AnymeXBridgePlugin();
+  virtual ~AnymeXExtensionRuntimeBridgePlugin();
 
   // Disallow copy and assign.
-  AnymeXBridgePlugin(const AnymeXBridgePlugin&) = delete;
-  AnymeXBridgePlugin& operator=(const AnymeXBridgePlugin&) = delete;
+  AnymeXExtensionRuntimeBridgePlugin(const AnymeXExtensionRuntimeBridgePlugin&) = delete;
+  AnymeXExtensionRuntimeBridgePlugin& operator=(const AnymeXExtensionRuntimeBridgePlugin&) = delete;
 
   // Called when a method is called on this plugin's channel from Dart.
   void HandleMethodCall(

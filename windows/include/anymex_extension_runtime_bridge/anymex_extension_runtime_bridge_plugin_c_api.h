@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-FLUTTER_PLUGIN_EXPORT void AnymeXBridgePluginCApiRegisterWithRegistrar(
+FLUTTER_PLUGIN_EXPORT void AnymeXExtensionRuntimeBridgePluginCApiRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar);
 
 #if defined(__cplusplus)
