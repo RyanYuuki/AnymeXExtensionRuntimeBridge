@@ -44,14 +44,14 @@ class MChapter {
     );
   }
   Map<String, dynamic> toJson() => {
-    'name': name,
-    'url': url,
-    'dateUpload': dateUpload,
-    'scanlator': scanlator,
-    'isFiller': isFiller,
-    'thumbnailUrl': thumbnailUrl,
-    'description': description,
-    'downloadSize': downloadSize,
-    'duration': duration,
-  };
+        'name': name,
+        'url': url,
+        'dateUpload': dateUpload,
+        'scanlator': scanlator,
+        'isFiller': isFiller,
+        'thumbnailUrl': thumbnailUrl,
+        'description': description,
+        'downloadSize': downloadSize,
+        'duration': duration,
+      };
 }

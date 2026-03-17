@@ -65,9 +65,8 @@ void _initPseudoSelector() {
     if (args == null) return false;
     final parent = element.parent;
     if (parent == null) return false;
-    final siblings = parent.children
-        .where((e) => e.localName == element.localName)
-        .toList();
+    final siblings =
+        parent.children.where((e) => e.localName == element.localName).toList();
     final index = siblings.indexOf(element) + 1; // 1-based
     final (a, b) = parseNth(args);
     return matchesNth(index, a, b);
@@ -77,9 +76,8 @@ void _initPseudoSelector() {
     if (args == null) return false;
     final parent = element.parent;
     if (parent == null) return false;
-    final siblings = parent.children
-        .where((e) => e.localName == element.localName)
-        .toList();
+    final siblings =
+        parent.children.where((e) => e.localName == element.localName).toList();
     final index =
         siblings.length - siblings.indexOf(element); // 1-based from end
     final (a, b) = parseNth(args);
@@ -373,9 +371,7 @@ extension ElementtExtension on Element {
   Element? selectFirst(String selector) {
     try {
       _initPseudoSelector();
-      return pseudom
-          .parse(_fixSelector(selector))
-          .selectFirst(
+      return pseudom.parse(_fixSelector(selector)).selectFirst(
             parent!.nodes.firstWhere((element) => element == this) as Element,
           );
     } catch (e) {

@@ -1,10 +1,10 @@
 import Flutter
 import UIKit
 
-public class AnymeXExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
+public class AnymexExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "anymex_extension_runtime_bridge", binaryMessenger: registrar.messenger())
-    let instance = AnymeXExtensionRuntimeBridgePlugin()
+    let instance = AnymexExtensionRuntimeBridgePlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
 

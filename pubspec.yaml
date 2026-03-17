@@ -52,12 +52,12 @@ flutter:
         platforms:
             android:
                 package: com.ryan.runtimebridge
-                pluginClass: AnymeXExtensionRuntimeBridgePlugin
+                pluginClass: AnymexExtensionRuntimeBridgePlugin
             ios:
-                pluginClass: AnymeXExtensionRuntimeBridgePlugin
+                pluginClass: AnymexExtensionRuntimeBridgePlugin
             linux:
-                pluginClass: AnymeXExtensionRuntimeBridgePlugin
+                pluginClass: AnymexExtensionRuntimeBridgePlugin
             macos:
-                pluginClass: AnymeXExtensionRuntimeBridgePlugin
+                pluginClass: AnymexExtensionRuntimeBridgePlugin
             windows:
-                pluginClass: AnymeXExtensionRuntimeBridgePlugin
+                pluginClass: AnymexExtensionRuntimeBridgePlugin

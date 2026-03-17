@@ -97,7 +97,8 @@ globalThis['$moduleName'] = exports.default ?? exports;
     })()
     ''';
 
-    final result = await _runtime.handlePromise(await _runtime.evaluateAsync(js));
+    final result =
+        await _runtime.handlePromise(await _runtime.evaluateAsync(js));
     return result;
   }
 

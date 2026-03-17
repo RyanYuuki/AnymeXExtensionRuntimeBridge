@@ -16,7 +16,7 @@ class MPages {
   }
 
   Map<String, dynamic> toJson() => {
-    'list': list.map((v) => v.toJson()).toList(),
-    'hasNextPage': hasNextPage,
-  };
+        'list': list.map((v) => v.toJson()).toList(),
+        'hasNextPage': hasNextPage,
+      };
 }

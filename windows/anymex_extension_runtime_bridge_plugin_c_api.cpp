@@ -2,11 +2,11 @@
 
 #include <flutter/plugin_registrar_windows.h>
 
-#include "anymex_extension_runtime_bridge_plugin.h"
+#include "include/anymex_extension_runtime_bridge/anymex_extension_runtime_bridge_plugin.h"
 
-void AnymeXExtensionRuntimeBridgePluginCApiRegisterWithRegistrar(
+void AnymexExtensionRuntimeBridgePluginCApiRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar) {
-  anymex_extension_runtime_bridge::AnymeXExtensionRuntimeBridgePlugin::RegisterWithRegistrar(
+  anymex_extension_runtime_bridge::AnymexExtensionRuntimeBridgePlugin::RegisterWithRegistrar(
       flutter::PluginRegistrarManager::GetInstance()
           ->GetRegistrar<flutter::PluginRegistrarWindows>(registrar));
 }

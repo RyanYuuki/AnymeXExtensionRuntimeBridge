@@ -33,13 +33,13 @@ class Video {
   }
 
   Map<String, dynamic> toJson() => {
-    'url': url,
-    'quality': quality,
-    'originalUrl': originalUrl,
-    'headers': headers,
-    'subtitles': subtitles?.map((e) => e.toJson()).toList(),
-    'audios': audios?.map((e) => e.toJson()).toList(),
-  };
+        'url': url,
+        'quality': quality,
+        'originalUrl': originalUrl,
+        'headers': headers,
+        'subtitles': subtitles?.map((e) => e.toJson()).toList(),
+        'audios': audios?.map((e) => e.toJson()).toList(),
+      };
 }
 
 class Track {

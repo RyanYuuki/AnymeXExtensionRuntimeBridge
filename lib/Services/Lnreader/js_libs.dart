@@ -1,6 +1,5 @@
 import 'package:flutter_qjs/flutter_qjs.dart';
 
-
 class JsLibs {
   late JavascriptRuntime runtime;
   JsLibs(this.runtime);

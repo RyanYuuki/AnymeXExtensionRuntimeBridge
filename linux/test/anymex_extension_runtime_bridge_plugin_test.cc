@@ -16,7 +16,7 @@
 namespace anymex_extension_runtime_bridge {
 namespace test {
 
-TEST(AnymeXExtensionRuntimeBridgePlugin, GetPlatformVersion) {
+TEST(AnymexExtensionRuntimeBridgePlugin, GetPlatformVersion) {
   g_autoptr(FlMethodResponse) response = get_platform_version();
   ASSERT_NE(response, nullptr);
   ASSERT_TRUE(FL_IS_METHOD_SUCCESS_RESPONSE(response));

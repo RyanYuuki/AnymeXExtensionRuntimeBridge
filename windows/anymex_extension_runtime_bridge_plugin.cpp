@@ -1,4 +1,4 @@
-#include "anymex_extension_runtime_bridge_plugin.h"
+#include "include/anymex_extension_runtime_bridge/anymex_extension_runtime_bridge_plugin.h"
 
 // This must be included before many other Windows headers.
 #include <windows.h>
@@ -16,14 +16,14 @@
 namespace anymex_extension_runtime_bridge {
 
 // static
-void AnymeXExtensionRuntimeBridgePlugin::RegisterWithRegistrar(
+void AnymexExtensionRuntimeBridgePlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows *registrar) {
   auto channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           registrar->messenger(), "anymex_extension_runtime_bridge",
           &flutter::StandardMethodCodec::GetInstance());
 
-  auto plugin = std::make_unique<AnymeXExtensionRuntimeBridgePlugin>();
+  auto plugin = std::make_unique<AnymexExtensionRuntimeBridgePlugin>();
 
   channel->SetMethodCallHandler(
       [plugin_pointer = plugin.get()](const auto &call, auto result) {
@@ -33,11 +33,11 @@ void AnymeXExtensionRuntimeBridgePlugin::RegisterWithRegistrar(
   registrar->AddPlugin(std::move(plugin));
 }
 
-AnymeXExtensionRuntimeBridgePlugin::AnymeXExtensionRuntimeBridgePlugin() {}
+AnymexExtensionRuntimeBridgePlugin::AnymexExtensionRuntimeBridgePlugin() {}
 
-AnymeXExtensionRuntimeBridgePlugin::~AnymeXExtensionRuntimeBridgePlugin() {}
+AnymexExtensionRuntimeBridgePlugin::~AnymexExtensionRuntimeBridgePlugin() {}
 
-void AnymeXExtensionRuntimeBridgePlugin::HandleMethodCall(
+void AnymexExtensionRuntimeBridgePlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue> &method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (method_call.method_name().compare("getPlatformVersion") == 0) {

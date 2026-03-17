@@ -19,7 +19,7 @@ set(PLUGIN_NAME "anymex_extension_runtime_bridge_plugin")
 # Any new source files that you add to the plugin should be added here.
 list(APPEND PLUGIN_SOURCES
   "anymex_extension_runtime_bridge_plugin.cpp"
-  "anymex_extension_runtime_bridge_plugin.h"
+  "include/anymex_extension_runtime_bridge/anymex_extension_runtime_bridge_plugin.h"
 )
 
 # Define the plugin library target. Its name must not be changed (see comment

@@ -20,7 +20,7 @@ class ChapterItem {
       releaseTime: json['releaseTime'],
       chapterNumber: json['chapterNumber'] != null
           ? (json['chapterNumber'] as num?)?.toInt() ??
-                int.tryParse(json['chapterNumber'])
+              int.tryParse(json['chapterNumber'])
           : null,
       page: json['page'],
     );
@@ -125,8 +125,7 @@ class SourcePage {
 
   factory SourcePage.fromJson(Map<String, dynamic> json) {
     return SourcePage(
-      chapters:
-          (json['chapters'] as List<dynamic>?)
+      chapters: (json['chapters'] as List<dynamic>?)
               ?.map((item) => ChapterItem.fromJson(item))
               .toList() ??
           [],

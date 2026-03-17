@@ -99,10 +99,10 @@ Future<String> _toHttpResponse(Client client, String method, List args) async {
   final headers = (args[3] as Map?)?.toMapStringString;
   final body = args.length >= 5
       ? args[4] is List
-            ? args[4] as List
-            : args[4] is String
-            ? args[4] as String
-            : (args[4] as Map?)?.toMapStringDynamic
+          ? args[4] as List
+          : args[4] is String
+              ? args[4] as String
+              : (args[4] as Map?)?.toMapStringDynamic
       : null;
   var request = http.Request(method, Uri.parse(url));
   request.headers.addAll(headers ?? {});
@@ -139,23 +139,23 @@ Future<String> _toHttpResponse(Client client, String method, List args) async {
 
 extension ResponseExtexsion on Response {
   Map<String, dynamic> toJson() => {
-    'body': body,
-    'headers': headers,
-    'isRedirect': isRedirect,
-    'persistentConnection': persistentConnection,
-    'reasonPhrase': reasonPhrase,
-    'statusCode': statusCode,
-    'request': {
-      'contentLength': request?.contentLength,
-      'finalized': request?.finalized,
-      'followRedirects': request?.followRedirects,
-      'headers': request?.headers,
-      'maxRedirects': request?.maxRedirects,
-      'method': request?.method,
-      'persistentConnection': request?.persistentConnection,
-      'url': request?.url.toString(),
-    },
-  };
+        'body': body,
+        'headers': headers,
+        'isRedirect': isRedirect,
+        'persistentConnection': persistentConnection,
+        'reasonPhrase': reasonPhrase,
+        'statusCode': statusCode,
+        'request': {
+          'contentLength': request?.contentLength,
+          'finalized': request?.finalized,
+          'followRedirects': request?.followRedirects,
+          'headers': request?.headers,
+          'maxRedirects': request?.maxRedirects,
+          'method': request?.method,
+          'persistentConnection': request?.persistentConnection,
+          'url': request?.url.toString(),
+        },
+      };
 }
 
 extension ToMapExtension on Map? {

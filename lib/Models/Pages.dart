@@ -10,15 +10,15 @@ class Pages {
     return Pages(
       list: json['list'] != null
           ? (json['list'] as List)
-                .map((e) => DMedia.fromJson(Map<String, dynamic>.from(e)))
-                .toList()
+              .map((e) => DMedia.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
           : [],
       hasNextPage: json['hasNextPage'] ?? false,
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'list': list.map((v) => v.toJson()).toList(),
-    'hasNextPage': hasNextPage,
-  };
+        'list': list.map((v) => v.toJson()).toList(),
+        'hasNextPage': hasNextPage,
+      };
 }

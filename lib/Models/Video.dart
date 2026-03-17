@@ -23,25 +23,25 @@ class Video {
       headers: (json['headers'] as Map?)?.cast<String, String>(),
       subtitles: json['subtitles'] != null
           ? (json['subtitles'] as List)
-                .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
-                .toList()
+              .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
           : [],
       audios: json['audios'] != null
           ? (json['audios'] as List)
-                .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
-                .toList()
+              .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
           : [],
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'title': title,
-    'url': url,
-    'quality': quality,
-    'headers': headers,
-    'subtitles': subtitles?.map((e) => e.toJson()).toList(),
-    'audios': audios?.map((e) => e.toJson()).toList(),
-  };
+        'title': title,
+        'url': url,
+        'quality': quality,
+        'headers': headers,
+        'subtitles': subtitles?.map((e) => e.toJson()).toList(),
+        'audios': audios?.map((e) => e.toJson()).toList(),
+      };
 }
 
 class Track {
