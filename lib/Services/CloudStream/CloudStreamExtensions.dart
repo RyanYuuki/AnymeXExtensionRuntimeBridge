@@ -17,6 +17,33 @@ List<dynamic> _decodeJsonList(String body) => jsonDecode(body) as List<dynamic>;
 Map<String, dynamic> _decodeJsonMap(String body) =>
     jsonDecode(body) as Map<String, dynamic>;
 
+String _encodeCloudStreamMeta(Map<String, dynamic> data) => jsonEncode(data);
+
+List<CloudStreamSource> _hydrateCloudStreamSources(Map<String, dynamic> args) {
+  final List<dynamic> result = args['result'];
+  final Map<String, String?> metas = args['metas'];
+
+  return result.map((e) {
+    final map = Map<String, dynamic>.from(e);
+    final internalName = map['internalName'] ?? map['name'];
+    final metaStr = metas[internalName];
+
+    if (metaStr != null && metaStr.isNotEmpty) {
+      try {
+        final meta = jsonDecode(metaStr) as Map<String, dynamic>;
+        map['iconUrl'] = meta['iconUrl'] ?? map['iconUrl'];
+        map['language'] = meta['language'] ?? map['language'];
+        map['version'] = meta['version'] ?? map['version'];
+        map['versionLast'] = meta['versionLast'] ?? map['versionLast'];
+        map['pluginUrl'] = meta['pluginUrl'] ?? map['pluginUrl'];
+        map['repo'] = meta['repo'] ?? map['repo'];
+      } catch (_) {}
+    }
+
+    return CloudStreamSource.fromJson(map);
+  }).toList();
+}
+
 class CloudStreamExtensions extends Extension {
   @override
   String get id => 'cloudstream';
@@ -117,11 +144,20 @@ class CloudStreamExtensions extends Extension {
     try {
       final List<dynamic>? result =
           await platform.invokeMethod('getRegisteredProviders');
-      final sources = result
-              ?.map((e) =>
-                  CloudStreamSource.fromJson(Map<String, dynamic>.from(e)))
-              .toList() ??
-          [];
+      if (result == null) return;
+
+      final metas = <String, String?>{};
+      for (final e in result) {
+        final map = Map<String, dynamic>.from(e);
+        final internalName = map['internalName'] ?? map['name'];
+        metas[internalName as String] = getVal<String>('cs_meta_$internalName');
+      }
+
+      final sources = await compute(_hydrateCloudStreamSources, {
+        'result': result,
+        'metas': metas,
+      });
+
       installedAnimeExtensions.value = sources;
     } catch (e) {
       Logger.log("Error fetching installed CloudStream extensions: $e");
@@ -168,6 +204,18 @@ class CloudStreamExtensions extends Extension {
 
         if (success) {
           Logger.log("Successfully loaded CloudStream plugin: ${source.name}");
+          
+          final metaToSave = {
+            'iconUrl': source.iconUrl,
+            'language': source.lang,
+            'version': source.version,
+            'versionLast': source.versionLast,
+            'pluginUrl': source.pluginUrl,
+            'repo': source.repo,
+          };
+          final encodedMeta = await compute(_encodeCloudStreamMeta, metaToSave);
+          setVal('cs_meta_${source.internalName ?? source.name}', encodedMeta);
+
           await fetchInstalledAnimeExtensions();
           await fetchAnimeExtensions();
         } else {
@@ -204,6 +252,7 @@ class CloudStreamExtensions extends Extension {
             'repositoryUrl': source.repo ?? '',
           },
         );
+        await KvStore.remove('cs_meta_${source.internalName ?? source.name}');
         Logger.log(
             "Successfully uninstalled CloudStream plugin: ${source.name}");
         await fetchInstalledAnimeExtensions();
