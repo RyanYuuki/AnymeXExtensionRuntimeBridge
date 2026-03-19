@@ -1,4 +1,4 @@
-import '../../Lnreader/service.dart';
+import '../../LnReader/service.dart';
 import '../Eval/dart/service.dart';
 import '../Eval/javascript/service.dart';
 import '../Models/Source.dart';
