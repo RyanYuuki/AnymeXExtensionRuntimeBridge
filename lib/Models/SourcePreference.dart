@@ -19,6 +19,15 @@ class SourcePreference {
     this.editTextPreference,
   });
 
+  dynamic get value {
+    if (checkBoxPreference != null) return checkBoxPreference!.value;
+    if (switchPreferenceCompat != null) return switchPreferenceCompat!.value;
+    if (listPreference != null) return listPreference!.value;
+    if (multiSelectListPreference != null) return multiSelectListPreference!.value;
+    if (editTextPreference != null) return editTextPreference!.value;
+    return null;
+  }
+
   Map<String, dynamic> toJson() => {
         'type': type,
         'key': key,
@@ -115,14 +124,18 @@ class ListPreference {
     this.title,
     this.summary,
     this.valueIndex,
+    this.value,
     this.entries,
     this.entryValues,
   });
+
+  String? value;
 
   Map<String, dynamic> toJson() => {
         'title': title,
         'summary': summary,
         'valueIndex': valueIndex,
+        'value': value,
         'entries': entries,
         'entryValues': entryValues,
       };
@@ -132,6 +145,7 @@ class ListPreference {
       title: json['title'],
       summary: json['summary'],
       valueIndex: json['valueIndex'],
+      value: json['value'],
       entries: json['entries']?.cast<String>(),
       entryValues: json['entryValues']?.cast<String>(),
     );
@@ -151,7 +165,10 @@ class MultiSelectListPreference {
     this.entries,
     this.entryValues,
     this.values,
+    this.value,
   });
+
+  List<String>? value;
 
   Map<String, dynamic> toJson() => {
         'title': title,
@@ -159,6 +176,7 @@ class MultiSelectListPreference {
         'entries': entries?.cast<String>(),
         'entryValues': entryValues?.cast<String>(),
         'values': values?.cast<String>(),
+        'value': value,
       };
 
   factory MultiSelectListPreference.fromJson(Map<String, dynamic> json) {
@@ -168,6 +186,7 @@ class MultiSelectListPreference {
       entries: json['entries']?.cast<String>(),
       entryValues: json['entryValues']?.cast<String>(),
       values: json['values']?.cast<String>(),
+      value: json['value']?.cast<String>(),
     );
   }
 }

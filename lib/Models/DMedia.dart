@@ -22,19 +22,45 @@ class DMedia {
   });
 
   factory DMedia.fromJson(Map<String, dynamic> json) {
+    final parsedEpisodes = json['episodes'] != null
+        ? (json['episodes'] as List)
+            .map((e) => DEpisode.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <DEpisode>[];
+    parsedEpisodes.sort(DEpisode.compareByEpisodeNumber);
+
     return DMedia(
       title: json['title'],
       url: json['url'],
-      cover: json['cover'],
+      cover: json['cover'] ?? json['thumbnail_url'],
       description: json['description'],
       artist: json['artist'],
       author: json['author'],
       genre: json['genre'] != null ? List<String>.from(json['genre']) : [],
-      episodes: json['episodes'] != null
-          ? (json['episodes'] as List)
-              .map((e) => DEpisode.fromJson(Map<String, dynamic>.from(e)))
-              .toList()
-          : [],
+      episodes: parsedEpisodes,
+    );
+  }
+
+  factory DMedia.fromCs(Map<String, dynamic> json) {
+    final parsedEpisodes = json['episodes'] != null
+        ? (json['episodes'] as List)
+            .map((e) => DEpisode.fromCs(Map<String, dynamic>.from(e)))
+            .toList()
+        : <DEpisode>[];
+    parsedEpisodes.sort(DEpisode.compareByEpisodeNumber);
+
+    return DMedia(
+      title: json['title'],
+      url: json['url'],
+      cover: json['cover'] ?? json['thumbnail_url'],
+      description: json['description'],
+      artist: json['artist'],
+      author: json['author'],
+      genre: json['genre'] != null ? List<String>.from(json['genre']) : [],
+      episodes: (parsedEpisodes[0].episodeNumber != '0') ||
+              (parsedEpisodes[0].episodeNumber != '1')
+          ? parsedEpisodes.reversed.toList()
+          : parsedEpisodes,
     );
   }
 

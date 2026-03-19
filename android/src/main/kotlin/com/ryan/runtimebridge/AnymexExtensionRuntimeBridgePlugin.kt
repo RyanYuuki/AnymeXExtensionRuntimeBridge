@@ -8,8 +8,10 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.EventChannel.EventSink as MethodEventSink
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.MethodChannel.Result as MethodResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +36,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     private lateinit var cloudStreamChannel: MethodChannel
     private lateinit var videoStreamEventChannel: EventChannel
 
+
     private var context: Context? = null
     private var activity: Activity? = null
 
@@ -55,7 +58,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
         videoStreamEventChannel = EventChannel(binding.binaryMessenger, "cloudstreamExtensionBridge/videoStream")
         videoStreamEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
-            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+            override fun onListen(arguments: Any?, events: MethodEventSink?) {
                 val args = arguments as? Map<*, *> ?: return
                 val apiName = args["apiName"] as? String ?: return
                 val url = args["url"] as? String ?: return
@@ -145,7 +148,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         }
     }
 
-    private fun handleAnymeX(call: MethodCall, result: MethodChannel.Result) {
+    private fun handleAnymeX(call: MethodCall, result: MethodResult) {
         when (call.method) {
             "loadAnymeXRuntimeHost" -> {
                 val path = call.argument<String>("path")
@@ -170,7 +173,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun handleAniyomi(call: MethodCall, result: MethodChannel.Result) {
+    private fun handleAniyomi(call: MethodCall, result: MethodResult) {
         if (!ensureLoaded(result)) return
         val ctx = effectiveContext() ?: return result.error("NO_CTX", "No context", null)
 
@@ -251,7 +254,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         }
     }
 
-    private fun handleCloudStream(call: MethodCall, result: MethodChannel.Result) {
+    private fun handleCloudStream(call: MethodCall, result: MethodResult) {
         if (!ensureLoaded(result)) return
         val ctx = effectiveContext() ?: return result.error("NO_CTX", "No context", null)
 
@@ -321,7 +324,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun handleVideoStream(apiName: String, url: String, events: EventChannel.EventSink?) {
+    private fun handleVideoStream(apiName: String, url: String, events: MethodEventSink?) {
         val ctx = effectiveContext() ?: run {
             events?.error("NO_CTX", "No context available", null)
             events?.endOfStream()
@@ -359,12 +362,13 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             } catch (e: Exception) {
                 Log.e(TAG, "videoStream failed: ${e.message}", e)
                 withContext(Dispatchers.Main) {
-                    events?.error("VIDEO_STREAM_FAILED", e.message, null)
+                    events?.error("VIDEO_STREAM_FAILED", e.message ?: "Unknown error", null)
                     events?.endOfStream()
                 }
             }
         }
     }
+
 
     private fun call(methodName: String, vararg args: Any?): Any? {
         val bridge = runtimeBridge ?: throw IllegalStateException("Runtime Host not loaded")
@@ -376,7 +380,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         return method.invoke(bridge, *args)
     }
 
-    private fun ensureLoaded(result: MethodChannel.Result): Boolean {
+    private fun ensureLoaded(result: MethodResult): Boolean {
         if (runtimeBridge == null) {
             result.error("NOT_LOADED", "Runtime Host APK not loaded. Call loadAnymeXRuntimeHost first.", null)
             return false

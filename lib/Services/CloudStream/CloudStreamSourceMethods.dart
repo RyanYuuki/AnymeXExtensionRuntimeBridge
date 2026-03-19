@@ -22,7 +22,7 @@ class CloudStreamSourceMethods extends SourceMethods {
     });
 
     return await compute(
-      DMedia.fromJson,
+      DMedia.fromCs,
       Map<String, dynamic>.from(result as Map),
     );
   }
@@ -46,6 +46,8 @@ class CloudStreamSourceMethods extends SourceMethods {
       'apiName': source.id,
       'url': episode.url,
     });
+
+    print(result.toString());
 
     return await compute(parseVideos, List<dynamic>.from(result));
   }

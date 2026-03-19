@@ -5,6 +5,7 @@ class Video {
   Map<String, String>? headers;
   List<Track>? subtitles;
   List<Track>? audios;
+  Map<String, dynamic>? extraData;
 
   Video(
     this.title,
@@ -13,6 +14,7 @@ class Video {
     this.headers,
     this.subtitles,
     this.audios,
+    this.extraData,
   });
 
   factory Video.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class Video {
               .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
               .toList()
           : [],
+      extraData: json,
     );
   }
 
@@ -41,6 +44,7 @@ class Video {
         'headers': headers,
         'subtitles': subtitles?.map((e) => e.toJson()).toList(),
         'audios': audios?.map((e) => e.toJson()).toList(),
+        'extraData': extraData,
       };
 }
 

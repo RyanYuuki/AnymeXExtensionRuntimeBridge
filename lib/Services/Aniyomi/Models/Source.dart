@@ -3,6 +3,7 @@ import '../../../Models/Source.dart';
 class ASource extends Source {
   String? pkgName;
   String? apkName;
+  List<ASource>? langs;
 
   ASource({
     super.id,

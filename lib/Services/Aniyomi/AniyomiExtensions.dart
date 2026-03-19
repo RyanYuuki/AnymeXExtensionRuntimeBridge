@@ -56,7 +56,29 @@ class AniyomiExtensions extends Extension {
           .map((e) => ASource.fromJson(Map<String, dynamic>.from(e)))
           .where((s) => s.itemType == type)
           .toList(growable: false);
-      return parsed;
+
+      final Map<String, List<ASource>> grouped = {};
+      for (final s in parsed) {
+        final key = s.pkgName ?? s.name ?? "unknown";
+        grouped.putIfAbsent(key, () => []).add(s);
+      }
+
+      final filtered = <ASource>[];
+      for (final group in grouped.values) {
+        if (group.length > 1) {
+          final allSource = group.firstWhere((s) => s.lang == 'all',
+              orElse: () => group.firstWhere((s) => s.lang == 'en',
+                  orElse: () => group.first));
+          for (final s in group) {
+            s.langs = group;
+          }
+          filtered.add(allSource);
+        } else {
+          filtered.add(group.first);
+        }
+      }
+
+      return filtered;
     } catch (e) {
       return [];
     }
@@ -165,7 +187,28 @@ class AniyomiExtensions extends Extension {
         );
       }
 
-      return List.unmodifiable(sources);
+      final Map<String, List<ASource>> grouped = {};
+      for (final s in sources) {
+        final key = (s as ASource).pkgName ?? s.name ?? "unknown";
+        grouped.putIfAbsent(key, () => []).add(s);
+      }
+
+      final filtered = <ASource>[];
+      for (final group in grouped.values) {
+        if (group.length > 1) {
+          final allSource = group.firstWhere((s) => s.lang == 'all',
+              orElse: () => group.firstWhere((s) => s.lang == 'en',
+                  orElse: () => group.first));
+          for (final s in group) {
+            s.langs = group;
+          }
+          filtered.add(allSource);
+        } else {
+          filtered.add(group.first);
+        }
+      }
+
+      return List.unmodifiable(filtered);
     } catch (e) {
       Logger.log("Failed to parse extensions from $repoUrl: $e");
       return const [];

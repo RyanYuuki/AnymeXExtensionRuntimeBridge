@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -88,6 +90,7 @@ class AniyomiSourceMethods extends SourceMethods {
 
     return await compute(parseVideos, List<dynamic>.from(result));
   }
+
 
   @override
   Future<List<PageUrl>> getPageList(DEpisode episode) async {
@@ -206,6 +209,7 @@ SourcePreference mapToSourcePreference(Map<String, dynamic> json) {
           entries: entries,
           entryValues: entryValues,
           valueIndex: valueIndex != -1 ? valueIndex : 0,
+          value: json['value']?.toString(),
         ),
       );
 
@@ -225,6 +229,7 @@ SourcePreference mapToSourcePreference(Map<String, dynamic> json) {
           entries: entries,
           entryValues: entryValues,
           values: values,
+          value: values,
         ),
       );
 
