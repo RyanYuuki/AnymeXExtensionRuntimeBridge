@@ -1,6 +1,8 @@
 #ifndef FLUTTER_PLUGIN_anymex_extension_runtime_bridge_PLUGIN_H_
 #define FLUTTER_PLUGIN_anymex_extension_runtime_bridge_PLUGIN_H_
 
+#include <anymex_extension_runtime_bridge/anymex_extension_runtime_bridge_plugin_c_api.h>
+
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
 

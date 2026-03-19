@@ -50,7 +50,7 @@ class JsExtensionEngine {
         };
       ''');
 
-      await JsUtils(_runtime).init();
+       JsUtils(_runtime).init();
       _initCompleter?.complete();
     } catch (e, stack) {
       _initCompleter?.completeError(e, stack);
