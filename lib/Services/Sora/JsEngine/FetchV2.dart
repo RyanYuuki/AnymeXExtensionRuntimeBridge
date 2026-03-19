@@ -23,13 +23,14 @@ class FetchV2 {
   Future<void> inject() async {
     runtime.evaluate(r'''
 async function fetchv2(url, headers = {}, method = "GET", body = null) {
-  const res = await sendMessage("bridge", {
+  const payload = JSON.stringify({
     type: "fetchv2",
     url,
     headers,
     method,
     body
   });
+  const res = await sendMessage("bridge", payload);
 
   return {
     status: res.status,

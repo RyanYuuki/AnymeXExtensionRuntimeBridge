@@ -31,6 +31,31 @@ class JsExtensionEngine {
     try {
       _runtime = await JsEngineEnv.instance.init();
 
+      final setToGlobalObject = _runtime
+          .evaluate("(key, val) => { globalThis[key] = val; }")
+          .rawResult;
+      (setToGlobalObject as JSInvokable).invoke([
+        'sendMessage',
+        (String channelName, dynamic message) {
+          final channelFunctions = JavascriptRuntime
+              .channelFunctionsRegistered[_runtime.getEngineInstanceId()]!;
+
+          if (channelFunctions.containsKey(channelName)) {
+            dynamic parsed;
+            if (message is String) {
+              try {
+                parsed = jsonDecode(message);
+              } catch (_) {
+                parsed = message;
+              }
+            } else {
+              parsed = message;
+            }
+            return channelFunctions[channelName]!.call(parsed);
+          }
+        }
+      ]);
+
       var fetch = FetchV2(_runtime);
 
       _runtime.onMessage('bridge', (dynamic args) async {
@@ -43,11 +68,11 @@ class JsExtensionEngine {
         throw Exception('Unknown bridge call');
       });
 
-      // Shimming fjs.bridge_call for compatibility
       _runtime.evaluate('''
         var fjs = {
           bridge_call: function(data) {
-            return sendMessage('bridge', data);
+            const payload = (typeof data === 'object') ? JSON.stringify(data) : data;
+            return sendMessage('bridge', payload);
           }
         };
       ''');
@@ -68,31 +93,34 @@ class JsExtensionEngine {
     await init();
 
     final wrapped = '''
+globalThis['$moduleName'] = (() => {
 $sourceCode
-const __exports = {};
 
-// Common
-if (typeof searchResults === 'function')
-  __exports.searchResults = searchResults;
+  const __exports = {};
 
-if (typeof extractDetails === 'function')
-  __exports.extractDetails = extractDetails;
+  // Common
+  if (typeof searchResults === 'function')
+    __exports.searchResults = searchResults;
 
-// Anime
-if (typeof extractEpisodes === 'function')
-  __exports.extractEpisodes = extractEpisodes;
+  if (typeof extractDetails === 'function')
+    __exports.extractDetails = extractDetails;
 
-if (typeof extractStreamUrl === 'function')
-  __exports.extractStreamUrl = extractStreamUrl;
+  // Anime
+  if (typeof extractEpisodes === 'function')
+    __exports.extractEpisodes = extractEpisodes;
 
-// Manga
-if (typeof extractChapters === 'function')
-  __exports.extractChapters = extractChapters;
+  if (typeof extractStreamUrl === 'function')
+    __exports.extractStreamUrl = extractStreamUrl;
 
-if (typeof extractImages === 'function')
-  __exports.extractImages = extractImages;
+  // Manga
+  if (typeof extractChapters === 'function')
+    __exports.extractChapters = extractChapters;
 
-globalThis['$moduleName'] = __exports;
+  if (typeof extractImages === 'function')
+    __exports.extractImages = extractImages;
+
+  return __exports;
+})();
 ''';
 
     _runtime.evaluate(wrapped);
@@ -124,9 +152,16 @@ globalThis['$moduleName'] = __exports;
     })()
     ''';
 
-    final result =
-        await _runtime.handlePromise(await _runtime.evaluateAsync(js));
-    return result;
+    try {
+      final result =
+          await _runtime.handlePromise(await _runtime.evaluateAsync(js));
+      return result;
+    } catch (e) {
+      if (e.toString().contains('_Map')) {
+        throw Exception("JS Error in $method (returned Map)");
+      }
+      rethrow;
+    }
   }
 
   Future<void> dispose() async {

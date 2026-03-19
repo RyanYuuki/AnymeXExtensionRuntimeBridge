@@ -19,7 +19,7 @@ class MClient {
   }) {
     return InterceptedClient.build(
       client: IOClient(HttpClient()),
-      interceptors: [MCookieManager(reqcopyWith), LoggerInterceptor()],
+      interceptors: [MCookieManager(reqcopyWith)],
     );
   }
 
@@ -69,7 +69,7 @@ class MClient {
       final cookiesMap = {}; //loadData(PrefName.cookies);
       cookiesMap.removeWhere((key, value) => key == host || host.contains(key));
       cookiesMap[host] = newCookie;
-      //saveData(PrefName.cookies, cookiesMap);
+      // saveData(PrefName.cookies, cookiesMap);
     }
     if (ua.isNotEmpty) {
       //saveData(PrefName.userAgent, ua);

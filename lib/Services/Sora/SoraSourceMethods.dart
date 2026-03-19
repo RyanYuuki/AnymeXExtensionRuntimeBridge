@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter_qjs/js_eval_result.dart';
+
 import '../../Extensions/SourceMethods.dart';
 import '../../Logger.dart';
 import '../../Models/DEpisode.dart';
@@ -92,14 +95,20 @@ class SoraSourceMethods extends SourceMethods {
         params: params,
       );
 
-      return _parseJs(res.value);
+      if (res is JsEvalResult && res.isError) {
+        Logger.log("Error calling JS method '$method': ${res.stringResult}");
+        return null;
+      }
+
+      final value = res is JsEvalResult ? res.rawResult : res;
+      return _parseJs(value);
     } catch (e) {
       Logger.log("Error calling JS method '$method': $e");
       return null;
     }
   }
 
-  bool _isErrorPayload(dynamic data) {
+  static bool _isErrorPayload(dynamic data) {
     if (data == null) return true;
 
     const errorIndicators = [
@@ -131,7 +140,7 @@ class SoraSourceMethods extends SourceMethods {
     return false;
   }
 
-  void _collectEpisodes(dynamic data, List<DEpisode> episodes) {
+  static void _collectEpisodes(dynamic data, List<DEpisode> episodes) {
     void add(Map e, {String? fallback}) {
       episodes.add(
         DEpisode(
@@ -177,68 +186,82 @@ class SoraSourceMethods extends SourceMethods {
     }
   }
 
-  @override
-  Future<DMedia> getDetail(DMedia media) async {
-    final rawDetails = await _call("extractDetails", [media.url]);
-    Map<String, dynamic> details = {};
-    if (!_isErrorPayload(rawDetails)) {
-      if (rawDetails is Map) {
-        details = Map<String, dynamic>.from(rawDetails);
-      } else if (rawDetails is List &&
-          rawDetails.isNotEmpty &&
-          rawDetails.first is Map) {
-        details = Map<String, dynamic>.from(rawDetails.first);
-      }
-    } else {
-      Logger.log("extractDetails returned error");
+  static List<DEpisode> _parseEpisodesResult(dynamic raw) {
+    if (raw is String) {
+      try {
+        raw = jsonDecode(raw);
+      } catch (_) {}
     }
 
-    final resultMedia = DMedia(
-      title: details["title"]?.toString() ?? media.title,
-      url: details["url"]?.toString() ?? media.url,
-      cover: details["cover"]?.toString() ?? media.cover,
-      description: details["description"]?.toString(),
-    );
-
-    final method = source.itemType == ItemType.anime
-        ? "extractEpisodes"
-        : "extractChapters";
-
-    final rawEpisodes = await _call(method, [media.url]);
-
-    if (_isErrorPayload(rawEpisodes)) {
-      Logger.log("$method returned error");
-      resultMedia.episodes = [];
-      return resultMedia;
+    if (raw == null || (raw is Map && raw.containsKey('error'))) {
+      return [];
     }
 
     final episodes = <DEpisode>[];
-    _collectEpisodes(rawEpisodes, episodes);
-
-    resultMedia.episodes = episodes.reversed.toList();
-
-    return resultMedia;
+    _collectEpisodes(raw, episodes);
+    return episodes.reversed.toList();
   }
 
   @override
-  Future<Pages> search(String query, int page, List<dynamic> filters) async {
-    final raw = await _call("searchResults", [query, page, filters]);
+  Future<DMedia> getDetail(DMedia media) async {
+    try {
+      final resultMedia = DMedia(
+        title: media.title,
+        url: media.url,
+        cover: media.cover,
+      );
 
-    if (_isErrorPayload(raw) || raw is! List) {
-      return Pages(list: []);
+      final method = source.itemType == ItemType.anime
+          ? "extractEpisodes"
+          : "extractChapters";
+
+      final rawEpisodes = await _call(method, [media.url]);
+
+      if (_isErrorPayload(rawEpisodes)) {
+        Logger.log("$method returned error");
+        resultMedia.episodes = [];
+        return resultMedia;
+      }
+
+      resultMedia.episodes = await compute(_parseEpisodesResult, rawEpisodes);
+
+      return resultMedia;
+    } catch (e, s) {
+      print("getDetails returned with $e - $s");
+      return media;
+    }
+  }
+
+  static List<DMedia> _parseSearchResults(dynamic raw) {
+    if (raw is String) {
+      try {
+        raw = jsonDecode(raw);
+      } catch (_) {}
     }
 
-    final list = raw.map<DMedia>((e) {
-      final map = Map<String, dynamic>.from(e);
+    if (raw == null || raw is! List || (raw is Map)) {
+      return [];
+    }
 
+    return raw.map<DMedia>((e) {
+      final map = Map<String, dynamic>.from(e);
       return DMedia(
         title: map['title'],
         url: map['href'] ?? map['id'],
         cover: map['image'] ?? map['imageURL'],
       );
     }).toList();
+  }
 
-    return Pages(list: list);
+  @override
+  Future<Pages> search(String query, int page, List<dynamic> filters) async {
+    try {
+      final callRes = await _call("searchResults", [query, page, filters]);
+      final list = await compute(_parseSearchResults, callRes);
+      return Pages(list: list);
+    } catch (e) {
+      throw Exception(e.toString());
+    }
   }
 
   @override
@@ -247,9 +270,12 @@ class SoraSourceMethods extends SourceMethods {
   @override
   Future<Pages> getPopular(int page) => search("One Piece", page, []);
 
-  @override
-  Future<List<PageUrl>> getPageList(DEpisode episode) async {
-    final data = await _call("extractImages", [episode.url]);
+  static List<PageUrl> _parsePageListResult(dynamic data) {
+    if (data is String) {
+      try {
+        data = jsonDecode(data);
+      } catch (_) {}
+    }
 
     if (_isErrorPayload(data)) {
       Logger.log("extractImages returned error");
@@ -257,7 +283,6 @@ class SoraSourceMethods extends SourceMethods {
     }
 
     final pages = <PageUrl>[];
-
     if (data is List) {
       for (final item in data) {
         if (item is String) {
@@ -265,13 +290,18 @@ class SoraSourceMethods extends SourceMethods {
         }
       }
     }
-
     return pages;
   }
 
   @override
+  Future<List<PageUrl>> getPageList(DEpisode episode) async {
+    final data = await _call("extractImages", [episode.url]);
+    return await compute(_parsePageListResult, data);
+  }
+
+  @override
   Future<List<Video>> getVideoList(DEpisode episode) async {
-    final data = await _call("extractStreamUrl", [episode.url]);
+    final data = (await _call("extractStreamUrl", [episode.url]));
 
     if (_isErrorPayload(data)) {
       Logger.log("extractStreamUrl returned error");
