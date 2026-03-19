@@ -4,7 +4,7 @@
 
 #include <anymex_extension_runtime_bridge/anymex_extension_runtime_bridge_plugin.h>
 
-void AnymexExtensionRuntimeBridgePluginCApiRegisterWithRegistrar(
+void AnymexExtensionRuntimeBridgePluginRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar) {
   anymex_extension_runtime_bridge::AnymexExtensionRuntimeBridgePlugin::RegisterWithRegistrar(
       flutter::PluginRegistrarManager::GetInstance()
