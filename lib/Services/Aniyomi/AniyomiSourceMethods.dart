@@ -91,7 +91,6 @@ class AniyomiSourceMethods extends SourceMethods {
     return await compute(parseVideos, List<dynamic>.from(result));
   }
 
-
   @override
   Future<List<PageUrl>> getPageList(DEpisode episode) async {
     final result = await platform.invokeMethod('getPageList', {

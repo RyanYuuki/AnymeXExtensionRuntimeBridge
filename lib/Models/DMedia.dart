@@ -27,12 +27,11 @@ class DMedia {
             .map((e) => DEpisode.fromJson(Map<String, dynamic>.from(e)))
             .toList()
         : <DEpisode>[];
-    parsedEpisodes.sort(DEpisode.compareByEpisodeNumber);
 
     return DMedia(
-      title: json['title'],
+      title: json['title'] ?? json['name'],
       url: json['url'],
-      cover: json['cover'] ?? json['thumbnail_url'],
+      cover: json['posterUrl'] ?? json['thumbnail_url'],
       description: json['description'],
       artist: json['artist'],
       author: json['author'],
@@ -47,7 +46,6 @@ class DMedia {
             .map((e) => DEpisode.fromCs(Map<String, dynamic>.from(e)))
             .toList()
         : <DEpisode>[];
-    parsedEpisodes.sort(DEpisode.compareByEpisodeNumber);
 
     return DMedia(
       title: json['title'],

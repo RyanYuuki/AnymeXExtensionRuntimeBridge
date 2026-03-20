@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 
 class DEpisode {
   String? url;
@@ -9,7 +10,7 @@ class DEpisode {
   String? description;
   bool? filler;
   String episodeNumber;
-  String? sortKey;
+  Map<String, String>? sortMap;
 
   DEpisode({
     this.url,
@@ -19,7 +20,7 @@ class DEpisode {
     this.thumbnail,
     this.description,
     this.filler,
-    this.sortKey,
+    this.sortMap,
     required this.episodeNumber,
   });
 
@@ -51,23 +52,6 @@ class DEpisode {
   }
 
   factory DEpisode.fromCs(Map<String, dynamic> json) {
-    var idJson;
-    try {
-      final data = jsonDecode(json['url']);
-      idJson = data['isDub'] ? "DUB" : "SUB";
-    } catch (e) {}
-    double? episodeNum =
-        double.tryParse(json['episodeNumber']?.toString() ?? '') ??
-            double.tryParse(json['episode_number']?.toString() ?? '');
-
-    String episodeStr;
-    if (episodeNum != null) {
-      episodeStr = episodeNum == episodeNum.toInt()
-          ? episodeNum.toInt().toString()
-          : episodeNum.toString();
-    } else {
-      episodeStr = '';
-    }
     return DEpisode(
         url: json['url'],
         name: json['name'],
@@ -75,11 +59,16 @@ class DEpisode {
             json['date_upload']?.toString() ??
             '',
         scanlator: json['scanlator'],
-        thumbnail: json['thumbnail'],
+        thumbnail: json['thumbnail'] ??
+            json['posterUrl'] ??
+            json['extraData']['thumbnail'],
         description: json['description'],
         filler: json['filler'],
-        episodeNumber: episodeStr,
-        sortKey: idJson);
+        episodeNumber: json['episodeNumber']?.toString() ?? '1',
+        sortMap: {
+          "season": json['extraData']['season']?.toString() ?? '',
+          "type": json['extraData']['episodeGroup']?.toString() ?? ''
+        });
   }
 
   Map<String, dynamic> toJson() => {

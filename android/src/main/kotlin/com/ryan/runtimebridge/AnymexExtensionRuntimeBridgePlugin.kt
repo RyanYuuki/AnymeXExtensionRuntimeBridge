@@ -359,6 +359,8 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
                 call("csGetVideoListStream", ctx, apiName, url, proxyCallback)
                 withContext(Dispatchers.Main) { events?.endOfStream() }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "videoStream failed: ${e.message}", e)
                 withContext(Dispatchers.Main) {
