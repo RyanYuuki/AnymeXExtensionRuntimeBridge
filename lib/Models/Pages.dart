@@ -17,17 +17,6 @@ class Pages {
     );
   }
 
-  factory Pages.fromCsJson(Map<String, dynamic> json) {
-    return Pages(
-      list: json['list'] != null
-          ? (json['list'] as List)
-              .map((e) => DMedia.fromCs(Map<String, dynamic>.from(e)))
-              .toList()
-          : [],
-      hasNextPage: json['hasNextPage'] ?? false,
-    );
-  }
-
   Map<String, dynamic> toJson() => {
         'list': list.map((v) => v.toJson()).toList(),
         'hasNextPage': hasNextPage,

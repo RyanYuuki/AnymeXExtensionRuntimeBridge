@@ -1,5 +1,5 @@
 import 'dart:async';
-
+import "dart:developer";
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -21,7 +21,7 @@ class CloudStreamSourceMethods extends SourceMethods {
       'url': media.url,
     });
 
-    // print(result.toString());
+    print(result);
 
     return await compute(
       DMedia.fromCs,
@@ -44,14 +44,17 @@ class CloudStreamSourceMethods extends SourceMethods {
 
   @override
   Future<List<Video>> getVideoList(DEpisode episode) async {
-    final result = await platform.invokeMethod('getVideoList', {
+    try {
+      final result = await platform.invokeMethod('getVideoList', {
       'apiName': source.id,
       'url': episode.url,
     });
 
-    print(result.toString());
-
     return await compute(parseVideos, List<dynamic>.from(result));
+    } catch(e, s) {
+      log("$e - $s");
+      return [];
+    }
   }
 
   static const videoStreamChannel =

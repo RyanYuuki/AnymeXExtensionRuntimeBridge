@@ -31,7 +31,7 @@ class DMedia {
     return DMedia(
       title: json['title'] ?? json['name'],
       url: json['url'],
-      cover: json['posterUrl'] ?? json['thumbnail_url'],
+      cover: json['cover'] ?? json['posterUrl'] ?? json['thumbnail_url'],
       description: json['description'],
       artist: json['artist'],
       author: json['author'],
