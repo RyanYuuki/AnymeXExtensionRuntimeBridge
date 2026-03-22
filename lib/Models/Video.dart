@@ -37,6 +37,26 @@ class Video {
     );
   }
 
+  factory Video.fromCs(Map<String, dynamic> json) {
+    return Video(
+      json['title'].toString().trim(),
+      json['url'].toString().trim(),
+      json['quality'].toString().trim(),
+      headers: (json["extraData"]['allHeaders'] as Map?)?.cast<String, String>(),
+      subtitles: json['subtitles'] != null
+          ? (json['subtitles'] as List)
+              .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : [],
+      audios: json['audios'] != null
+          ? (json['audios'] as List)
+              .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : [],
+      extraData: json,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'title': title,
         'url': url,

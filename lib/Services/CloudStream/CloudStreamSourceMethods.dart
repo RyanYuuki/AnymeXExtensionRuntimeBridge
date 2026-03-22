@@ -72,7 +72,7 @@ class CloudStreamSourceMethods extends SourceMethods {
         try {
           final Map<String, dynamic> data =
               Map<String, dynamic>.from(event as Map);
-          final video = Video.fromJson(data);
+          final video = Video.fromCs(data);
 
           if (!controller.isClosed) {
             controller.add(video);
@@ -123,7 +123,7 @@ class CloudStreamSourceMethods extends SourceMethods {
 
   List<Video> parseVideos(List<dynamic> list) {
     return list
-        .map((e) => Video.fromJson(Map<String, dynamic>.from(e)))
+        .map((e) => Video.fromCs(Map<String, dynamic>.from(e)))
         .toList();
   }
 
