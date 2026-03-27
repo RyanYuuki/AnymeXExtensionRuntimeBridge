@@ -53,7 +53,7 @@ class DEpisode {
 
   factory DEpisode.fromCs(Map<String, dynamic> json) {
     return DEpisode(
-        url: json['url'],
+        url: json['dataUrl'] ?? json['url'],
         name: json['name'],
         dateUpload: json['dateUpload']?.toString() ??
             json['date_upload']?.toString() ??

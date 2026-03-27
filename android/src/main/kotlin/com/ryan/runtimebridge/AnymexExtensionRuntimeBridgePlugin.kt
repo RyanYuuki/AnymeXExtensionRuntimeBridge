@@ -131,15 +131,27 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             }
             Log.i(TAG, "Loading APK: $apkPath Size: ${originalApk.length()} LastModified: ${originalApk.lastModified()}")
 
-            val cacheApk = File(ctx.filesDir, "anymex_runtime_host.apk")
-            if (cacheApk.exists()) cacheApk.delete()
-
-            originalApk.inputStream().use { input ->
-                FileOutputStream(cacheApk).use { output ->
-                    input.copyTo(output)
+            val cacheApkName = "anymex_runtime_${originalApk.length()}_${originalApk.lastModified()}.apk"
+            val cacheApk = File(ctx.filesDir, cacheApkName)
+            
+            if (!cacheApk.exists()) {
+                Log.i(TAG, "Creating new cached APK: $cacheApkName")
+                ctx.filesDir.listFiles()?.forEach { file ->
+                    if (file.name.startsWith("anymex_runtime_") && file.name.endsWith(".apk") && file.name != cacheApkName) {
+                        Log.d(TAG, "Deleting old cached APK: ${file.name}")
+                        file.delete()
+                    }
                 }
+
+                originalApk.inputStream().use { input ->
+                    FileOutputStream(cacheApk).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                cacheApk.setReadOnly()
+            } else {
+                Log.i(TAG, "Using existing cached APK: $cacheApkName")
             }
-            cacheApk.setReadOnly()
 
             ctx.cacheDir.listFiles()?.forEach { file ->
                 if (file.isDirectory && file.name.startsWith("anymex_dex_")) {

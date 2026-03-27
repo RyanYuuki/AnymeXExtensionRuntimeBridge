@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'DEpisode.dart';
 
 class DMedia {
@@ -41,10 +42,32 @@ class DMedia {
   }
 
   factory DMedia.fromCs(Map<String, dynamic> json) {
+    final String? mediaTitle = json['title'] ?? json['name'];
+
     final parsedEpisodes = json['episodes'] != null
-        ? (json['episodes'] as List)
-            .map((e) => DEpisode.fromCs(Map<String, dynamic>.from(e)))
-            .toList()
+        ? (json['episodes'] as List).map((e) {
+            final epJson = Map<String, dynamic>.from(e);
+            
+            if (mediaTitle != null && mediaTitle.isNotEmpty) {
+              final String? urlData = epJson['url'] ?? epJson['data'];
+              if (urlData != null && urlData.trim().startsWith('{')) {
+                try {
+                  final decoded = jsonDecode(urlData);
+                  if (decoded is Map<String, dynamic> && !decoded.containsKey('title')) {
+                    decoded['title'] = mediaTitle;
+                    final injected = jsonEncode(decoded);
+                    epJson['url'] = injected;
+                    if (epJson.containsKey('data')) {
+                      epJson['data'] = injected;
+                    }
+                  }
+                } catch (_) {
+
+                }
+              }
+            }
+            return DEpisode.fromCs(epJson);
+          }).toList()
         : <DEpisode>[];
 
     return DMedia(
