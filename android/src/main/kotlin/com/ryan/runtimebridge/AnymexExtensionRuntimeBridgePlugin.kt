@@ -18,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.isActive
 import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
@@ -35,6 +36,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     private lateinit var aniyomiChannel: MethodChannel
     private lateinit var cloudStreamChannel: MethodChannel
     private lateinit var videoStreamEventChannel: EventChannel
+    private lateinit var loggingChannel: MethodChannel
 
 
     private var context: Context? = null
@@ -69,6 +71,22 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 videoStreamJob = null
             }
         })
+
+        loggingChannel = MethodChannel(binding.binaryMessenger, "anymexLogger")
+        loggingChannel.setMethodCallHandler { call, result ->
+            if (call.method == "ready") {
+                flutterReady = true
+                logQueue.forEach { logMap ->
+                    try {
+                        loggingChannel.invokeMethod("log", logMap)
+                    } catch (e: Exception) {}
+                }
+                logQueue.clear()
+                result.success(null)
+            } else {
+                result.notImplemented()
+            }
+        }
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -111,6 +129,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 Log.e(TAG, "APK does not exist at path: $apkPath")
                 return false
             }
+            Log.i(TAG, "Loading APK: $apkPath Size: ${originalApk.length()} LastModified: ${originalApk.lastModified()}")
 
             val cacheApk = File(ctx.filesDir, "anymex_runtime_host.apk")
             if (cacheApk.exists()) cacheApk.delete()
@@ -122,9 +141,16 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             }
             cacheApk.setReadOnly()
 
-            val optimizedDir = File(ctx.cacheDir, "anymex_dex")
-            if (optimizedDir.exists()) optimizedDir.deleteRecursively()
+            ctx.cacheDir.listFiles()?.forEach { file ->
+                if (file.isDirectory && file.name.startsWith("anymex_dex_")) {
+                    file.deleteRecursively()
+                }
+            }
+
+            val optimizedDir = File(ctx.cacheDir, "anymex_dex_${System.currentTimeMillis()}")
             optimizedDir.mkdirs()
+            
+            Log.d(TAG, "Using optimized dex dir: ${optimizedDir.absolutePath}")
 
             val loader = ChildFirstClassLoader(
                 cacheApk.absolutePath,
@@ -143,7 +169,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             Log.i(TAG, "Runtime Host loaded successfully")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load Runtime Host APK: ${e.message}", e)
+            Log.e(TAG, "Failed to load Runtime Host APK: ${e.message}")
             false
         }
     }
@@ -157,10 +183,14 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                     return
                 }
                 scope.launch {
-                    val ok = loadAnymeXRuntimeHost(path)
-                    withContext(Dispatchers.Main) {
-                        if (ok) result.success(true)
-                        else result.error("LOAD_FAILED", "Failed to load runtime host APK", null)
+                    try {
+                        val ok = loadAnymeXRuntimeHost(path)
+                        withContext(Dispatchers.Main) {
+                            if (ok) result.success(true)
+                            else result.error("LOAD_FAILED", "Failed to load runtime host APK", null)
+                        }
+                    } catch (e: Exception) {
+                        sendError(result, "loadAnymeXRuntimeHost", e)
                     }
                 }
             }
@@ -248,8 +278,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 }
                 withContext(Dispatchers.Main) { result.success(res) }
             } catch (e: Exception) {
-                Log.e(TAG, "Aniyomi call failed [${call.method}]: ${e.message}", e)
-                withContext(Dispatchers.Main) { result.error("ERROR", e.message, null) }
+                sendError(result, "Aniyomi.${call.method}", e)
             }
         }
     }
@@ -317,8 +346,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 }
                 withContext(Dispatchers.Main) { result.success(res) }
             } catch (e: Exception) {
-                Log.e(TAG, "CloudStream call failed [${call.method}]: ${e.message}", e)
-                withContext(Dispatchers.Main) { result.error("ERROR", e.message, null) }
+                sendError(result, "CloudStream.${call.method}", e)
             }
         }
     }
@@ -362,22 +390,42 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "videoStream failed: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    events?.error("VIDEO_STREAM_FAILED", e.message ?: "Unknown error", null)
-                    events?.endOfStream()
-                }
+                sendError(result = object : MethodResult {
+                    override fun success(res: Any?) {}
+                    override fun error(code: String, msg: String?, details: Any?) {
+                        events?.error(code, msg, details)
+                    }
+                    override fun notImplemented() {
+                        events?.endOfStream()
+                    }
+                }, methodName = "videoStream", e = e)
+                withContext(Dispatchers.Main) { events?.endOfStream() }
             }
         }
     }
 
 
+    private fun sendError(result: MethodResult, methodName: String, e: Exception) {
+        val stackTrace = Log.getStackTraceString(e)
+        val errorMessage = e.message ?: "Unknown error"
+        val detailedError = "Method: $methodName\nError: $errorMessage\n$stackTrace"
+        
+        Log.e(TAG, detailedError)
+        logToFlutter("ERROR", "BRIDGE", detailedError)
+        
+        scope.launch(Dispatchers.Main) {
+            result.error("BRIDGE_ERROR", errorMessage, detailedError)
+        }
+    }
+
     private fun call(methodName: String, vararg args: Any?): Any? {
         val bridge = runtimeBridge ?: throw IllegalStateException("Runtime Host not loaded")
         val cls = bridgeClass ?: throw IllegalStateException("Runtime Host class not loaded")
 
-        val method = cls.methods.firstOrNull { it.name == methodName }
-            ?: throw NoSuchMethodException("No method '$methodName' in RuntimeBridge")
+        val method = cls.methods.filter { it.name == methodName }
+            .firstOrNull { it.parameterTypes.size == args.size }
+            ?: cls.methods.firstOrNull { it.name == methodName } 
+            ?: throw NoSuchMethodException("No method '$methodName' in RuntimeBridge with ${args.size} parameters")
 
         return method.invoke(bridge, *args)
     }
@@ -391,6 +439,23 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     }
 
     private fun effectiveContext(): Context? = activity ?: context
+
+    private val logQueue = mutableListOf<Map<String, String>>()
+    private var flutterReady = false
+
+    private fun logToFlutter(level: String, tag: String, message: String) {
+        scope.launch(Dispatchers.Main) {
+            val logMap = mapOf("level" to level, "tag" to tag, "message" to message)
+            if (flutterReady) {
+                try {
+                    loggingChannel.invokeMethod("log", logMap)
+                } catch (e: Exception) {}
+            } else {
+                logQueue.add(logMap)
+                if (logQueue.size > 2000) logQueue.removeAt(0)
+            }
+        }
+    }
 
     private class ChildFirstClassLoader(
         dexPath: String,
