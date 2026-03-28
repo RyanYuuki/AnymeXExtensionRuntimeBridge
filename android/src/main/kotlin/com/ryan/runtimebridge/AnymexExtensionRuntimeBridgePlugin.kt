@@ -167,7 +167,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             val loader = ChildFirstClassLoader(
                 cacheApk.absolutePath,
                 optimizedDir.absolutePath,
-                null,
+                cacheApk.absolutePath,
                 ctx.classLoader!!
             )
 
@@ -180,7 +180,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
             Log.i(TAG, "Runtime Host loaded successfully")
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to load Runtime Host APK: ${e.message}")
             false
         }
@@ -201,7 +201,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                             if (ok) result.success(true)
                             else result.error("LOAD_FAILED", "Failed to load runtime host APK", null)
                         }
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
                         sendError(result, "loadAnymeXRuntimeHost", e)
                     }
                 }
@@ -289,7 +289,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                     else -> { withContext(Dispatchers.Main) { result.notImplemented() }; return@launch }
                 }
                 withContext(Dispatchers.Main) { result.success(res) }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 sendError(result, "Aniyomi.${call.method}", e)
             }
         }
@@ -357,7 +357,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                     else -> { withContext(Dispatchers.Main) { result.notImplemented() }; return@launch }
                 }
                 withContext(Dispatchers.Main) { result.success(res) }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 sendError(result, "CloudStream.${call.method}", e)
             }
         }
@@ -401,7 +401,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 withContext(Dispatchers.Main) { events?.endOfStream() }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 sendError(result = object : MethodResult {
                     override fun success(res: Any?) {}
                     override fun error(code: String, msg: String?, details: Any?) {
@@ -417,7 +417,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     }
 
 
-    private fun sendError(result: MethodResult, methodName: String, e: Exception) {
+    private fun sendError(result: MethodResult, methodName: String, e: Throwable) {
         val stackTrace = Log.getStackTraceString(e)
         val errorMessage = e.message ?: "Unknown error"
         val detailedError = "Method: $methodName\nError: $errorMessage\n$stackTrace"
@@ -439,7 +439,11 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             ?: cls.methods.firstOrNull { it.name == methodName } 
             ?: throw NoSuchMethodException("No method '$methodName' in RuntimeBridge with ${args.size} parameters")
 
-        return method.invoke(bridge, *args)
+        logToFlutter("INFO", "BRIDGE", "Calling Method: RuntimeBridge.$methodName")
+        val result = method.invoke(bridge, *args)
+        logToFlutter("INFO", "BRIDGE", "Method '$methodName' completed successfully")
+        
+        return result
     }
 
     private fun ensureLoaded(result: MethodResult): Boolean {
