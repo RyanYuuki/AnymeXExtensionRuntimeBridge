@@ -1,28 +1,66 @@
 import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-
 import 'Logger.dart';
 import 'Settings/KvStore.dart';
+import 'Services/Runtime/RuntimeDownloader.dart';
+import 'Services/Runtime/RuntimeController.dart';
+import 'Services/Runtime/RuntimePaths.dart';
+
 
 class AnymeXRuntimeBridge {
   static const _channel = MethodChannel('anymeXBridge');
 
-  static bool get _isSupportedPlatform => Platform.isAndroid;
+  static bool get isSupportedPlatform => 
+      Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
-  /// Loads the Runtime Host APK from the given [apkPath].
-  /// This must be called (and must return true) before any Aniyomi or CloudStream
-  /// extension methods are invoked.
-  /// also gang if it throws error, then try using loadRuntimeHostFromPicker or pick a app sandbox path
-  static Future<bool> loadAnymeXRuntimeHost(String apkPath) async {
-    if (!_isSupportedPlatform) return false;
+  /// Setup the AnymeX Runtime Bridge (Android APK or Desktop JRE/JAR).
+  /// This handles downloading, tracking progress, and initialization.
+  /// Set [force] to true to re-download the Bridge JAR/APK (useful for updates).
+  /// Note: The JRE is only downloaded if missing, regardless of [force].
+  static Future<void> setupRuntime({String? customDownloadUrl, bool force = false}) async {
+    if (!isSupportedPlatform) return;
+    await RuntimeDownloader().setupRuntime(customUrl: customDownloadUrl, force: force);
+  }
+
+  /// Checks if the runtime files already exist and initializes the bridge if they do.
+  /// Call this on app startup to auto-load the bridge.
+  static Future<void> checkAndInitialize() async {
+    if (!isSupportedPlatform) return;
+    
+    final paths = RuntimePaths();
+    final bridgePath = await paths.bridgePath;
+    final bridgeFile = File(bridgePath);
+    
+    bool exists = await bridgeFile.exists();
+    
+    if (!Platform.isAndroid) {
+      final jreDir = await paths.jreDir;
+      exists = exists && await jreDir.exists();
+    }
+
+    if (exists) {
+      if (Platform.isAndroid) {
+        await loadAnymeXRuntimeHost(bridgePath);
+      } else {
+        controller.setReady(true);
+      }
+      Logger.log("AnymeX Bridge auto-detected and initialized.");
+    }
+  }
+
+  /// Reactive controller for UI setup status and progress
+  static RuntimeController get controller => RuntimeController.it;
+
+  /// Standard MethodChannel call for Android only
+  static Future<bool> loadAnymeXRuntimeHost(String apkPath,
+      {Map<String, dynamic>? settings}) async {
+    if (!Platform.isAndroid) return false;
 
     try {
       final result =
           await _channel.invokeMethod<bool>('loadAnymeXRuntimeHost', {
         'path': apkPath,
+        if (settings != null) 'settings': settings,
       });
       final bool isLoaded = result ?? false;
 
@@ -43,41 +81,30 @@ class AnymeXRuntimeBridge {
 
   /// Checks if the AnymeXBridgeHost is already loaded into memory.
   static Future<bool> isLoaded() async {
-    if (!_isSupportedPlatform) return false;
-
-    try {
-      final result = await _channel.invokeMethod<bool>('isLoaded');
-      return result ?? false;
-    } catch (e) {
-      return false;
+    if (Platform.isAndroid) {
+      try {
+        final result = await _channel.invokeMethod<bool>('isLoaded');
+        return result ?? false;
+      } catch (e) {
+        return false;
+      }
     }
+    return controller.isReady.value;
   }
 
-  /// Opens a file picker for the user to select the Runtime Host APK.
-  /// If selected, copies it to the app's document directory and loads it.
-  static Future<bool> loadRuntimeHostFromPicker() async {
-    if (!_isSupportedPlatform) return false;
-
-    try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['apk'],
-      );
-
-      if (result != null && result.files.single.path != null) {
-        final String originalPath = result.files.single.path!;
-        final Directory appDocDir = await getApplicationDocumentsDirectory();
-
-        final String targetPath = '${appDocDir.path}/runtime_host.apk';
-        final File originalFile = File(originalPath);
-        await originalFile.copy(targetPath);
-
-        return await loadAnymeXRuntimeHost(targetPath);
+  /// Cancels an active request in the Runtime Host using its [token].
+  static Future<bool> cancelRequest(String token) async {
+    if (Platform.isAndroid) {
+      try {
+        final result = await _channel.invokeMethod<bool>('cancelRequest', {
+          'token': token,
+        });
+        return result ?? false;
+      } catch (e) {
+        print('Failed to cancel request for token $token: $e');
+        return false;
       }
-      return false;
-    } catch (e) {
-      print('Error picking or loading APK: $e');
-      return false;
     }
+    return false; 
   }
 }

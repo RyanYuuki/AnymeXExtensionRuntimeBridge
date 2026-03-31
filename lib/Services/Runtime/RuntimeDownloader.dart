@@ -1,0 +1,163 @@
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+import '../../AnymeXBridge.dart';
+import 'RuntimePaths.dart';
+import 'RuntimeController.dart';
+
+class RuntimeDownloader {
+  static final RuntimeDownloader _instance = RuntimeDownloader._internal();
+  factory RuntimeDownloader() => _instance;
+  RuntimeDownloader._internal();
+
+  final _paths = RuntimePaths();
+  final _client = http.Client();
+
+  static const String androidApkUrl = 
+      "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/latest/download/anymex_runtime_host.apk";
+  static const String desktopJarUrl = 
+      "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/latest/download/anymex_desktop_runtime.jar";
+
+  static String get _jreUrl {
+    if (Platform.isWindows) {
+      return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_x64_windows_hotspot_17.0.12_7.zip";
+    } else if (Platform.isMacOS) {
+      return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_x64_mac_hotspot_17.0.12_7.tar.gz";
+    } else {
+      return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_x64_linux_hotspot_17.0.12_7.tar.gz";
+    }
+  }
+
+  Future<void> setupRuntime({String? customUrl, bool force = false}) async {
+    final controller = RuntimeController.it;
+    if (controller.isDownloading.value) return;
+
+    controller.isDownloading.value = true;
+    controller.updateStatus("Initializing setup...");
+
+    try {
+      final bridgePath = await _paths.bridgePath;
+      final bridgeFile = File(bridgePath);
+      final jreDir = await _paths.jreDir;
+      
+      bool needsBridge = force || !await bridgeFile.exists();
+      bool needsJre = !Platform.isAndroid && !await jreDir.exists();
+
+
+      int totalFiles = (needsBridge ? 1 : 0) + (needsJre ? 1 : 0);
+      int currentFileIndex = 0;
+
+      if (needsBridge) {
+        currentFileIndex++;
+        final downloadUrl = customUrl ?? (Platform.isAndroid ? androidApkUrl : desktopJarUrl);
+        final label = Platform.isAndroid ? "Runtime APK" : "Bridge JAR";
+        final stepPrefix = totalFiles > 1 ? "($currentFileIndex/$totalFiles) " : "";
+        await _downloadFile(downloadUrl, bridgeFile.path, "$stepPrefix$label");
+      }
+
+      if (needsJre) {
+        currentFileIndex++;
+        final ext = Platform.isWindows ? ".zip" : ".tar.gz";
+        final jreArchive = File(p.join((await _paths.runtimeDir).path, "jre_archive$ext"));
+        
+        final stepPrefix = totalFiles > 1 ? "($currentFileIndex/$totalFiles) " : "";
+        await _downloadFile(_jreUrl, jreArchive.path, "$stepPrefix Runtime");
+        
+        controller.updateStatus("Extracting Java Runtime...");
+        await _extractArchive(jreArchive.path, jreDir.path);
+        
+        if (await jreArchive.exists()) await jreArchive.delete();
+
+        if (Platform.isMacOS) {
+          controller.updateStatus("Applying macOS fixes...");
+          await Process.run('xattr', ['-cr', jreDir.path]);
+        }
+      }
+
+      controller.updateStatus("Finalizing bridge...");
+      bool isLoaded;
+      
+      if (Platform.isAndroid) {
+        isLoaded = await AnymeXRuntimeBridge.loadAnymeXRuntimeHost(bridgeFile.path);
+      } else {
+        isLoaded = true; 
+      }
+
+      if (isLoaded) {
+        controller.updateStatus("Ready.");
+        controller.setReady(true);
+      } else {
+        throw Exception("Failed to load runtime bridge host.");
+      }
+    } catch (e) {
+      if (e.toString().contains("404")) {
+        controller.setError("Runtime not found! The release might not be published yet.");
+      } else {
+        controller.setError(e.toString());
+      }
+    } finally {
+      controller.isDownloading.value = false;
+    }
+  }
+
+  Future<void> _downloadFile(String url, String savePath, String label) async {
+    final controller = RuntimeController.it;
+    controller.updateStatus("Downloading $label...");
+
+    final request = http.Request('GET', Uri.parse(url));
+    final response = await _client.send(request);
+    
+    if (response.statusCode != 200) {
+      throw Exception("Failed to download $label: HTTP ${response.statusCode}");
+    }
+
+    final totalSize = response.contentLength ?? 0;
+    var downloaded = 0;
+    final file = File(savePath);
+    final sink = file.openWrite();
+
+    await for (final chunk in response.stream) {
+      sink.add(chunk);
+      downloaded += chunk.length;
+      
+      if (totalSize > 0) {
+        final progress = (downloaded / totalSize).clamp(0.0, 1.0);
+        final info = "${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB / ${(totalSize / 1024 / 1024).toStringAsFixed(1)} MB";
+        controller.updateProgress(progress, info);
+      } else {
+        controller.updateProgress(0.0, "${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB downloaded");
+      }
+    }
+    await sink.close();
+  }
+
+  Future<void> _extractArchive(String archivePath, String targetDir) async {
+    final targetDirObj = Directory(targetDir);
+    if (!await targetDirObj.exists()) await targetDirObj.create(recursive: true);
+
+    if (Platform.isWindows) {
+      final absoluteArchivePath = File(archivePath).absolute.path;
+      final absoluteTargetDir = Directory(targetDir).absolute.path;
+      final command = "Expand-Archive -Path '$absoluteArchivePath' -DestinationPath '$absoluteTargetDir' -Force";
+      final result = await Process.run('powershell', ['-Command', command]);
+      if (result.exitCode != 0) throw Exception("Extraction failed: ${result.stderr}");
+    } else {
+      final result = await Process.run('tar', ['-xzf', archivePath, '-C', targetDir]);
+      if (result.exitCode != 0) throw Exception("Extraction failed: ${result.stderr}");
+    }
+    await _flattenJreFolder(targetDir);
+  }
+
+  Future<void> _flattenJreFolder(String jrePath) async {
+    final dir = Directory(jrePath);
+    final entities = await dir.list().toList();
+    if (entities.length == 1 && entities.first is Directory) {
+      final innerDir = entities.first as Directory;
+      for (final entity in await innerDir.list().toList()) {
+        final newPath = p.join(jrePath, p.basename(entity.path));
+        await entity.rename(newPath);
+      }
+      await innerDir.delete();
+    }
+  }
+}

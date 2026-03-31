@@ -374,6 +374,11 @@ class AniyomiExtensions extends Extension {
   }
 
   @override
+  Future<void> cancelRequest(String token) async {
+    await AnymeXRuntimeBridge.cancelRequest(token);
+  }
+
+  @override
   Future<void> addRepo(String repoUrl, ItemType type) async {
     try {
       final uri = Uri.tryParse(repoUrl);

@@ -7,6 +7,7 @@ import '../../Models/DMedia.dart';
 import '../../Models/Page.dart';
 import '../../Models/Pages.dart';
 import '../../Models/Source.dart';
+import '../../Models/SourceParams.dart';
 import '../../Models/SourcePreference.dart' as s;
 import '../../Models/Video.dart';
 import 'Eval/dart/model/m_manga.dart';
@@ -24,7 +25,7 @@ class MangayomiSourceMethods implements SourceMethods {
   MangayomiSourceMethods(Source source) : source = source as MSource;
 
   @override
-  Future<DMedia> getDetail(DMedia media) async {
+  Future<DMedia> getDetail(DMedia media, {SourceParams? parameters}) async {
     try {
       final data = await getExtensionService(source).getDetail(media.url!);
 
@@ -71,35 +72,38 @@ class MangayomiSourceMethods implements SourceMethods {
   }
 
   @override
-  Future<Pages> getLatestUpdates(int page) async {
+  Future<Pages> getLatestUpdates(int page, {SourceParams? parameters}) async {
     final data = await getExtensionService(source).getLatestUpdates(page);
 
     return Pages(hasNextPage: data.hasNextPage, list: _mapMediaList(data.list));
   }
 
   @override
-  Future<Pages> getPopular(int page) async {
+  Future<Pages> getPopular(int page, {SourceParams? parameters}) async {
     final data = await getExtensionService(source).getPopular(page);
 
     return Pages(hasNextPage: data.hasNextPage, list: _mapMediaList(data.list));
   }
 
   @override
-  Future<Pages> search(String query, int page, List filters) async {
+  Future<Pages> search(String query, int page, List filters,
+      {SourceParams? parameters}) async {
     final data = await getExtensionService(source).search(query, page, filters);
 
     return Pages(hasNextPage: data.hasNextPage, list: _mapMediaList(data.list));
   }
 
   @override
-  Future<List<PageUrl>> getPageList(DEpisode episode) async {
+  Future<List<PageUrl>> getPageList(DEpisode episode,
+      {SourceParams? parameters}) async {
     final data = await getExtensionService(source).getPageList(episode.url!);
 
     return data.map((e) => PageUrl(e.url, headers: e.headers)).toList();
   }
 
   @override
-  Future<List<Video>> getVideoList(DEpisode episode) async {
+  Future<List<Video>> getVideoList(DEpisode episode,
+      {SourceParams? parameters}) async {
     final data = await getExtensionService(source).getVideoList(episode.url!);
 
     return data.map((e) {
@@ -118,7 +122,8 @@ class MangayomiSourceMethods implements SourceMethods {
   }
 
   @override
-  Future<String?> getNovelContent(String chapterTitle, String chapterId) async {
+  Future<String?> getNovelContent(String chapterTitle, String chapterId,
+      {SourceParams? parameters}) async {
     try {
       final data = await getExtensionService(source)
           .getHtmlContent(chapterTitle, chapterId);
@@ -196,5 +201,12 @@ class MangayomiSourceMethods implements SourceMethods {
   }
 
   @override
-  Stream<Video>? getVideoListStream(DEpisode episode) => null;
+  Stream<Video>? getVideoListStream(DEpisode episode,
+          {SourceParams? parameters}) =>
+      null;
+
+  @override
+  Future<void> cancelRequest(String token) {
+    throw UnimplementedError();
+  }
 }

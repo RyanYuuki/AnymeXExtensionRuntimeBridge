@@ -22,7 +22,7 @@ class SoraExtensions extends Extension {
   String get name => 'Sora';
 
   @override
-  bool get supportsNovel => false;
+  bool get supportsNovel => true;
 
   @override
   SourceMethods createSourceMethods(Source source) => SoraSourceMethods(source);
@@ -217,9 +217,9 @@ class SoraExtensions extends Extension {
         final type = (ext['type'] ?? '').toString().toLowerCase();
 
         final matches = switch (itemType) {
-          ItemType.anime => type == 'anime' || type == 'movie',
+          ItemType.anime => type == 'anime' || type == 'shows/movies',
           ItemType.manga => type == 'mangas',
-          _ => false,
+          ItemType.novel => type == "novels",
         };
 
         if (!matches) continue;
@@ -425,6 +425,8 @@ class SoraExtensions extends Extension {
         final itemType = switch (type?.toLowerCase()) {
           "anime" => ItemType.anime,
           "manga" => ItemType.manga,
+          "shows/movies" => ItemType.anime,
+          "novels" => ItemType.novel,
           _ => ItemType.anime,
         };
 

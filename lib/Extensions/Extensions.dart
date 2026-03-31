@@ -70,6 +70,8 @@ abstract class Extension {
 
   Future<void> updateSource(Source source);
 
+  Future<void> cancelRequest(String token) async {}
+
   Future<void> fetchAnimeExtensions();
 
   Future<void> fetchMangaExtensions();

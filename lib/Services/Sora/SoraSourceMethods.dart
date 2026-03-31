@@ -11,6 +11,7 @@ import '../../Models/DMedia.dart';
 import '../../Models/Page.dart';
 import '../../Models/Pages.dart';
 import '../../Models/Source.dart';
+import '../../Models/SourceParams.dart';
 import '../../Models/SourcePreference.dart';
 import '../../Models/Video.dart';
 import '../Mangayomi/http/m_client.dart';
@@ -203,7 +204,7 @@ class SoraSourceMethods extends SourceMethods {
   }
 
   @override
-  Future<DMedia> getDetail(DMedia media) async {
+  Future<DMedia> getDetail(DMedia media, {SourceParams? parameters}) async {
     try {
       final resultMedia = DMedia(
         title: media.title,
@@ -254,7 +255,8 @@ class SoraSourceMethods extends SourceMethods {
   }
 
   @override
-  Future<Pages> search(String query, int page, List<dynamic> filters) async {
+  Future<Pages> search(String query, int page, List<dynamic> filters,
+      {SourceParams? parameters}) async {
     try {
       final callRes = await _call("searchResults", [query, page, filters]);
       final list = await compute(_parseSearchResults, callRes);
@@ -265,10 +267,12 @@ class SoraSourceMethods extends SourceMethods {
   }
 
   @override
-  Future<Pages> getLatestUpdates(int page) => search("One Piece", page, []);
+  Future<Pages> getLatestUpdates(int page, {SourceParams? parameters}) =>
+      search("One Piece", page, []);
 
   @override
-  Future<Pages> getPopular(int page) => search("One Piece", page, []);
+  Future<Pages> getPopular(int page, {SourceParams? parameters}) =>
+      search("One Piece", page, []);
 
   static List<PageUrl> _parsePageListResult(dynamic data) {
     if (data is String) {
@@ -294,13 +298,15 @@ class SoraSourceMethods extends SourceMethods {
   }
 
   @override
-  Future<List<PageUrl>> getPageList(DEpisode episode) async {
+  Future<List<PageUrl>> getPageList(DEpisode episode,
+      {SourceParams? parameters}) async {
     final data = await _call("extractImages", [episode.url]);
     return await compute(_parsePageListResult, data);
   }
 
   @override
-  Future<List<Video>> getVideoList(DEpisode episode) async {
+  Future<List<Video>> getVideoList(DEpisode episode,
+      {SourceParams? parameters}) async {
     final data = (await _call("extractStreamUrl", [episode.url]));
 
     if (_isErrorPayload(data)) {
@@ -438,12 +444,18 @@ class SoraSourceMethods extends SourceMethods {
   Future<List<SourcePreference>> getPreference() => Future.value([]);
 
   @override
-  Future<String?> getNovelContent(String chapterTitle, String chapterId) {
+  Future<String?> getNovelContent(String chapterTitle, String chapterId,
+      {SourceParams? parameters}) {
     throw UnimplementedError();
   }
 
   @override
   Future<bool> setPreference(SourcePreference pref, value) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> cancelRequest(String token) {
     throw UnimplementedError();
   }
 }

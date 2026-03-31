@@ -21,6 +21,7 @@ class AnymeXExtensionBridge {
 
   static late final BridgeContext context;
   static bool _initialized = false;
+  static String projectName = 'AnymeX';
 
   /// A safe default [GetDirectory] implementation using `path_provider`.
   ///
@@ -73,8 +74,13 @@ class AnymeXExtensionBridge {
     required GetDirectory getDirectory,
     Client? http,
     Isar? isarInstance,
+    String? projectName,
   }) async {
     if (_initialized) return;
+
+    if (projectName != null) {
+      AnymeXExtensionBridge.projectName = projectName;
+    }
 
     Logger.init();
 

@@ -78,10 +78,12 @@ class DMedia {
       artist: json['artist'],
       author: json['author'],
       genre: json['genre'] != null ? List<String>.from(json['genre']) : [],
-      episodes: (parsedEpisodes[0].episodeNumber != '0') ||
-              (parsedEpisodes[0].episodeNumber != '1')
-          ? parsedEpisodes.reversed.toList()
-          : parsedEpisodes,
+      episodes: parsedEpisodes.isEmpty
+          ? []
+          : (parsedEpisodes[0].episodeNumber != '0') ||
+                  (parsedEpisodes[0].episodeNumber != '1')
+              ? parsedEpisodes.reversed.toList()
+              : parsedEpisodes,
     );
   }
 

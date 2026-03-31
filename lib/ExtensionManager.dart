@@ -9,6 +9,7 @@ import 'Services/CloudStream/CloudStreamExtensions.dart';
 import 'Services/Mangayomi/MangayomiExtensions.dart';
 import 'Services/Sora/Models/Source.dart';
 import 'Services/Sora/SoraExtensions.dart';
+import 'Services/AniyomiDesktop/DesktopAniyomiExtensions.dart';
 import 'anymex_extension_runtime_bridge.dart';
 
 class ExtensionManager extends GetxController {
@@ -33,6 +34,8 @@ class ExtensionManager extends GetxController {
   }
 
   Future<void> _initDefaultManagers() async {
+    await AnymeXRuntimeBridge.checkAndInitialize();
+    
     await _registerAndInitializeManagers([
       SoraExtensions(),
       MangayomiExtensions(),
@@ -48,8 +51,12 @@ class ExtensionManager extends GetxController {
     if (isAnymeXRuntimeHostLoaded) {
       await _registerAndInitializeManagers(
         [
-          AniyomiExtensions(),
-          CloudStreamExtensions(),
+          if (Platform.isAndroid) ...[
+            AniyomiExtensions(),
+            CloudStreamExtensions(),
+          ] else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) ...[
+            DesktopAniyomiExtensions(),
+          ],
         ],
         insertAtStart: true,
         onManagerInitializing: onManagerInitializing,
@@ -316,12 +323,17 @@ extension SourceExecution on Source {
   Future<void> uninstall() async =>
       getSourceManager(this).uninstallSource(this);
   Future<void> update() async => getSourceManager(this).updateSource(this);
+
+  Future<void> cancelRequest(String token) async =>
+      getSourceManager(this).cancelRequest(token);
 }
 
 Extension getSourceManager(Source source) {
   final em = Get.find<ExtensionManager>();
 
-  if (source is ASource) return em.findById('aniyomi')!;
+  if (source is ASource) {
+    return em.findById('aniyomi') ?? em.findById('aniyomi-desktop')!;
+  }
   if (source is MSource) return em.findById('mangayomi')!;
   if (source is SSource) return em.findById('sora')!;
   if (source is CloudStreamSource) return em.findById('cloudstream')!;

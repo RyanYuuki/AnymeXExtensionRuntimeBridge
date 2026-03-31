@@ -270,6 +270,11 @@ class CloudStreamExtensions extends Extension {
   }
 
   @override
+  Future<void> cancelRequest(String token) async {
+    await AnymeXRuntimeBridge.cancelRequest(token);
+  }
+
+  @override
   Future<void> addRepo(String repoUrl, ItemType type) async {
     final repos = _loadRepos();
 

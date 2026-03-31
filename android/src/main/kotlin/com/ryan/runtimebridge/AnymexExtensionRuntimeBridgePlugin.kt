@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.cancel
 import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
@@ -64,7 +65,11 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 val args = arguments as? Map<*, *> ?: return
                 val apiName = args["apiName"] as? String ?: return
                 val url = args["url"] as? String ?: return
-                handleVideoStream(apiName, url, events)
+                val params = (args["parameters"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()
+                if (args.containsKey("token")) {
+                    params["token"] = args["token"]
+                }
+                handleVideoStream(apiName, url, params, events)
             }
             override fun onCancel(arguments: Any?) {
                 videoStreamJob?.cancel()
@@ -95,6 +100,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         cloudStreamChannel.setMethodCallHandler(null)
         videoStreamEventChannel.setStreamHandler(null)
         videoStreamJob?.cancel()
+        scope.cancel()
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -113,11 +119,20 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         activity = null
     }
 
-    private fun loadAnymeXRuntimeHost(apkPath: String): Boolean {
+    private fun loadAnymeXRuntimeHost(apkPath: String, settingsMap: Map<String, Any?>? = null): Boolean {
         Log.i(TAG, "loadAnymeXRuntimeHost called with: $apkPath")
         val ctx = context ?: run {
             Log.e(TAG, "loadAnymeXRuntimeHost: context is null")
             return false
+        }
+
+        runtimeBridge?.let { oldBridge ->
+            try {
+                Log.i(TAG, "Shutting down existing runtime host...")
+                bridgeClass?.getMethod("shutdown")?.invoke(oldBridge)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error shutting down old runtime host: ${e.message}")
+            }
         }
 
         return try {
@@ -133,7 +148,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
             val cacheApkName = "anymex_runtime_${originalApk.length()}_${originalApk.lastModified()}.apk"
             val cacheApk = File(ctx.filesDir, cacheApkName)
-            
+
             if (!cacheApk.exists()) {
                 Log.i(TAG, "Creating new cached APK: $cacheApkName")
                 ctx.filesDir.listFiles()?.forEach { file ->
@@ -161,7 +176,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
             val optimizedDir = File(ctx.cacheDir, "anymex_dex_${System.currentTimeMillis()}")
             optimizedDir.mkdirs()
-            
+
             Log.d(TAG, "Using optimized dex dir: ${optimizedDir.absolutePath}")
 
             val loader = ChildFirstClassLoader(
@@ -174,9 +189,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             bridgeClass = loader.loadClass("com.anymex.runtimehost.RuntimeBridge")
             Log.d(TAG, "bridgeClass loaded: $bridgeClass")
             runtimeBridge = bridgeClass!!.getField("INSTANCE").get(null)
-            Log.d(TAG, "runtimeBridge assigned: $runtimeBridge")
-
-            call("initialize", ctx)
+            call("initialize", ctx, settingsMap)
 
             Log.i(TAG, "Runtime Host loaded successfully")
             true
@@ -190,13 +203,14 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         when (call.method) {
             "loadAnymeXRuntimeHost" -> {
                 val path = call.argument<String>("path")
+                val settingsMap = call.argument<Map<String, Any?>>("settings")
                 if (path.isNullOrBlank()) {
                     result.error("INVALID_ARG", "path is required", null)
                     return
                 }
                 scope.launch {
                     try {
-                        val ok = loadAnymeXRuntimeHost(path)
+                        val ok = loadAnymeXRuntimeHost(path, settingsMap)
                         withContext(Dispatchers.Main) {
                             if (ok) result.success(true)
                             else result.error("LOAD_FAILED", "Failed to load runtime host APK", null)
@@ -209,6 +223,15 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             "isLoaded" -> {
                 Log.d(TAG, "isLoaded check: runtimeBridge=$runtimeBridge, bridgeClass=$bridgeClass")
                 result.success(runtimeBridge != null)
+            }
+            "cancelRequest" -> {
+                val token = call.argument<String>("token")
+                if (token != null) {
+                    val ok = call("cancelRequest", token) as? Boolean ?: false
+                    result.success(ok)
+                } else {
+                    result.error("INVALID_ARG", "token is required", null)
+                }
             }
             else -> result.notImplemented()
         }
@@ -234,14 +257,16 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                         call("aniyomiGetPopular", ctx,
                             args["sourceId"] as String,
                             args["isAnime"] as Boolean,
-                            args["page"] as Int)
+                            args["page"] as Int,
+                            args["parameters"] as? Map<String, Any?>)
                     }
                     "getLatestUpdates" -> {
                         val args = call.arguments as Map<*, *>
                         call("aniyomiGetLatestUpdates", ctx,
                             args["sourceId"] as String,
                             args["isAnime"] as Boolean,
-                            args["page"] as Int)
+                            args["page"] as Int,
+                            args["parameters"] as? Map<String, Any?>)
                     }
                     "search" -> {
                         val args = call.arguments as Map<*, *>
@@ -249,28 +274,32 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                             args["sourceId"] as String,
                             args["isAnime"] as Boolean,
                             args["query"] as String,
-                            args["page"] as Int)
+                            args["page"] as Int,
+                            args["parameters"] as? Map<String, Any?>)
                     }
                     "getDetail" -> {
                         val args = call.arguments as Map<*, *>
                         call("aniyomiGetDetail", ctx,
                             args["sourceId"] as String,
                             args["isAnime"] as Boolean,
-                            args["media"] as Map<String, Any?>)
+                            args["media"] as Map<String, Any?>,
+                            args["parameters"] as? Map<String, Any?>)
                     }
                     "getVideoList" -> {
                         val args = call.arguments as Map<*, *>
                         call("aniyomiGetVideoList", ctx,
                             args["sourceId"] as String,
                             args["isAnime"] as Boolean,
-                            args["episode"] as Map<String, Any?>)
+                            args["episode"] as Map<String, Any?>,
+                            args["parameters"] as? Map<String, Any?>)
                     }
                     "getPageList" -> {
                         val args = call.arguments as Map<*, *>
                         call("aniyomiGetPageList", ctx,
                             args["sourceId"] as String,
                             args["isAnime"] as Boolean,
-                            args["episode"] as Map<String, Any?>)
+                            args["episode"] as Map<String, Any?>,
+                            args["parameters"] as? Map<String, Any?>)
                     }
                     "getPreference" -> {
                         val args = call.arguments as Map<*, *>
@@ -325,17 +354,20 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                         call("csSearch", ctx,
                             call.argument<String>("query") ?: "",
                             call.argument<String>("apiName"),
-                            call.argument<Int>("page") ?: 1)
+                            call.argument<Int>("page") ?: 1,
+                            call.argument<Map<String, Any?>>("parameters"))
                     }
                     "getDetail" -> {
                         call("csGetDetail", ctx,
                             call.argument<String>("apiName") ?: "",
-                            call.argument<String>("url") ?: "")
+                            call.argument<String>("url") ?: "",
+                            call.argument<Map<String, Any?>>("parameters"))
                     }
                     "getVideoList" -> {
                         call("csGetVideoList", ctx,
                             call.argument<String>("apiName") ?: "",
-                            call.argument<String>("url") ?: "")
+                            call.argument<String>("url") ?: "",
+                            call.argument<Map<String, Any?>>("parameters"))
                     }
                     "deletePlugin" -> {
                         val internalName = call.argument<String>("internalName")
@@ -364,7 +396,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun handleVideoStream(apiName: String, url: String, events: MethodEventSink?) {
+    private fun handleVideoStream(apiName: String, url: String, parameters: Map<String, Any?>?, events: MethodEventSink?) {
         val ctx = effectiveContext() ?: run {
             events?.error("NO_CTX", "No context available", null)
             events?.endOfStream()
@@ -387,7 +419,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                         override fun invoke(proxy: Any?, method: Method?, args: Array<out Any?>?): Any? {
                             if (method?.name == "invoke") {
                                 val video = args?.get(0)
-                                runBlocking(Dispatchers.Main) { 
+                                runBlocking(Dispatchers.Main) {
                                     events?.success(video)
                                 }
                                 return unitInstance
@@ -397,7 +429,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                     }
                 )
 
-                call("csGetVideoListStream", ctx, apiName, url, proxyCallback)
+                call("csGetVideoListStream", ctx, apiName, url, proxyCallback, parameters)
                 withContext(Dispatchers.Main) { events?.endOfStream() }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -416,15 +448,14 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         }
     }
 
-
     private fun sendError(result: MethodResult, methodName: String, e: Throwable) {
         val stackTrace = Log.getStackTraceString(e)
         val errorMessage = e.message ?: "Unknown error"
         val detailedError = "Method: $methodName\nError: $errorMessage\n$stackTrace"
-        
+
         Log.e(TAG, detailedError)
         logToFlutter("ERROR", "BRIDGE", detailedError)
-        
+
         scope.launch(Dispatchers.Main) {
             result.error("BRIDGE_ERROR", errorMessage, detailedError)
         }
@@ -436,13 +467,26 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
         val method = cls.methods.filter { it.name == methodName }
             .firstOrNull { it.parameterTypes.size == args.size }
-            ?: cls.methods.firstOrNull { it.name == methodName } 
-            ?: throw NoSuchMethodException("No method '$methodName' in RuntimeBridge with ${args.size} parameters")
+            ?: cls.methods.firstOrNull { it.name == methodName }
+            ?: throw NoSuchMethodException("No method '$methodName' in RuntimeBridge")
+
+        val effectiveArgs = if (method.parameterTypes.size != args.size) {
+            logToFlutter("WARNING", "BRIDGE", "Argument count mismatch for $methodName. Expected ${method.parameterTypes.size}, got ${args.size}. Adjusting.")
+            if (args.size > method.parameterTypes.size) {
+                args.take(method.parameterTypes.size).toTypedArray()
+            } else {
+                val padded = args.toMutableList()
+                while (padded.size < method.parameterTypes.size) padded.add(null)
+                padded.toTypedArray()
+            }
+        } else {
+            args
+        }
 
         logToFlutter("INFO", "BRIDGE", "Calling Method: RuntimeBridge.$methodName")
-        val result = method.invoke(bridge, *args)
+        val result = method.invoke(bridge, *effectiveArgs)
         logToFlutter("INFO", "BRIDGE", "Method '$methodName' completed successfully")
-        
+
         return result
     }
 

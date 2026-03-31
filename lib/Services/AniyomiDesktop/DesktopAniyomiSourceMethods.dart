@@ -1,8 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-
 import '../../anymex_extension_runtime_bridge.dart';
 import '../../Models/DEpisode.dart';
 import '../../Models/DMedia.dart';
@@ -12,21 +10,21 @@ import '../../Models/Source.dart';
 import '../../Models/SourceParams.dart';
 import '../../Models/SourcePreference.dart';
 import '../../Models/Video.dart';
-import 'Models/Source.dart';
+import '../../Extensions/SourceMethods.dart';
+import '../Aniyomi/Models/Source.dart';
+import 'JniBridge.dart';
 
-class AniyomiSourceMethods extends SourceMethods {
+class DesktopAniyomiSourceMethods extends SourceMethods {
   @override
   final ASource source;
 
-  AniyomiSourceMethods(Source source) : source = source as ASource;
-
-  static const platform = MethodChannel('aniyomiExtensionBridge');
+  DesktopAniyomiSourceMethods(Source source) : source = source as ASource;
 
   bool get isAnime => source.itemType?.index == 1;
 
   @override
   Future<DMedia> getDetail(DMedia media, {SourceParams? parameters}) async {
-    final result = await platform.invokeMethod('getDetail', {
+    final result = await JniBridge().invokeMethod('getDetail', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'media': {
@@ -49,7 +47,7 @@ class AniyomiSourceMethods extends SourceMethods {
 
   @override
   Future<Pages> getLatestUpdates(int page, {SourceParams? parameters}) async {
-    final result = await platform.invokeMethod('getLatestUpdates', {
+    final result = await JniBridge().invokeMethod('getLatestUpdates', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'page': page,
@@ -64,7 +62,7 @@ class AniyomiSourceMethods extends SourceMethods {
 
   @override
   Future<Pages> getPopular(int page, {SourceParams? parameters}) async {
-    final result = await platform.invokeMethod('getPopular', {
+    final result = await JniBridge().invokeMethod('getPopular', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'page': page,
@@ -80,7 +78,7 @@ class AniyomiSourceMethods extends SourceMethods {
   @override
   Future<List<Video>> getVideoList(DEpisode episode,
       {SourceParams? parameters}) async {
-    final result = await platform.invokeMethod('getVideoList', {
+    final result = await JniBridge().invokeMethod('getVideoList', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'episode': {
@@ -94,13 +92,15 @@ class AniyomiSourceMethods extends SourceMethods {
       if (parameters != null) 'parameters': parameters.toJson(),
     });
 
+    print(result);
+
     return await compute(parseVideos, List<dynamic>.from(result));
   }
 
   @override
   Future<List<PageUrl>> getPageList(DEpisode episode,
       {SourceParams? parameters}) async {
-    final result = await platform.invokeMethod('getPageList', {
+    final result = await JniBridge().invokeMethod('getPageList', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'episode': {
@@ -120,7 +120,7 @@ class AniyomiSourceMethods extends SourceMethods {
   @override
   Future<Pages> search(String query, int page, List filters,
       {SourceParams? parameters}) async {
-    final result = await platform.invokeMethod('search', {
+    final result = await JniBridge().invokeMethod('search', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'query': query,
@@ -159,107 +159,11 @@ class AniyomiSourceMethods extends SourceMethods {
 
   @override
   Future<List<SourcePreference>> getPreference() async {
-    final result = await platform.invokeMethod("getPreference", {
-      'sourceId': source.id,
-      'isAnime': isAnime,
-    });
-
-    if (result == null) return const [];
-
-    if (result is String) return const [];
-
-    return List<dynamic>.from(
-      result,
-    ).map((e) => mapToSourcePreference(Map<String, dynamic>.from(e))).toList();
+    return const [];
   }
 
   @override
   Future<bool> setPreference(SourcePreference pref, dynamic value) async {
-    final result = await platform.invokeMethod('saveSourcePreference', {
-      'sourceId': source.id,
-      'key': pref.key,
-      'value': value,
-    });
-    return result;
-  }
-}
-
-SourcePreference mapToSourcePreference(Map<String, dynamic> json) {
-  final type = json['type'] as String?;
-  switch (type) {
-    case 'checkbox':
-      return SourcePreference(
-        key: json['key'],
-        type: type,
-        checkBoxPreference: CheckBoxPreference(
-          title: json['title'],
-          summary: json['summary'],
-          value: json['value'],
-        ),
-      );
-
-    case 'switch':
-      return SourcePreference(
-        key: json['key'],
-        type: type,
-        switchPreferenceCompat: SwitchPreferenceCompat(
-          title: json['title'],
-          summary: json['summary'],
-          value: json['value'],
-        ),
-      );
-
-    case 'list':
-      final entries =
-          (json['entries'] as List?)?.map((e) => e.toString()).toList();
-      final entryValues =
-          (json['entryValues'] as List?)?.map((e) => e.toString()).toList();
-      final valueIndex = entryValues?.indexOf(json['value']?.toString() ?? '');
-      return SourcePreference(
-        key: json['key'],
-        type: type,
-        listPreference: ListPreference(
-          title: json['title'],
-          summary: json['summary'],
-          entries: entries,
-          entryValues: entryValues,
-          valueIndex: valueIndex != -1 ? valueIndex : 0,
-          value: json['value']?.toString(),
-        ),
-      );
-
-    case 'multi_select':
-      final entries =
-          (json['entries'] as List?)?.map((e) => e.toString()).toList();
-      final entryValues =
-          (json['entryValues'] as List?)?.map((e) => e.toString()).toList();
-      final values =
-          (json['value'] as List?)?.map((e) => e.toString()).toList() ?? [];
-      return SourcePreference(
-        key: json['key'],
-        type: type,
-        multiSelectListPreference: MultiSelectListPreference(
-          title: json['title'],
-          summary: json['summary'],
-          entries: entries,
-          entryValues: entryValues,
-          values: values,
-          value: values,
-        ),
-      );
-
-    case 'text':
-      return SourcePreference(
-        key: json['key'],
-        type: type,
-        editTextPreference: EditTextPreference(
-          title: json['title'],
-          summary: json['summary'],
-          value: json['value']?.toString(),
-        ),
-      );
-
-    default:
-      return SourcePreference(key: json['key']);
+    return true;
   }
 }
