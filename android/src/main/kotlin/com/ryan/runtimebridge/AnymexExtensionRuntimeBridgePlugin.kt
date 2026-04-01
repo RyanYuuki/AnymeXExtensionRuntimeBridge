@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
@@ -39,13 +40,16 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     private lateinit var videoStreamEventChannel: EventChannel
     private lateinit var loggingChannel: MethodChannel
 
-
     private var context: Context? = null
     private var activity: Activity? = null
 
     private var runtimeBridge: Any? = null
     private var bridgeClass: Class<*>? = null
     private var videoStreamJob: kotlinx.coroutines.Job? = null
+    
+    private var currentVideoStreamToken: String? = null
+    private var currentVideoStreamUrl: String? = null
+    private var isDevLoad: Boolean = false
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
@@ -65,11 +69,12 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 val args = arguments as? Map<*, *> ?: return
                 val apiName = args["apiName"] as? String ?: return
                 val url = args["url"] as? String ?: return
+                val sessionToken = (args["parameters"] as? Map<String, Any?>)?.get("token") as? String
                 val params = (args["parameters"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()
                 if (args.containsKey("token")) {
                     params["token"] = args["token"]
                 }
-                handleVideoStream(apiName, url, params, events)
+                handleVideoStream(apiName, url, params, events, sessionToken)
             }
             override fun onCancel(arguments: Any?) {
                 videoStreamJob?.cancel()
@@ -136,6 +141,18 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         }
 
         return try {
+            val isTargetDev = apkPath.contains("/storage/emulated/0/") || apkPath.contains("/sdcard/")
+            
+            if (isDevLoad && !isTargetDev && bridgeClass != null) {
+                Log.i(TAG, "dev build is active chill out")
+                return true 
+            }
+
+            if (isTargetDev) {
+                Log.i(TAG, "Developer Build detected. Locking version for this session.")
+                isDevLoad = true
+            }
+
             runtimeBridge = null
             bridgeClass = null
 
@@ -144,7 +161,6 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 Log.e(TAG, "APK does not exist at path: $apkPath")
                 return false
             }
-            Log.i(TAG, "Loading APK: $apkPath Size: ${originalApk.length()} LastModified: ${originalApk.lastModified()}")
 
             val cacheApkName = "anymex_runtime_${originalApk.length()}_${originalApk.lastModified()}.apk"
             val cacheApk = File(ctx.filesDir, cacheApkName)
@@ -177,8 +193,6 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             val optimizedDir = File(ctx.cacheDir, "anymex_dex_${System.currentTimeMillis()}")
             optimizedDir.mkdirs()
 
-            Log.d(TAG, "Using optimized dex dir: ${optimizedDir.absolutePath}")
-
             val loader = ChildFirstClassLoader(
                 cacheApk.absolutePath,
                 optimizedDir.absolutePath,
@@ -189,12 +203,21 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             bridgeClass = loader.loadClass("com.anymex.runtimehost.RuntimeBridge")
             Log.d(TAG, "bridgeClass loaded: $bridgeClass")
             runtimeBridge = bridgeClass!!.getField("INSTANCE").get(null)
-            call("initialize", ctx, settingsMap)
+            
+            Log.i(TAG, "AnymeX Runtime Bridge initialized successfully.")
+            
+            try {
+                call("initialize", ctx, settingsMap)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to initialize RuntimeBridge: ${e.message}")
+                logToFlutter("ERROR", "BRIDGE_INIT", "Failed to initialize RuntimeBridge: ${e.message}\n${Log.getStackTraceString(e)}")
+            }
 
             Log.i(TAG, "Runtime Host loaded successfully")
             true
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to load Runtime Host APK: ${e.message}")
+            logToFlutter("ERROR", "BRIDGE_LOAD", "Failed to load Runtime Host APK: ${e.message}\n${Log.getStackTraceString(e)}")
             false
         }
     }
@@ -396,15 +419,22 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun handleVideoStream(apiName: String, url: String, parameters: Map<String, Any?>?, events: MethodEventSink?) {
+    private fun handleVideoStream(apiName: String, url: String, parameters: Map<String, Any?>?, events: MethodEventSink?, sessionToken: String?) {
         val ctx = effectiveContext() ?: run {
             events?.error("NO_CTX", "No context available", null)
             events?.endOfStream()
             return
         }
+        
+        if (videoStreamJob?.isActive == true && currentVideoStreamToken == sessionToken && currentVideoStreamUrl == url) {
+            Log.d(TAG, "Redundant stream request for token $sessionToken, ignoring.")
+            return
+        }
 
         videoStreamJob?.cancel()
         videoStreamJob = scope.launch {
+            currentVideoStreamToken = sessionToken
+            currentVideoStreamUrl = url
             try {
                 val cls = bridgeClass ?: throw IllegalStateException("Runtime Host not loaded")
                 val loader = cls.classLoader ?: throw IllegalStateException("No Host ClassLoader")
@@ -430,6 +460,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 )
 
                 call("csGetVideoListStream", ctx, apiName, url, proxyCallback, parameters)
+                delay(1000)
                 withContext(Dispatchers.Main) { events?.endOfStream() }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
