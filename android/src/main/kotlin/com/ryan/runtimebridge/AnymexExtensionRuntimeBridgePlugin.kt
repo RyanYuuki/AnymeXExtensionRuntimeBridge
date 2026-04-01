@@ -131,14 +131,14 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             return false
         }
 
-        runtimeBridge?.let { oldBridge ->
-            try {
-                Log.i(TAG, "Shutting down existing runtime host...")
-                bridgeClass?.getMethod("shutdown")?.invoke(oldBridge)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error shutting down old runtime host: ${e.message}")
-            }
-        }
+//        runtimeBridge?.let { oldBridge ->
+//            try {
+//                Log.i(TAG, "Shutting down existing runtime host...")
+//                bridgeClass?.getMethod("shutdown")?.invoke(oldBridge)
+//            } catch (e: Exception) {
+//                Log.e(TAG, "Error shutting down old runtime host: ${e.message}")
+//            }
+//        }
 
         return try {
             runtimeBridge = null

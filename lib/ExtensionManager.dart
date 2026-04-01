@@ -45,6 +45,7 @@ class ExtensionManager extends GetxController {
   }
 
   Future<void> onRuntimeBridgeInitialization({
+    bool force = false,
     Function(String managerId)? onManagerInitializing,
   }) async {
     final isAnymeXRuntimeHostLoaded = await AnymeXRuntimeBridge.isLoaded();
@@ -54,11 +55,14 @@ class ExtensionManager extends GetxController {
           if (Platform.isAndroid) ...[
             AniyomiExtensions(),
             CloudStreamExtensions(),
-          ] else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) ...[
+          ] else if (Platform.isWindows ||
+              Platform.isLinux ||
+              Platform.isMacOS) ...[
             DesktopAniyomiExtensions(),
           ],
         ],
         insertAtStart: true,
+        force: force,
         onManagerInitializing: onManagerInitializing,
       );
     }
@@ -67,37 +71,44 @@ class ExtensionManager extends GetxController {
   Future<void> _registerAndInitializeManagers(
     List<Extension> newManagers, {
     bool insertAtStart = false,
+    bool force = false,
     Function(String managerId)? onManagerInitializing,
   }) async {
     bool listChanged = false;
     int insertIndex = 0;
 
     for (final manager in newManagers) {
-      if (managers.any((m) => m.runtimeType == manager.runtimeType)) continue;
+      final existingManager = managers
+          .firstWhereOrNull((m) => m.runtimeType == manager.runtimeType);
+
+      if (existingManager != null && !force) continue;
 
       onManagerInitializing?.call(manager.id);
 
-      if (insertAtStart) {
-        managers.insert(insertIndex++, manager);
-      } else {
-        managers.add(manager);
+      if (existingManager == null) {
+        if (insertAtStart) {
+          managers.insert(insertIndex++, manager);
+        } else {
+          managers.add(manager);
+        }
+        listChanged = true;
       }
 
-      listChanged = true;
+      await (existingManager ?? manager).initialize();
 
-      await manager.initialize();
-
-      for (final type in ItemType.values) {
-        _workers.addAll([
-          ever(
-            manager.getInstalledRx(type),
-            (_) => _scheduleAggregatedUpdate(type),
-          ),
-          ever(
-            manager.getAvailableRx(type),
-            (_) => _scheduleAggregatedUpdate(type),
-          ),
-        ]);
+      if (existingManager == null) {
+        for (final type in ItemType.values) {
+          _workers.addAll([
+            ever(
+              manager.getInstalledRx(type),
+              (_) => _scheduleAggregatedUpdate(type),
+            ),
+            ever(
+              manager.getAvailableRx(type),
+              (_) => _scheduleAggregatedUpdate(type),
+            ),
+          ]);
+        }
       }
     }
 
