@@ -17,9 +17,9 @@ class AnymeXRuntimeBridge {
   /// This handles downloading, tracking progress, and initialization.
   /// Set [force] to true to re-download the Bridge JAR/APK (useful for updates).
   /// Note: The JRE is only downloaded if missing, regardless of [force].
-  static Future<void> setupRuntime({String? customDownloadUrl, bool force = false}) async {
+  static Future<void> setupRuntime({String? customDownloadUrl, bool force = false, String? localApkPath}) async {
     if (!isSupportedPlatform) return;
-    await RuntimeDownloader().setupRuntime(customUrl: customDownloadUrl, force: force);
+    await RuntimeDownloader().setupRuntime(customUrl: customDownloadUrl, force: force, localApkPath: localApkPath);
   }
 
   /// Checks if the runtime files already exist and initializes the bridge if they do.

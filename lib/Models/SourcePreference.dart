@@ -44,28 +44,80 @@ class SourcePreference {
       };
 
   factory SourcePreference.fromJson(Map<String, dynamic> json) {
+    final type = json['type'] as String?;
+    final key = json['key'] as String?;
+    final id = json['id'] as int?;
+
     return SourcePreference(
-      key: json['key'],
-      type: json['type'],
-      id: json['id'],
-      checkBoxPreference: json['checkBoxPreference'] != null
-          ? CheckBoxPreference.fromJson(json['checkBoxPreference'])
-          : null,
-      switchPreferenceCompat: json['switchPreferenceCompat'] != null
-          ? SwitchPreferenceCompat.fromJson(json['switchPreferenceCompat'])
-          : null,
-      listPreference: json['listPreference'] != null
-          ? ListPreference.fromJson(json['listPreference'])
-          : null,
-      multiSelectListPreference: json['multiSelectListPreference'] != null
-          ? MultiSelectListPreference.fromJson(
-              json['multiSelectListPreference'],
+      key: key,
+      type: type,
+      id: id,
+      checkBoxPreference: type == 'checkbox'
+          ? CheckBoxPreference(
+              title: json['title'],
+              summary: json['summary'],
+              value: json['value'],
             )
-          : null,
-      editTextPreference: json['editTextPreference'] != null
-          ? EditTextPreference.fromJson(json['editTextPreference'])
-          : null,
+          : (json['checkBoxPreference'] != null
+              ? CheckBoxPreference.fromJson(json['checkBoxPreference'])
+              : null),
+      switchPreferenceCompat: type == 'switch'
+          ? SwitchPreferenceCompat(
+              title: json['title'],
+              summary: json['summary'],
+              value: json['value'],
+            )
+          : (json['switchPreferenceCompat'] != null
+              ? SwitchPreferenceCompat.fromJson(json['switchPreferenceCompat'])
+              : null),
+      listPreference: type == 'list'
+          ? ListPreference(
+              title: json['title'],
+              summary: json['summary'],
+              entries: (json['entries'] as List?)?.cast<String>(),
+              entryValues: (json['entryValues'] as List?)?.cast<String>(),
+              value: json['value']?.toString(),
+            )
+          : (json['listPreference'] != null
+              ? ListPreference.fromJson(json['listPreference'])
+              : null),
+      multiSelectListPreference: type == 'multi_select'
+          ? MultiSelectListPreference(
+              title: json['title'],
+              summary: json['summary'],
+              entries: (json['entries'] as List?)?.cast<String>(),
+              entryValues: (json['entryValues'] as List?)?.cast<String>(),
+              value: (json['value'] as List?)?.cast<String>(),
+            )
+          : (json['multiSelectListPreference'] != null
+              ? MultiSelectListPreference.fromJson(
+                  json['multiSelectListPreference'])
+              : null),
+      editTextPreference: type == 'text'
+          ? EditTextPreference(
+              title: json['title'],
+              summary: json['summary'],
+              value: json['value']?.toString(),
+            )
+          : (json['editTextPreference'] != null
+              ? EditTextPreference.fromJson(json['editTextPreference'])
+              : null),
     );
+  }
+
+  factory SourcePreference.fromAniyomiDesktopJson(Map<String, dynamic> json) {
+    var pref = SourcePreference.fromJson(json);
+    if (pref.type == 'list' && json['value'] != null) {
+      final entryValues = (json['entryValues'] as List?)?.cast<String>();
+      final value = json['value']?.toString();
+
+      if (value != null && entryValues != null) {
+        int index = entryValues.indexOf(value);
+        if (index == -1) index = 0;
+        pref.listPreference?.valueIndex = index;
+      }
+    }
+    return pref;
   }
 }
 

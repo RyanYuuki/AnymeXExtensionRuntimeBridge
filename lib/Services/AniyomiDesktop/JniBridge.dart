@@ -20,9 +20,10 @@ class JniBridge {
 
     final paths = RuntimePaths();
     final jvmPath = await paths.jvmLibPath;
-    
+
     if (jvmPath == null) {
-      throw StateError('JVM library not found. Please ensure JRE is installed via RuntimeDownloader.');
+      throw StateError(
+          'JVM library not found. Please ensure JRE is installed via RuntimeDownloader.');
     }
 
     try {
@@ -43,13 +44,16 @@ class JniBridge {
 
   JClass get _bridge {
     if (!_initialized || _bridgeClass == null) {
-      throw StateError('JniBridge is not initialized. Call initialize() first.');
+      throw StateError(
+          'JniBridge is not initialized. Call initialize() first.');
     }
     return _bridgeClass!;
   }
+
   Future<dynamic> invokeMethod(String method, Map<String, dynamic> args) async {
     if (!_initialized || _bridgeJarPath == null) {
-      throw StateError('JniBridge is not initialized. Call initialize() first.');
+      throw StateError(
+          'JniBridge is not initialized. Call initialize() first.');
     }
 
     final String bridgeJarPath = _bridgeJarPath!;
@@ -67,7 +71,8 @@ class JniBridge {
         classPath: [bridgeJarPath],
       );
 
-      final bridge = JClass.forName('com/anymex/desktop/DesktopExtensionLoader');
+      final bridge =
+          JClass.forName('com/anymex/desktop/DesktopExtensionLoader');
 
       try {
         switch (method) {
@@ -75,9 +80,10 @@ class JniBridge {
             final folderPath = args['folderPath'] as String;
             final jFolderPath = folderPath.toJString();
             final jsonString = bridge
-                .staticMethodId('loadExtensions', '(Ljava/lang/String;)Ljava/lang/String;')
-                .call(bridge, JString.type, [jFolderPath])
-                .toDartString(releaseOriginal: true);
+                .staticMethodId(
+                    'loadExtensions', '(Ljava/lang/String;)Ljava/lang/String;')
+                .call(bridge, JString.type, [jFolderPath]).toDartString(
+                    releaseOriginal: true);
             jFolderPath.release();
             return jsonDecode(jsonString);
 
@@ -88,11 +94,16 @@ class JniBridge {
             final page = args['page'] as int;
             final isAnime = args['isAnime'] as bool;
 
-            final methodName = isPopular ? 'fetchPopular' : 'fetchLatestUpdates';
+            final methodName =
+                isPopular ? 'fetchPopular' : 'fetchLatestUpdates';
             final jsonString = bridge
-                .staticMethodId(methodName, '(Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;')
-                .call(bridge, JString.type, [jClassName, JValueInt(page), isAnime.toJBoolean()])
-                .toDartString(releaseOriginal: true);
+                .staticMethodId(methodName,
+                    '(Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;')
+                .call(bridge, JString.type, [
+              jClassName,
+              JValueInt(page),
+              isAnime.toJBoolean()
+            ]).toDartString(releaseOriginal: true);
 
             jClassName.release();
             return jsonDecode(jsonString);
@@ -104,9 +115,14 @@ class JniBridge {
             final isAnime = args['isAnime'] as bool;
 
             final jsonString = bridge
-                .staticMethodId('search', '(Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;')
-                .call(bridge, JString.type, [jClassName, jQuery, JValueInt(page), isAnime.toJBoolean()])
-                .toDartString(releaseOriginal: true);
+                .staticMethodId('search',
+                    '(Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;')
+                .call(bridge, JString.type, [
+              jClassName,
+              jQuery,
+              JValueInt(page),
+              isAnime.toJBoolean()
+            ]).toDartString(releaseOriginal: true);
 
             jClassName.release();
             jQuery.release();
@@ -145,9 +161,13 @@ class JniBridge {
             final jName = (epMap['name'] as String?)?.toJString();
 
             final jsonString = bridge
-                .staticMethodId('fetchVideoList', '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;')
-                .call(bridge, JString.type, [jClassName, jUrl ?? ''.toJString(), jName ?? ''.toJString()])
-                .toDartString(releaseOriginal: true);
+                .staticMethodId('fetchVideoList',
+                    '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;')
+                .call(bridge, JString.type, [
+              jClassName,
+              jUrl ?? ''.toJString(),
+              jName ?? ''.toJString()
+            ]).toDartString(releaseOriginal: true);
 
             jClassName.release();
             jUrl?.release();
@@ -162,9 +182,13 @@ class JniBridge {
             final jName = (epMap['name'] as String?)?.toJString();
 
             final jsonString = bridge
-                .staticMethodId('fetchPageList', '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;')
-                .call(bridge, JString.type, [jClassName, jUrl ?? ''.toJString(), jName ?? ''.toJString()])
-                .toDartString(releaseOriginal: true);
+                .staticMethodId('fetchPageList',
+                    '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;')
+                .call(bridge, JString.type, [
+              jClassName,
+              jUrl ?? ''.toJString(),
+              jName ?? ''.toJString()
+            ]).toDartString(releaseOriginal: true);
 
             jClassName.release();
             jUrl?.release();
@@ -180,8 +204,59 @@ class JniBridge {
             jClassName.release();
             return null;
 
+          case 'aniyomiGetPreferences':
+            final jClassName = (args['sourceId'] as String).toJString();
+            final isAnime = args['isAnime'] as bool;
+
+            final jsonString = bridge
+                .staticMethodId('aniyomiGetPreferences',
+                    '(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;')
+                .call(bridge, JString.type,
+                    [jClassName, JBoolean(isAnime)]).toDartString(
+                    releaseOriginal: true);
+
+            jClassName.release();
+            return jsonString;
+
+          case 'aniyomiSavePreference':
+            final jClassName = (args['sourceId'] as String).toJString();
+            final jKey = (args['key'] as String).toJString();
+            final value = args['value'];
+            final isAnime = args['isAnime'] as bool;
+
+            JObject jValueObj;
+            if (value is bool) {
+              jValueObj = JBoolean(value);
+            } else if (value is String) {
+              jValueObj = value.toJString();
+            } else if (value is List) {
+              final list = JList.array(JString.type);
+              for (final item in value) {
+                list.add(item.toString().toJString());
+              }
+              jValueObj = list;
+            } else {
+              jValueObj = (value?.toString() ?? '').toJString();
+            }
+
+            final result = bridge
+                .staticMethodId('aniyomiSavePreference',
+                    '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;')
+                .call(bridge, const JStringType(), [
+              jClassName,
+              jKey,
+              jValueObj,
+              JBoolean(isAnime)
+            ]);
+
+            jClassName.release();
+            jKey.release();
+            jValueObj.release();
+            return result.toDartString(releaseOriginal: true) == 'success';
+
           default:
-            throw UnimplementedError('Method $method is not implemented in JniBridge.');
+            throw UnimplementedError(
+                'Method $method is not implemented in JniBridge.');
         }
       } finally {
         bridge.release();

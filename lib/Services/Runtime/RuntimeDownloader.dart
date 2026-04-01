@@ -28,7 +28,7 @@ class RuntimeDownloader {
     }
   }
 
-  Future<void> setupRuntime({String? customUrl, bool force = false}) async {
+  Future<void> setupRuntime({String? customUrl, bool force = false, String? localApkPath}) async {
     final controller = RuntimeController.it;
     if (controller.isDownloading.value) return;
 
@@ -78,7 +78,7 @@ class RuntimeDownloader {
       bool isLoaded;
       
       if (Platform.isAndroid) {
-        isLoaded = await AnymeXRuntimeBridge.loadAnymeXRuntimeHost(bridgeFile.path);
+        isLoaded = await AnymeXRuntimeBridge.loadAnymeXRuntimeHost(localApkPath ?? bridgeFile.path);
       } else {
         isLoaded = true; 
       }

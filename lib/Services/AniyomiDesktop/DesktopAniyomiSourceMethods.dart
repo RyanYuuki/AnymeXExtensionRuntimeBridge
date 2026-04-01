@@ -1,18 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import '../../anymex_extension_runtime_bridge.dart';
-import '../../Models/DEpisode.dart';
-import '../../Models/DMedia.dart';
-import '../../Models/Page.dart';
-import '../../Models/Pages.dart';
-import '../../Models/Source.dart';
-import '../../Models/SourceParams.dart';
-import '../../Models/SourcePreference.dart';
-import '../../Models/Video.dart';
-import '../../Extensions/SourceMethods.dart';
 import '../Aniyomi/Models/Source.dart';
-import 'JniBridge.dart';
+import '../../Logger.dart';
 
 class DesktopAniyomiSourceMethods extends SourceMethods {
   @override
@@ -20,7 +12,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
 
   DesktopAniyomiSourceMethods(Source source) : source = source as ASource;
 
-  bool get isAnime => source.itemType?.index == 1;
+  bool get isAnime => source.itemType == ItemType.anime;
 
   @override
   Future<DMedia> getDetail(DMedia media, {SourceParams? parameters}) async {
@@ -159,11 +151,37 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
 
   @override
   Future<List<SourcePreference>> getPreference() async {
-    return const [];
+    try {
+      final params = {
+        'sourceId': source.id,
+        'isAnime': isAnime,
+      };
+      final String result = await JniBridge().invokeMethod('aniyomiGetPreferences', params);
+      print("params => $params & result: $result");
+      final List<dynamic> decoded = jsonDecode(result);
+      return decoded
+          .map((e) =>
+              SourcePreference.fromAniyomiDesktopJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (e) {
+      Logger.log("AnymeX Bridge: Failed to get desktop preferences for ${source.name}: $e");
+      return [];
+    }
   }
 
   @override
   Future<bool> setPreference(SourcePreference pref, dynamic value) async {
-    return true;
+    try {
+      final result = await JniBridge().invokeMethod('aniyomiSavePreference', {
+        'sourceId': source.id,
+        'key': pref.key,
+        'value': value,
+        'isAnime': isAnime,
+      });
+      return result ?? false;
+    } catch (e) {
+      Logger.log("AnymeX Bridge: Failed to save desktop preference ${pref.key} for ${source.name}: $e");
+      return false;
+    }
   }
 }

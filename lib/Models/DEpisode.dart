@@ -66,8 +66,8 @@ class DEpisode {
         filler: json['filler'],
         episodeNumber: json['episodeNumber']?.toString() ?? '1',
         sortMap: {
-          "season": json['extraData']['season']?.toString() ?? '',
-          "type": json['extraData']['episodeGroup']?.toString() ?? ''
+          "season": json['extraData']?['season']?.toString() ?? '',
+          "type": json['extraData']?['episodeGroup']?.toString() ?? ''
         });
   }
 

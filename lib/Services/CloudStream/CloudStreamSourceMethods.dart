@@ -26,8 +26,6 @@ class CloudStreamSourceMethods extends SourceMethods {
       if (parameters != null) 'parameters': parameters.toJson(),
     });
 
-    print(result);
-
     return await compute(
       DMedia.fromCs,
       Map<String, dynamic>.from(result as Map),
