@@ -5,6 +5,8 @@ import 'Settings/KvStore.dart';
 import 'Services/Runtime/RuntimeDownloader.dart';
 import 'Services/Runtime/RuntimeController.dart';
 import 'Services/Runtime/RuntimePaths.dart';
+import 'dart:async';
+
 
 
 class AnymeXRuntimeBridge {
@@ -17,22 +19,53 @@ class AnymeXRuntimeBridge {
   /// This handles downloading, tracking progress, and initialization.
   /// Set [force] to true to re-download the Bridge JAR/APK (useful for updates).
   /// Note: The JRE is only downloaded if missing, regardless of [force].
-  static Future<void> setupRuntime({String? customDownloadUrl, bool force = false, String? localApkPath}) async {
+  static Future<void> setupRuntime(
+      {String? customDownloadUrl,
+      bool force = false,
+      String? localApkPath}) async {
     if (!isSupportedPlatform) return;
-    await RuntimeDownloader().setupRuntime(customUrl: customDownloadUrl, force: force, localApkPath: localApkPath);
+    await RuntimeDownloader().setupRuntime(
+        customUrl: customDownloadUrl, force: force, localApkPath: localApkPath);
+  }
+
+  /// Explicitly sets and loads a custom local APK. 
+  /// This path is persisted and will be used automatically on future app restarts.
+  static Future<bool> useLocalApk(String path) async {
+    if (!Platform.isAndroid) return false;
+    final exists = await File(path).exists();
+    if (!exists) {
+        Logger.log("useLocalApk: File does not exist at $path");
+        return false;
+    }
+    
+    try {
+        setVal('runtime_host_path', path);
+    } catch (e) {
+        Logger.log('Failed to save runtime host APK path to KvStore: $e');
+    }
+
+    return await loadAnymeXRuntimeHost(path);
   }
 
   /// Checks if the runtime files already exist and initializes the bridge if they do.
   /// Call this on app startup to auto-load the bridge.
   static Future<void> checkAndInitialize() async {
     if (!isSupportedPlatform) return;
-    
+
     final paths = RuntimePaths();
-    final bridgePath = await paths.bridgePath;
+    
+    String? savedPath;
+    try {
+        savedPath = getVal<String>('runtime_host_path');
+    } catch (_) {}
+
+    final bridgePath = (savedPath != null && await File(savedPath).exists())
+        ? savedPath
+        : await paths.bridgePath;
+        
     final bridgeFile = File(bridgePath);
-    
     bool exists = await bridgeFile.exists();
-    
+
     if (!Platform.isAndroid) {
       final jreDir = await paths.jreDir;
       exists = exists && await jreDir.exists();
@@ -44,17 +77,26 @@ class AnymeXRuntimeBridge {
       } else {
         controller.setReady(true);
       }
-      Logger.log("AnymeX Bridge auto-detected and initialized.");
+      Logger.log("AnymeX Bridge auto-detected and initialized from: $bridgePath");
     }
   }
 
-  /// Reactive controller for UI setup status and progress
+
   static RuntimeController get controller => RuntimeController.it;
+
+  static Completer<bool>? _loadCompleter;
 
   /// Standard MethodChannel call for Android only
   static Future<bool> loadAnymeXRuntimeHost(String apkPath,
       {Map<String, dynamic>? settings}) async {
     if (!Platform.isAndroid) return false;
+
+    if (_loadCompleter != null) {
+      Logger.log("AnymeX Bridge is already loading, waiting for completion...");
+      return _loadCompleter!.future;
+    }
+
+    _loadCompleter = Completer<bool>();
 
     try {
       final result =
@@ -72,10 +114,14 @@ class AnymeXRuntimeBridge {
         }
       }
 
+      _loadCompleter!.complete(isLoaded);
       return isLoaded;
     } catch (e) {
       print('Failed to load Runtime Host APK from $apkPath: $e');
+      _loadCompleter?.complete(false);
       return false;
+    } finally {
+      _loadCompleter = null;
     }
   }
 

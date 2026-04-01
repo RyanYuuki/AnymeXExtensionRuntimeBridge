@@ -141,18 +141,6 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         }
 
         return try {
-            val isTargetDev = apkPath.contains("/storage/emulated/0/") || apkPath.contains("/sdcard/")
-            
-            if (isDevLoad && !isTargetDev && bridgeClass != null) {
-                Log.i(TAG, "dev build is active chill out")
-                return true 
-            }
-
-            if (isTargetDev) {
-                Log.i(TAG, "Developer Build detected. Locking version for this session.")
-                isDevLoad = true
-            }
-
             runtimeBridge = null
             bridgeClass = null
 
@@ -480,13 +468,15 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     }
 
     private fun sendError(result: MethodResult, methodName: String, e: Throwable) {
-        val stackTrace = Log.getStackTraceString(e)
-        val errorMessage = e.message ?: "Unknown error"
+        val realError = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e
+        
+        val stackTrace = Log.getStackTraceString(e) 
+        val errorMessage = realError.message ?: realError.toString()
         val detailedError = "Method: $methodName\nError: $errorMessage\n$stackTrace"
-
+        
         Log.e(TAG, detailedError)
         logToFlutter("ERROR", "BRIDGE", detailedError)
-
+        
         scope.launch(Dispatchers.Main) {
             result.error("BRIDGE_ERROR", errorMessage, detailedError)
         }

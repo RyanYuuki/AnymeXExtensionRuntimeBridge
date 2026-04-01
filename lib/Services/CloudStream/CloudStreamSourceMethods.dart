@@ -79,6 +79,7 @@ class CloudStreamSourceMethods extends SourceMethods {
         try {
           final Map<String, dynamic> data =
               Map<String, dynamic>.from(event as Map);
+          print("Video stream event: $data");    
           final video = Video.fromCs(data);
 
           if (!controller.isClosed) {

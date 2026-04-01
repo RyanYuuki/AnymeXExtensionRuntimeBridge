@@ -98,11 +98,6 @@ class AnymeXExtensionBridge {
 
     Get.lazyPut<ExtensionManager>(() => ExtensionManager());
     _initialized = true;
-
-    final apkPath = getVal<String>('runtime_host_path');
-    if (apkPath != null) {
-      await AnymeXRuntimeBridge.loadAnymeXRuntimeHost(apkPath);
-    }
   }
 
   static Future<Isar> _openIsar(GetDirectory getDirectory) async {

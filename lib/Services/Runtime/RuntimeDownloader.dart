@@ -39,8 +39,9 @@ class RuntimeDownloader {
       final bridgePath = await _paths.bridgePath;
       final bridgeFile = File(bridgePath);
       final jreDir = await _paths.jreDir;
-      
-      bool needsBridge = force || !await bridgeFile.exists();
+
+      bool needsBridge =
+          (localApkPath == null) && (force || !await bridgeFile.exists());
       bool needsJre = !Platform.isAndroid && !await jreDir.exists();
 
 
