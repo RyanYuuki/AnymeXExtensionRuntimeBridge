@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:archive/archive_io.dart';
 import '../../AnymeXBridge.dart';
 import 'RuntimePaths.dart';
 import 'RuntimeController.dart';
@@ -136,15 +137,41 @@ class RuntimeDownloader {
     final targetDirObj = Directory(targetDir);
     if (!await targetDirObj.exists()) await targetDirObj.create(recursive: true);
 
-    if (Platform.isWindows) {
-      final absoluteArchivePath = File(archivePath).absolute.path;
-      final absoluteTargetDir = Directory(targetDir).absolute.path;
-      final command = "Expand-Archive -Path '$absoluteArchivePath' -DestinationPath '$absoluteTargetDir' -Force";
-      final result = await Process.run('powershell', ['-Command', command]);
-      if (result.exitCode != 0) throw Exception("Extraction failed: ${result.stderr}");
-    } else {
-      final result = await Process.run('tar', ['-xzf', archivePath, '-C', targetDir]);
-      if (result.exitCode != 0) throw Exception("Extraction failed: ${result.stderr}");
+    try {
+      if (archivePath.endsWith('.zip')) {
+        final bytes = await File(archivePath).readAsBytes();
+        final archive = ZipDecoder().decodeBytes(bytes);
+        for (final file in archive) {
+          final filename = file.name;
+          if (file.isFile) {
+            final data = file.content as List<int>;
+            File(p.join(targetDir, filename))
+              ..createSync(recursive: true)
+              ..writeAsBytesSync(data);
+          } else {
+            Directory(p.join(targetDir, filename)).createSync(recursive: true);
+          }
+        }
+      } else if (archivePath.endsWith('.tar.gz')) {
+        final bytes = await File(archivePath).readAsBytes();
+        final gzipBytes = GZipDecoder().decodeBytes(bytes);
+        final archive = TarDecoder().decodeBytes(gzipBytes);
+        for (final file in archive) {
+          final filename = file.name;
+          if (file.isFile) {
+            final data = file.content as List<int>;
+            File(p.join(targetDir, filename))
+              ..createSync(recursive: true)
+              ..writeAsBytesSync(data);
+          } else {
+            Directory(p.join(targetDir, filename)).createSync(recursive: true);
+          }
+        }
+      } else {
+        throw Exception("Unsupported archive format: $archivePath");
+      }
+    } catch (e) {
+      throw Exception("Extraction failed: $e");
     }
     await _flattenJreFolder(targetDir);
   }

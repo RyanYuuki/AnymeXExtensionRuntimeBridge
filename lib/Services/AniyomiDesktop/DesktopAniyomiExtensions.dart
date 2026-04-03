@@ -19,6 +19,7 @@ import '../Runtime/RuntimeController.dart';
 import 'package:get/get.dart';
 import '../Aniyomi/Models/Source.dart';
 import '../Mangayomi/http/m_client.dart';
+import 'package:archive/archive_io.dart';
 
 class DesktopAniyomiExtensions extends Extension {
   final _client = MClient.init();
@@ -392,11 +393,11 @@ class DesktopAniyomiExtensions extends Extension {
         }
         File(zipPath).writeAsBytesSync(res.bodyBytes);
 
-        final setupCommand =
-            "Expand-Archive '$zipPath' -DestinationPath '$toolsDir' -Force; Remove-Item '$zipPath'";
-        process = await Process.run('powershell', ['-Command', setupCommand]);
-        if (process.exitCode != 0) {
-          throw Exception('Failed to install Dex2Jar: ${process.stderr}');
+        try {
+          await _extractZip(zipPath, toolsDir);
+          if (File(zipPath).existsSync()) File(zipPath).deleteSync();
+        } catch (e) {
+          throw Exception('Failed to install Dex2Jar: $e');
         }
       }
 
@@ -411,17 +412,10 @@ class DesktopAniyomiExtensions extends Extension {
       }
       File(tempZipPath).writeAsBytesSync(apkRes.bodyBytes);
 
-      if (Directory(tempExtractedPath).existsSync()) {
-        Directory(tempExtractedPath).deleteSync(recursive: true);
-      }
-      Directory(tempExtractedPath).createSync(recursive: true);
-
-      final extractCommand =
-          "Expand-Archive '$tempZipPath' -DestinationPath '$tempExtractedPath' -Force";
-      process = await Process.run('powershell', ['-Command', extractCommand]);
-
-      if (process.exitCode != 0) {
-        throw Exception('Failed to extract extension APK');
+      try {
+        await _extractZip(tempZipPath, tempExtractedPath);
+      } catch (e) {
+        throw Exception('Failed to extract extension APK: $e');
       }
 
       final classesDex = p.join(tempExtractedPath, 'classes.dex');
@@ -432,6 +426,16 @@ class DesktopAniyomiExtensions extends Extension {
       final outJarPath = p.join(extDir, '$pkgName.jar');
       if (Platform.isLinux || Platform.isMacOS) {
         await Process.run('chmod', ['+x', dex2jarPath]);
+        final dexToolsDir = p.dirname(dex2jarPath);
+        final libDir = p.join(p.dirname(dexToolsDir), 'lib');
+        final binDir = Directory(dexToolsDir);
+        if (await binDir.exists()) {
+          await for (final file in binDir.list()) {
+            if (file is File && file.path.endsWith('.sh')) {
+              await Process.run('chmod', ['+x', file.path]);
+            }
+          }
+        }
       }
 
       process = await Process.run(
@@ -515,4 +519,20 @@ class DesktopAniyomiExtensions extends Extension {
 
   @override
   Future<void> cancelRequest(String token) async {}
+
+  Future<void> _extractZip(String archivePath, String targetDir) async {
+    final bytes = await File(archivePath).readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+    for (final file in archive) {
+      final filename = file.name;
+      if (file.isFile) {
+        final data = file.content as List<int>;
+        File(p.join(targetDir, filename))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(data);
+      } else {
+        Directory(p.join(targetDir, filename)).createSync(recursive: true);
+      }
+    }
+  }
 }
