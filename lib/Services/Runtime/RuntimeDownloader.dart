@@ -35,6 +35,7 @@ class RuntimeDownloader {
 
     controller.isDownloading.value = true;
     controller.updateStatus("Initializing setup...");
+    controller.updateProgress(0.0, "");
 
     try {
       final bridgePath = await _paths.bridgePath;
