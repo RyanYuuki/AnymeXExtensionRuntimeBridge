@@ -43,8 +43,12 @@ class JniBridge {
     }
 
     _setupDylibDir();
+    
+    final exeDir = p.dirname(Platform.resolvedExecutable);
+    final jniJarPath = Platform.isWindows ? p.join(exeDir, 'jni.jar') : p.join(exeDir, 'lib', 'jni.jar');
+
     Jni.spawnIfNotExists(
-      classPath: [bridgeJarPath, 'jni.jar'],
+      classPath: [bridgeJarPath, jniJarPath],
     );
 
     _initialized = true;
@@ -69,8 +73,12 @@ class JniBridge {
       }
 
       _setupDylibDir();
+      
+      final exeDir = p.dirname(Platform.resolvedExecutable);
+      final jniJarPath = Platform.isWindows ? p.join(exeDir, 'jni.jar') : p.join(exeDir, 'lib', 'jni.jar');
+
       Jni.spawnIfNotExists(
-        classPath: [bridgeJarPath, 'jni.jar'],
+        classPath: [bridgeJarPath, jniJarPath],
       );
 
       return await using((arena) async {

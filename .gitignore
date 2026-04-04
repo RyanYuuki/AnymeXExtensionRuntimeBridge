@@ -6,7 +6,6 @@
 desktop_runtime_host/
 runtime_host/
 .packages
-build/
 # If you're building an application, you may want to check-in your pubspec.lock
 pubspec.lock
 

@@ -45,8 +45,8 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
 # This list could contain prebuilt libraries, or libraries created by an
 # external build triggered from this build file.
 set(anymex_extension_runtime_bridge_bundled_libraries
-  "${CMAKE_CURRENT_SOURCE_DIR}/../build/jni_libs/libdartjni.so"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../build/jni_libs/jni.jar"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../build/linux-jni/libdartjni.so"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../build/linux-jni/jni.jar"
   PARENT_SCOPE
 )
 
