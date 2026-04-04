@@ -17,3 +17,5 @@ export './Services/Mangayomi/Models/Source.dart';
 export './Services/AniyomiDesktop/DesktopAniyomiExtensions.dart';
 export './Services/AniyomiDesktop/DesktopAniyomiSourceMethods.dart';
 export './Services/AniyomiDesktop/JniBridge.dart';
+export './Services/AniyomiDesktop/SidecarBridge.dart';
+export './Services/AniyomiDesktop/BridgeDispatcher.dart';

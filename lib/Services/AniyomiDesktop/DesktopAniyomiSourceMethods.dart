@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../anymex_extension_runtime_bridge.dart';
 import '../Aniyomi/Models/Source.dart';
+import 'BridgeDispatcher.dart';
 import '../../Logger.dart';
 
 class DesktopAniyomiSourceMethods extends SourceMethods {
@@ -16,7 +17,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
 
   @override
   Future<DMedia> getDetail(DMedia media, {SourceParams? parameters}) async {
-    final result = await JniBridge().invokeMethod('getDetail', {
+    final result = await BridgeDispatcher().invokeMethod('getDetail', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'media': {
@@ -39,7 +40,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
 
   @override
   Future<Pages> getLatestUpdates(int page, {SourceParams? parameters}) async {
-    final result = await JniBridge().invokeMethod('getLatestUpdates', {
+    final result = await BridgeDispatcher().invokeMethod('getLatestUpdates', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'page': page,
@@ -54,7 +55,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
 
   @override
   Future<Pages> getPopular(int page, {SourceParams? parameters}) async {
-    final result = await JniBridge().invokeMethod('getPopular', {
+    final result = await BridgeDispatcher().invokeMethod('getPopular', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'page': page,
@@ -70,7 +71,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
   @override
   Future<List<Video>> getVideoList(DEpisode episode,
       {SourceParams? parameters}) async {
-    final result = await JniBridge().invokeMethod('getVideoList', {
+    final result = await BridgeDispatcher().invokeMethod('getVideoList', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'episode': {
@@ -84,7 +85,16 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
       if (parameters != null) 'parameters': parameters.toJson(),
     });
 
-    print(result);
+    print("AnymeX Bridge: getVideoList result: $result");
+
+    if (result == null || result is! List) {
+      if (result is Map && result.containsKey('error')) {
+        Logger.log("AnymeX Bridge: getVideoList failed: ${result['error']}");
+      } else {
+        Logger.log("AnymeX Bridge: getVideoList returned invalid data: $result");
+      }
+      return [];
+    }
 
     return await compute(parseVideos, List<dynamic>.from(result));
   }
@@ -92,7 +102,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
   @override
   Future<List<PageUrl>> getPageList(DEpisode episode,
       {SourceParams? parameters}) async {
-    final result = await JniBridge().invokeMethod('getPageList', {
+    final result = await BridgeDispatcher().invokeMethod('getPageList', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'episode': {
@@ -106,13 +116,18 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
       if (parameters != null) 'parameters': parameters.toJson(),
     });
 
-    return compute(parsePageUrls, List<dynamic>.from(result));
+    if (result is Map && result.containsKey('error')) {
+      Logger.log("AnymeX Bridge: getPageList failed: ${result['error']}");
+      return [];
+    }
+
+    return compute(parsePageUrls, List<dynamic>.from(result as List));
   }
 
   @override
   Future<Pages> search(String query, int page, List filters,
       {SourceParams? parameters}) async {
-    final result = await JniBridge().invokeMethod('search', {
+    final result = await BridgeDispatcher().invokeMethod('search', {
       'sourceId': source.id,
       'isAnime': isAnime,
       'query': query,
@@ -156,9 +171,9 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
         'sourceId': source.id,
         'isAnime': isAnime,
       };
-      final String result = await JniBridge().invokeMethod('aniyomiGetPreferences', params);
+      final result = await BridgeDispatcher().invokeMethod('aniyomiGetPreferences', params);
       print("params => $params & result: $result");
-      final List<dynamic> decoded = jsonDecode(result);
+      final List<dynamic> decoded = (result is String) ? jsonDecode(result) : result;
       return decoded
           .map((e) =>
               SourcePreference.fromAniyomiDesktopJson(Map<String, dynamic>.from(e)))
@@ -172,7 +187,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
   @override
   Future<bool> setPreference(SourcePreference pref, dynamic value) async {
     try {
-      final result = await JniBridge().invokeMethod('aniyomiSavePreference', {
+      final result = await BridgeDispatcher().invokeMethod('aniyomiSavePreference', {
         'sourceId': source.id,
         'key': pref.key,
         'value': value,

@@ -106,35 +106,41 @@ var extention = new DefaultExtension();
 
   @override
   Future<MPages> getPopular(int page) async {
-    return MPages.fromJson(await _extensionCallAsync('getPopular($page)'));
+    final res = await _extensionCallAsync('getPopular($page)');
+    if (res == null) return MPages(list: [], hasNextPage: false);
+    return MPages.fromJson(res);
   }
 
   @override
   Future<MPages> getLatestUpdates(int page) async {
-    return MPages.fromJson(
-      await _extensionCallAsync('getLatestUpdates($page)'),
-    );
+    final res = await _extensionCallAsync('getLatestUpdates($page)');
+    if (res == null) return MPages(list: [], hasNextPage: false);
+    return MPages.fromJson(res);
   }
 
   @override
   Future<MPages> search(String query, int page, List<dynamic> filters) async {
     final activeFilters =
         filters.isNotEmpty ? filters : getFilterList().filters;
-    return MPages.fromJson(
-      await _extensionCallAsync(
-        'search("$query",$page,${jsonEncode(filterValuesListToJson(activeFilters))})',
-      ),
+    final res = await _extensionCallAsync(
+      'search("$query",$page,${jsonEncode(filterValuesListToJson(activeFilters))})',
     );
+    if (res == null) return MPages(list: [], hasNextPage: false);
+    return MPages.fromJson(res);
   }
 
   @override
   Future<MManga> getDetail(String url) async {
-    return MManga.fromJson(await _extensionCallAsync('getDetail(`$url`)'));
+    final res = await _extensionCallAsync('getDetail(`$url`)');
+    if (res == null) return MManga();
+    return MManga.fromJson(res);
   }
 
   @override
   Future<List<PageUrl>> getPageList(String url) async {
-    return (await _extensionCallAsync<List>('getPageList(`$url`)'))
+    final res = await _extensionCallAsync('getPageList(`$url`)');
+    if (res == null || res is! List) return [];
+    return res
         .map(
           (e) => e is String
               ? PageUrl(e.trim())
@@ -145,9 +151,14 @@ var extention = new DefaultExtension();
 
   @override
   Future<List<Video>> getVideoList(String url) async {
-    return (await _extensionCallAsync<List>('getVideoList(`$url`)'))
+    final res = await _extensionCallAsync('getVideoList(`$url`)');
+    if (res == null || res is! List) return [];
+    return res
         .where(
-          (element) => element['url'] != null && element['originalUrl'] != null,
+          (element) =>
+              element is Map &&
+              element['url'] != null &&
+              element['originalUrl'] != null,
         )
         .map((e) => Video.fromJson(e))
         .toList()

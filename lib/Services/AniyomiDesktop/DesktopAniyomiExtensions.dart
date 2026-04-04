@@ -12,7 +12,7 @@ import '../../Models/Source.dart';
 import '../../Extensions/Extensions.dart';
 import '../../Extensions/SourceMethods.dart';
 import 'DesktopAniyomiSourceMethods.dart';
-import 'JniBridge.dart';
+import 'BridgeDispatcher.dart';
 import '../Runtime/RuntimePaths.dart';
 import '../Runtime/RuntimeDownloader.dart';
 import '../Runtime/RuntimeController.dart';
@@ -48,7 +48,7 @@ class DesktopAniyomiExtensions extends Extension {
 
     if (controller.isReady.value) {
       final bridgeJarPath = await paths.bridgePath;
-      await JniBridge().initialize(bridgeJarPath);
+      await BridgeDispatcher().initialize(bridgeJarPath);
     } else {
       Logger.log(
           "AnymeX Bridge initialization deferred: Runtime not ready or download failed.");
@@ -90,7 +90,7 @@ class DesktopAniyomiExtensions extends Extension {
   Future<List<Source>> _loadInstalled(ItemType type) async {
     try {
       final extPath = await _getExtensionsPath();
-      final result = await JniBridge().invokeMethod('loadExtensions', {
+      final result = await BridgeDispatcher().invokeMethod('loadExtensions', {
         'folderPath': extPath,
       });
 
@@ -484,7 +484,7 @@ class DesktopAniyomiExtensions extends Extension {
 
     try {
       try {
-        await JniBridge().invokeMethod('unloadExtension', {'sourceId': s.id});
+        await BridgeDispatcher().invokeMethod('unloadExtension', {'sourceId': s.id});
       } catch (e) {
         Logger.log('Warning: Could not natively unload extension from JVM: $e');
       }

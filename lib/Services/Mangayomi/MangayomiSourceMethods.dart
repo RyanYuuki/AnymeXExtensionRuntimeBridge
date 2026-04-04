@@ -96,29 +96,38 @@ class MangayomiSourceMethods implements SourceMethods {
   @override
   Future<List<PageUrl>> getPageList(DEpisode episode,
       {SourceParams? parameters}) async {
-    final data = await getExtensionService(source).getPageList(episode.url!);
+    try {
+      final data = await getExtensionService(source).getPageList(episode.url!);
+      if (data == null) return [];
 
-    return data.map((e) => PageUrl(e.url, headers: e.headers)).toList();
+      return data.map((e) => PageUrl(e.url, headers: e.headers)).toList();
+    } catch (e) {
+      Logger.log("Mangayomi: getPageList failed: $e");
+      return [];
+    }
   }
 
   @override
   Future<List<Video>> getVideoList(DEpisode episode,
       {SourceParams? parameters}) async {
-    final data = await getExtensionService(source).getVideoList(episode.url!);
+    try {
+      final data = await getExtensionService(source).getVideoList(episode.url!);
+      if (data == null) return [];
 
-    return data.map((e) {
-      return Video(
-        e.quality,
-        e.url,
-        e.quality,
-        headers: e.headers,
-        audios:
-            e.audios?.map((a) => Track(file: a.file, label: a.label)).toList(),
-        subtitles: e.subtitles
-            ?.map((s) => Track(file: s.file, label: s.label))
-            .toList(),
-      );
-    }).toList();
+      return data.map((e) {
+        return Video(
+          e.quality,
+          e.url,
+          e.quality,
+          headers: e.headers,
+          audios: e.audios?.map((a) => Track(file: a.file, label: a.label)).toList(),
+          subtitles: e.subtitles?.map((s) => Track(file: s.file, label: s.label)).toList(),
+        );
+      }).toList();
+    } catch (e) {
+      Logger.log("Mangayomi: getVideoList failed: $e");
+      return [];
+    }
   }
 
   @override

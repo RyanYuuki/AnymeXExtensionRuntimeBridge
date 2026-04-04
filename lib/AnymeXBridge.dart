@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'Logger.dart';
 import 'Settings/KvStore.dart';
 import 'Services/Runtime/RuntimeDownloader.dart';
+import 'Services/AniyomiDesktop/BridgeDispatcher.dart';
 import 'Services/Runtime/RuntimeController.dart';
 import 'Services/Runtime/RuntimePaths.dart';
 import 'dart:async';
@@ -150,7 +151,8 @@ class AnymeXRuntimeBridge {
         print('Failed to cancel request for token $token: $e');
         return false;
       }
+    } else {
+      return await BridgeDispatcher().cancelRequest(token);
     }
-    return false; 
   }
 }

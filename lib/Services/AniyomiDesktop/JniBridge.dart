@@ -269,4 +269,9 @@ class JniBridge {
     _bridgeClass = null;
     _initialized = false;
   }
+
+  Future<bool> cancelRequest(String id) async {
+    print('JNI Bridge: cancelRequest called for $id (Not yet supported in JNI mode)');
+    return false;
+  }
 }
