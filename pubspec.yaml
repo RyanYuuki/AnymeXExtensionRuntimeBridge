@@ -39,7 +39,7 @@ dependencies:
     install_plugin: ^2.1.0
     device_apps: ^2.2.0
     file_picker: ^8.1.7
-    jni: ^0.10.0
+    jni: ^0.15.0
     archive: ^4.0.9
 
 dev_dependencies:

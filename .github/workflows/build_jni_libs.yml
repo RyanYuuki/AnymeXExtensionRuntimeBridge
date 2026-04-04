@@ -1,0 +1,95 @@
+name: Build JNI Native Libraries
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'jnigen.yaml'
+  workflow_dispatch: 
+
+jobs:
+  build_linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+          
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          
+      - name: Install dependencies
+        run: flutter pub get
+        
+      - name: Build Setup for Linux
+        run: dart run jni:setup
+        
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-jni
+          path: |
+            build/jni_libs/libdartjni.so
+            build/jni_libs/jni.jar
+
+  build_windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+          
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          
+      - name: Install dependencies
+        run: flutter pub get
+        
+      - name: Build Setup for Windows
+        run: dart run jni:setup
+        
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-jni
+          path: build/jni_libs/dartjni.dll
+
+  commit_libs:
+    needs: [build_linux, build_windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }} 
+          
+      - name: Download Linux JNI
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-jni
+          path: build/jni_libs/
+          
+      - name: Download Windows JNI
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-jni
+          path: build/jni_libs/
+
+      - name: Commit and Push automatically
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-build and commit native JNI libraries [Windows/Linux]"
+          file_pattern: "build/jni_libs/*"

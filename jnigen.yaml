@@ -1,0 +1,13 @@
+summarizer:
+  backend: asm
+
+output:
+  dart:
+    path: lib/generated_bindings.dart
+    structure: single_file
+
+class_path:
+  - 'desktop_runtime_host/build/libs/desktop_bridge.jar'
+
+classes:
+  - 'com.anymex.desktop.DesktopExtensionLoader'

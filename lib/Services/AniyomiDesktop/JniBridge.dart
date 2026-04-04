@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:isolate';
+import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:jni/jni.dart';
 import '../Runtime/RuntimePaths.dart';
-import '../Runtime/RuntimeController.dart';
+import '../../generated_bindings.dart';
 
 class JniBridge {
   static final JniBridge _instance = JniBridge._internal();
@@ -11,8 +13,16 @@ class JniBridge {
   JniBridge._internal();
 
   bool _initialized = false;
-  JClass? _bridgeClass;
   String? _bridgeJarPath;
+
+  static void _setupDylibDir() {
+    final exeDir = p.dirname(Platform.resolvedExecutable);
+    if (Platform.isWindows) {
+      Jni.setDylibDir(dylibDir:  exeDir);
+    } else if (Platform.isLinux) {
+      Jni.setDylibDir(dylibDir:  p.join(exeDir, 'lib'));
+    }
+  }
 
   Future<void> initialize(String bridgeJarPath) async {
     if (_initialized) return;
@@ -32,22 +42,13 @@ class JniBridge {
       print('Warning: Failed to preload JVM library at $jvmPath: $e');
     }
 
+    _setupDylibDir();
     Jni.spawnIfNotExists(
-      classPath: [bridgeJarPath],
+      classPath: [bridgeJarPath, 'jni.jar'],
     );
-
-    _bridgeClass = JClass.forName('com/anymex/desktop/DesktopExtensionLoader');
 
     _initialized = true;
     print('JNI Bridge initialized with $bridgeJarPath using JVM: $jvmPath');
-  }
-
-  JClass get _bridge {
-    if (!_initialized || _bridgeClass == null) {
-      throw StateError(
-          'JniBridge is not initialized. Call initialize() first.');
-    }
-    return _bridgeClass!;
   }
 
   Future<dynamic> invokeMethod(String method, Map<String, dynamic> args) async {
@@ -67,206 +68,154 @@ class JniBridge {
         } catch (e) {}
       }
 
+      _setupDylibDir();
       Jni.spawnIfNotExists(
-        classPath: [bridgeJarPath],
+        classPath: [bridgeJarPath, 'jni.jar'],
       );
 
-      final bridge =
-          JClass.forName('com/anymex/desktop/DesktopExtensionLoader');
-
-      try {
+      return await using((arena) async {
         switch (method) {
           case 'loadExtensions':
             final folderPath = args['folderPath'] as String;
-            final jFolderPath = folderPath.toJString();
-            final jsonString = bridge
-                .staticMethodId(
-                    'loadExtensions', '(Ljava/lang/String;)Ljava/lang/String;')
-                .call(bridge, JString.type, [jFolderPath]).toDartString(
-                    releaseOriginal: true);
-            jFolderPath.release();
+            final jsonString = DesktopExtensionLoader.loadExtensions(
+              folderPath.toJString()..releasedBy(arena),
+            ).toDartString(releaseOriginal: true);
             return jsonDecode(jsonString);
 
           case 'getPopular':
           case 'getLatestUpdates':
             final isPopular = method == 'getPopular';
-            final jClassName = (args['sourceId'] as String).toJString();
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
             final page = args['page'] as int;
             final isAnime = args['isAnime'] as bool;
 
-            final methodName =
-                isPopular ? 'fetchPopular' : 'fetchLatestUpdates';
-            final jsonString = bridge
-                .staticMethodId(methodName,
-                    '(Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;')
-                .call(bridge, JString.type, [
-              jClassName,
-              JValueInt(page),
-              isAnime.toJBoolean()
-            ]).toDartString(releaseOriginal: true);
-
-            jClassName.release();
-            return jsonDecode(jsonString);
+            final JString jsonJString;
+            if (isPopular) {
+              jsonJString = await DesktopExtensionLoader.fetchPopular(
+                sourceId,
+                page,
+                isAnime.toJBoolean()..releasedBy(arena),
+              );
+            } else {
+              jsonJString = await DesktopExtensionLoader.fetchLatestUpdates(
+                sourceId,
+                page,
+                isAnime.toJBoolean()..releasedBy(arena),
+              );
+            }
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
 
           case 'search':
-            final jClassName = (args['sourceId'] as String).toJString();
-            final jQuery = (args['query'] as String).toJString();
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
+            final query = (args['query'] as String).toJString()..releasedBy(arena);
             final page = args['page'] as int;
             final isAnime = args['isAnime'] as bool;
 
-            final jsonString = bridge
-                .staticMethodId('search',
-                    '(Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;')
-                .call(bridge, JString.type, [
-              jClassName,
-              jQuery,
-              JValueInt(page),
-              isAnime.toJBoolean()
-            ]).toDartString(releaseOriginal: true);
-
-            jClassName.release();
-            jQuery.release();
-            return jsonDecode(jsonString);
+            final jsonJString = await DesktopExtensionLoader.search(
+              sourceId,
+              query,
+              page,
+              isAnime.toJBoolean()..releasedBy(arena),
+            );
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
 
           case 'getDetail':
-            final jClassName = (args['sourceId'] as String).toJString();
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
             final mediaMap = args['media'] as Map;
-            final jUrl = (mediaMap['url'] as String?)?.toJString();
-            final jTitle = (mediaMap['title'] as String?)?.toJString();
-            final jCover = (mediaMap['thumbnail_url'] as String?)?.toJString();
+            final url = (mediaMap['url'] as String? ?? '').toJString()..releasedBy(arena);
+            final title = (mediaMap['title'] as String? ?? '').toJString()..releasedBy(arena);
+            final cover = (mediaMap['thumbnail_url'] as String? ?? '').toJString()..releasedBy(arena);
             final isAnime = args['isAnime'] as bool;
 
-            final jsonString = bridge
-                .staticMethodId('fetchDetails',
-                    '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;')
-                .call(bridge, JString.type, [
-              jClassName,
-              jUrl ?? ''.toJString(),
-              jTitle ?? ''.toJString(),
-              jCover ?? ''.toJString(),
-              isAnime.toJBoolean()
-            ]).toDartString(releaseOriginal: true);
-
-            jClassName.release();
-            jUrl?.release();
-            jTitle?.release();
-            jCover?.release();
-
-            return jsonDecode(jsonString);
+            final jsonJString = await DesktopExtensionLoader.fetchDetails(
+              sourceId,
+              url,
+              title,
+              cover,
+              isAnime.toJBoolean()..releasedBy(arena),
+            );
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
 
           case 'getVideoList':
-            final jClassName = (args['sourceId'] as String).toJString();
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
             final epMap = args['episode'] as Map;
-            final jUrl = (epMap['url'] as String?)?.toJString();
-            final jName = (epMap['name'] as String?)?.toJString();
+            final url = (epMap['url'] as String? ?? '').toJString()..releasedBy(arena);
+            final name = (epMap['name'] as String? ?? '').toJString()..releasedBy(arena);
 
-            final jsonString = bridge
-                .staticMethodId('fetchVideoList',
-                    '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;')
-                .call(bridge, JString.type, [
-              jClassName,
-              jUrl ?? ''.toJString(),
-              jName ?? ''.toJString()
-            ]).toDartString(releaseOriginal: true);
-
-            jClassName.release();
-            jUrl?.release();
-            jName?.release();
-
-            return jsonDecode(jsonString);
+            final jsonJString = await DesktopExtensionLoader.fetchVideoList(
+              sourceId,
+              url,
+              name,
+            );
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
 
           case 'getPageList':
-            final jClassName = (args['sourceId'] as String).toJString();
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
             final epMap = args['episode'] as Map;
-            final jUrl = (epMap['url'] as String?)?.toJString();
-            final jName = (epMap['name'] as String?)?.toJString();
+            final url = (epMap['url'] as String? ?? '').toJString()..releasedBy(arena);
+            final name = (epMap['name'] as String? ?? '').toJString()..releasedBy(arena);
 
-            final jsonString = bridge
-                .staticMethodId('fetchPageList',
-                    '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;')
-                .call(bridge, JString.type, [
-              jClassName,
-              jUrl ?? ''.toJString(),
-              jName ?? ''.toJString()
-            ]).toDartString(releaseOriginal: true);
-
-            jClassName.release();
-            jUrl?.release();
-            jName?.release();
-
-            return jsonDecode(jsonString);
+            final jsonJString = await DesktopExtensionLoader.fetchPageList(
+              sourceId,
+              url,
+              name,
+            );
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
 
           case 'unloadExtension':
-            final jClassName = (args['sourceId'] as String).toJString();
-            bridge
-                .staticMethodId('unloadExtension', '(Ljava/lang/String;)V')
-                .call(bridge, jvoid.type, [jClassName]);
-            jClassName.release();
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
+            DesktopExtensionLoader.unloadExtension(sourceId);
             return null;
 
           case 'aniyomiGetPreferences':
-            final jClassName = (args['sourceId'] as String).toJString();
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
             final isAnime = args['isAnime'] as bool;
 
-            final jsonString = bridge
-                .staticMethodId('aniyomiGetPreferences',
-                    '(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;')
-                .call(bridge, JString.type,
-                    [jClassName, JBoolean(isAnime)]).toDartString(
-                    releaseOriginal: true);
-
-            jClassName.release();
-            return jsonString;
+            final jsonJString = DesktopExtensionLoader.aniyomiGetPreferences(
+              sourceId,
+              isAnime.toJBoolean()..releasedBy(arena),
+            );
+            return jsonJString.toDartString(releaseOriginal: true);
 
           case 'aniyomiSavePreference':
-            final jClassName = (args['sourceId'] as String).toJString();
-            final jKey = (args['key'] as String).toJString();
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
+            final key = (args['key'] as String).toJString()..releasedBy(arena);
             final value = args['value'];
             final isAnime = args['isAnime'] as bool;
 
             JObject jValueObj;
             if (value is bool) {
-              jValueObj = JBoolean(value);
+              jValueObj = value.toJBoolean()..releasedBy(arena);
             } else if (value is String) {
-              jValueObj = value.toJString();
+              jValueObj = value.toJString()..releasedBy(arena);
             } else if (value is List) {
-              final list = JList.array(JString.type);
+              final list = JList.array(JString.type)..releasedBy(arena);
               for (final item in value) {
-                list.add(item.toString().toJString());
+                list.add(item.toString().toJString()..releasedBy(arena));
               }
               jValueObj = list;
             } else {
-              jValueObj = (value?.toString() ?? '').toJString();
+              jValueObj = (value?.toString() ?? '').toJString()..releasedBy(arena);
             }
 
-            final result = bridge
-                .staticMethodId('aniyomiSavePreference',
-                    '(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;')
-                .call(bridge, const JStringType(), [
-              jClassName,
-              jKey,
+            final result = DesktopExtensionLoader.aniyomiSavePreference(
+              sourceId,
+              key,
               jValueObj,
-              JBoolean(isAnime)
-            ]);
+              isAnime.toJBoolean()..releasedBy(arena),
+            );
 
-            jClassName.release();
-            jKey.release();
-            jValueObj.release();
             return result.toDartString(releaseOriginal: true) == 'success';
 
           default:
             throw UnimplementedError(
                 'Method $method is not implemented in JniBridge.');
         }
-      } finally {
-        bridge.release();
-      }
+      });
     });
   }
 
   void dispose() {
-    _bridgeClass?.release();
-    _bridgeClass = null;
     _initialized = false;
   }
 
