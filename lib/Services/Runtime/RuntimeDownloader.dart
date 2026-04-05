@@ -23,9 +23,37 @@ class RuntimeDownloader {
     if (Platform.isWindows) {
       return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_x64_windows_hotspot_17.0.12_7.zip";
     } else if (Platform.isMacOS) {
-      return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_x64_mac_hotspot_17.0.12_7.tar.gz";
+      final arch = _getMacArch();
+      if (arch == 'arm64') {
+        return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_aarch64_mac_hotspot_17.0.12_7.tar.gz";
+      } else {
+        return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_x64_mac_hotspot_17.0.12_7.tar.gz";
+      }
     } else {
-      return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_x64_linux_hotspot_17.0.12_7.tar.gz";
+      final arch = _getLinuxArch();
+      if (arch == 'aarch64' || arch == 'arm64') {
+        return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_aarch64_linux_hotspot_17.0.12_7.tar.gz";
+      } else {
+        return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12+7/OpenJDK17U-jre_x64_linux_hotspot_17.0.12_7.tar.gz";
+      }
+    }
+  }
+
+  static String _getMacArch() {
+    try {
+      final result = Process.runSync('uname', ['-m']);
+      return result.stdout.toString().trim().toLowerCase();
+    } catch (_) {
+      return 'x64';
+    }
+  }
+
+  static String _getLinuxArch() {
+    try {
+      final result = Process.runSync('uname', ['-m']);
+      return result.stdout.toString().trim().toLowerCase();
+    } catch (_) {
+      return 'x64';
     }
   }
 
@@ -72,8 +100,27 @@ class RuntimeDownloader {
         if (await jreArchive.exists()) await jreArchive.delete();
 
         if (Platform.isMacOS) {
-          controller.updateStatus("Applying macOS fixes...");
+          controller.updateStatus("Applying macOS permissions...");
           await Process.run('xattr', ['-cr', jreDir.path]);
+          final jreBinDir = Directory(p.join(jreDir.path, 'Contents', 'Home', 'bin'));
+          if (await jreBinDir.exists()) {
+            await Process.run('chmod', ['-R', '+x', jreBinDir.path]);
+          } else {
+            final altBinDir = Directory(p.join(jreDir.path, 'bin'));
+            if (await altBinDir.exists()) {
+              await Process.run('chmod', ['-R', '+x', altBinDir.path]);
+            }
+          }
+        } else if (Platform.isLinux) {
+          controller.updateStatus("Applying Linux permissions...");
+          final binDir = Directory(p.join(jreDir.path, 'bin'));
+          if (await binDir.exists()) {
+            await Process.run('chmod', ['-R', '+x', binDir.path]);
+          }
+          final libDir = Directory(p.join(jreDir.path, 'lib'));
+          if (await libDir.exists()) {
+            await Process.run('chmod', ['-R', 'a+r', libDir.path]);
+          }
         }
       }
 
