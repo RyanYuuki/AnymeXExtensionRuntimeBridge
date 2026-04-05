@@ -61,7 +61,7 @@ class DEpisode {
         scanlator: json['scanlator'],
         thumbnail: json['thumbnail'] ??
             json['posterUrl'] ??
-            json['extraData']['thumbnail'],
+            json['extraData']?['thumbnail'],
         description: json['description'],
         filler: json['filler'],
         episodeNumber: json['episodeNumber']?.toString() ?? '1',

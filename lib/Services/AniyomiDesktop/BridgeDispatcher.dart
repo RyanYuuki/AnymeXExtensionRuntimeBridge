@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'JniBridge.dart';
 import 'SidecarBridge.dart';
 
@@ -9,7 +8,7 @@ class BridgeDispatcher {
   factory BridgeDispatcher() => _instance;
   BridgeDispatcher._internal();
 
-  BridgeType _mode = Platform.isMacOS ? BridgeType.sidecar : BridgeType.jni;
+  BridgeType _mode = BridgeType.sidecar;
 
   void setMode(BridgeType mode) {
     _mode = mode;
