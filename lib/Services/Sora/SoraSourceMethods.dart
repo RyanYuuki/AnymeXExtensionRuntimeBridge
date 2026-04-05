@@ -150,7 +150,8 @@ class SoraSourceMethods extends SourceMethods {
               fallback ??
               "",
           url: e["href"] ?? e["id"],
-          name: e["title"],
+          name: e?["title"] ??
+              "Episode ${e['number'] ?? e['chapter'] ?? fallback ?? ''}",
           scanlator: e["scanlation_group"] ?? e["scanlator_group"],
         ),
       );
@@ -307,6 +308,7 @@ class SoraSourceMethods extends SourceMethods {
   @override
   Future<List<Video>> getVideoList(DEpisode episode,
       {SourceParams? parameters}) async {
+
     final data = (await _call("extractStreamUrl", [episode.url]));
 
     if (_isErrorPayload(data)) {
@@ -378,13 +380,66 @@ class SoraSourceMethods extends SourceMethods {
 
     Future<void> addVideo(
       String title,
-      String url, {
+      dynamic urlData, {
       Map<String, String>? headers,
       List<Track>? subtitles,
     }) async {
       final h = headers ?? defaultHeaders;
       final subs = subtitles ?? const <Track>[];
 
+      dynamic parsedUrlData = urlData;
+      if (urlData is String) {
+        final urlStr = urlData.trim();
+        if ((urlStr.startsWith('{') && urlStr.endsWith('}')) || (urlStr.startsWith('[') && urlStr.endsWith(']'))) {
+          try {
+            parsedUrlData = jsonDecode(urlStr);
+          } catch (_) {}
+        }
+      }
+
+      if (parsedUrlData is Map || parsedUrlData is List) {
+        List<dynamic> streamsToParse = [];
+        
+        if (parsedUrlData is Map && parsedUrlData.containsKey('streams') && parsedUrlData['streams'] is List) {
+          streamsToParse = parsedUrlData['streams'];
+        } else if (parsedUrlData is List) {
+          streamsToParse = parsedUrlData;
+        }
+
+        if (streamsToParse.isNotEmpty) {
+          for (var stream in streamsToParse) {
+            if (stream is Map) {
+              final streamMap = Map<String, dynamic>.from(stream);
+              final streamTitle = streamMap['title']?.toString();
+              final finalTitle = streamTitle != null ? (title == 'Video' || title == 'Server' ? streamTitle : "$title - $streamTitle") : title;
+              
+              final streamUrl = streamMap['streamUrl']?.toString() ?? streamMap['url']?.toString() ?? streamMap['stream']?.toString() ?? '';
+              if (streamUrl.isEmpty) continue;
+              
+              Map<String, String> finalHeaders = Map.from(h);
+              final streamHeaders = (streamMap['headers'] as Map?)?.cast<String, String>();
+              if (streamHeaders != null) {
+                finalHeaders.addAll(streamHeaders);
+              }
+              
+              final streamSubs = streamMap["subtitles"] is List
+                ? (streamMap["subtitles"] as List)
+                    .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
+                    .toList()
+                : subs;
+              
+              if (streamUrl.contains(".m3u8")) {
+                 videos.addAll(await expandM3U8(finalTitle, streamUrl, finalHeaders, streamSubs));
+              } else {
+                 videos.add(Video(finalTitle, streamUrl, "auto", headers: finalHeaders, subtitles: streamSubs));
+              }
+            }
+          }
+          return; 
+        }
+      }
+
+      final url = urlData.toString();
       if (url.contains(".m3u8")) {
         videos.addAll(await expandM3U8(title, url, h, subs));
       } else {
@@ -411,7 +466,7 @@ class SoraSourceMethods extends SourceMethods {
         for (final stream in data["streams"]) {
           final url = stream["streamUrl"] ?? stream["url"] ?? stream["stream"];
 
-          if (url == null || url.isEmpty) continue;
+          if (url == null || (url is String && url.isEmpty)) continue;
 
           final headers = (stream["headers"] as Map?)?.cast<String, String>();
 
@@ -428,6 +483,10 @@ class SoraSourceMethods extends SourceMethods {
             subtitles: subs,
           );
         }
+      }
+    } else if (data is List) {
+      for (final item in data) {
+        await addVideo("Video", item);
       }
     }
 
