@@ -67,7 +67,14 @@ class RuntimePaths {
     if (Platform.isWindows) {
       relativePath = p.join('bin', 'server', 'jvm.dll');
     } else if (Platform.isMacOS) {
-      relativePath = p.join('lib', 'server', 'libjvm.dylib');
+      final macBundlePath =
+          p.join('Contents', 'Home', 'lib', 'server', 'libjvm.dylib');
+      final macPath = p.join('lib', 'server', 'libjvm.dylib');
+
+      if (await File(p.join(jreRoot.path, macBundlePath)).exists()) {
+        return p.join(jreRoot.path, macBundlePath);
+      }
+      relativePath = macPath;
     } else {
       relativePath = p.join('lib', 'server', 'libjvm.so');
     }
@@ -77,7 +84,7 @@ class RuntimePaths {
       return fullPath;
     }
 
-    return _findJvmRecursive(jreRoot);
+    return _findFileRecursive(jreRoot, Platform.isWindows ? 'jvm.dll' : (Platform.isMacOS ? 'libjvm.dylib' : 'libjvm.so'));
   }
 
   Future<String?> get javaExecutablePath async {
@@ -92,14 +99,19 @@ class RuntimePaths {
     if (await File(path).exists()) {
       return path;
     }
+
+    if (Platform.isMacOS) {
+      final macPath = p.join(jreRoot.path, 'Contents', 'Home', 'bin', 'java');
+      if (await File(macPath).exists()) {
+        return macPath;
+      }
+      return _findFileRecursive(jreRoot, 'java');
+    }
+
     return null;
   }
 
-  Future<String?> _findJvmRecursive(Directory dir) async {
-    final fileName = Platform.isWindows
-        ? 'jvm.dll'
-        : (Platform.isMacOS ? 'libjvm.dylib' : 'libjvm.so');
-
+  Future<String?> _findFileRecursive(Directory dir, String fileName) async {
     try {
       await for (final entity in dir.list(recursive: true)) {
         if (entity is File && p.basename(entity.path) == fileName) {
@@ -109,4 +121,5 @@ class RuntimePaths {
     } catch (_) {}
     return null;
   }
+
 }
