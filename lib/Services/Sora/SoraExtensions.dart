@@ -216,12 +216,12 @@ class SoraExtensions extends Extension {
       for (final ext in extensions) {
         final type = (ext['type'] ?? '').toString().toLowerCase();
 
-        print("Parsing extension ${ext['sourceName']} of type $type for itemType $itemType");
-
         final matches = switch (itemType) {
-          ItemType.anime => type == 'anime' || type == 'shows/movies' || type == 'anime/movies/shows',
-          ItemType.manga => type == 'mangas',
-          ItemType.novel => type == "novels",
+          ItemType.anime => type.contains('anime') ||
+              type.contains('movies') ||
+              type.contains('shows'),
+          ItemType.manga => type.contains('mangas'),
+          ItemType.novel => type.contains("novels"),
         };
 
         if (!matches) continue;
