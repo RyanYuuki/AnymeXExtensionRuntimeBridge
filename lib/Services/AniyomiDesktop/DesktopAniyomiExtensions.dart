@@ -438,9 +438,18 @@ class DesktopAniyomiExtensions extends Extension {
         }
       }
 
+      final javaBinDir = p.dirname(javaPath);
+      final env = Map<String, String>.from(Platform.environment);
+      final pathKey = env.keys.firstWhere((k) => k.toUpperCase() == 'PATH', orElse: () => 'PATH');
+      final separator = Platform.isWindows ? ';' : ':';
+      final currentPath = env[pathKey] ?? '';
+      
+      env[pathKey] = '$javaBinDir$separator$currentPath';
+      env['JAVA_HOME'] = p.dirname(javaBinDir);
+
       process = await Process.run(
           dex2jarPath, ['--force', classesDex, '-o', outJarPath],
-          environment: {'JAVA_HOME': p.dirname(p.dirname(javaPath))});
+          environment: env);
 
       if (process.exitCode != 0) {
         throw Exception(
