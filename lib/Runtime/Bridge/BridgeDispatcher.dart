@@ -1,5 +1,7 @@
+import 'package:get/get.dart';
 import 'JniBridge.dart';
 import 'SidecarBridge.dart';
+import '../../ExtensionManager.dart';
 
 enum BridgeType { jni, sidecar }
 
@@ -8,11 +10,18 @@ class BridgeDispatcher {
   factory BridgeDispatcher() => _instance;
   BridgeDispatcher._internal();
 
-  BridgeType _mode = BridgeType.sidecar;
+  BridgeType get _mode {
+    if (Get.isRegistered<ExtensionManager>()) {
+      return Get.find<ExtensionManager>().bridgeType.value;
+    }
+    return BridgeType.sidecar;
+  }
 
   void setMode(BridgeType mode) {
-    _mode = mode;
-    print('Bridge Mode set to: $_mode');
+    if (Get.isRegistered<ExtensionManager>()) {
+      Get.find<ExtensionManager>().bridgeType.value = mode;
+    }
+    print('Bridge Mode set to: $mode');
   }
 
   BridgeType get mode => _mode;
@@ -30,6 +39,14 @@ class BridgeDispatcher {
       return await JniBridge().invokeMethod(method, args);
     } else {
       return await SidecarBridge().invokeMethod(method, args);
+    }
+  }
+
+  Stream<dynamic> invokeStreamMethod(String method, Map<String, dynamic> args) {
+    if (_mode == BridgeType.jni) {
+      return const Stream.empty();
+    } else {
+      return SidecarBridge().invokeStreamMethod(method, args);
     }
   }
 

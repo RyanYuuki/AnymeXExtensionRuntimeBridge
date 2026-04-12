@@ -4,8 +4,8 @@ import 'dart:isolate';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:jni/jni.dart';
-import '../Runtime/RuntimePaths.dart';
-import '../../generated_bindings.dart';
+import '../RuntimePaths.dart';
+import '../../Native/AnymeXNativeBindings.dart';
 
 class JniBridge {
   static final JniBridge _instance = JniBridge._internal();
@@ -85,7 +85,7 @@ class JniBridge {
         switch (method) {
           case 'loadExtensions':
             final folderPath = args['folderPath'] as String;
-            final jsonString = DesktopExtensionLoader.loadExtensions(
+            final jsonString = AniyomiSourceMethods.INSTANCE.loadExtensions(
               folderPath.toJString()..releasedBy(arena),
             ).toDartString(releaseOriginal: true);
             return jsonDecode(jsonString);
@@ -99,13 +99,13 @@ class JniBridge {
 
             final JString jsonJString;
             if (isPopular) {
-              jsonJString = await DesktopExtensionLoader.fetchPopular(
+              jsonJString = await AniyomiSourceMethods.INSTANCE.fetchPopular(
                 sourceId,
                 page,
                 isAnime.toJBoolean()..releasedBy(arena),
               );
             } else {
-              jsonJString = await DesktopExtensionLoader.fetchLatestUpdates(
+              jsonJString = await AniyomiSourceMethods.INSTANCE.fetchLatestUpdates(
                 sourceId,
                 page,
                 isAnime.toJBoolean()..releasedBy(arena),
@@ -119,7 +119,7 @@ class JniBridge {
             final page = args['page'] as int;
             final isAnime = args['isAnime'] as bool;
 
-            final jsonJString = await DesktopExtensionLoader.search(
+            final jsonJString = await AniyomiSourceMethods.INSTANCE.search(
               sourceId,
               query,
               page,
@@ -135,7 +135,7 @@ class JniBridge {
             final cover = (mediaMap['thumbnail_url'] as String? ?? '').toJString()..releasedBy(arena);
             final isAnime = args['isAnime'] as bool;
 
-            final jsonJString = await DesktopExtensionLoader.fetchDetails(
+            final jsonJString = await AniyomiSourceMethods.INSTANCE.fetchDetails(
               sourceId,
               url,
               title,
@@ -150,7 +150,7 @@ class JniBridge {
             final url = (epMap['url'] as String? ?? '').toJString()..releasedBy(arena);
             final name = (epMap['name'] as String? ?? '').toJString()..releasedBy(arena);
 
-            final jsonJString = await DesktopExtensionLoader.fetchVideoList(
+            final jsonJString = await AniyomiSourceMethods.INSTANCE.fetchVideoList(
               sourceId,
               url,
               name,
@@ -163,7 +163,7 @@ class JniBridge {
             final url = (epMap['url'] as String? ?? '').toJString()..releasedBy(arena);
             final name = (epMap['name'] as String? ?? '').toJString()..releasedBy(arena);
 
-            final jsonJString = await DesktopExtensionLoader.fetchPageList(
+            final jsonJString = await AniyomiSourceMethods.INSTANCE.fetchPageList(
               sourceId,
               url,
               name,
@@ -172,14 +172,14 @@ class JniBridge {
 
           case 'unloadExtension':
             final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
-            DesktopExtensionLoader.unloadExtension(sourceId);
+            AniyomiSourceMethods.INSTANCE.unloadExtension(sourceId);
             return null;
 
           case 'aniyomiGetPreferences':
             final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
             final isAnime = args['isAnime'] as bool;
 
-            final jsonJString = DesktopExtensionLoader.aniyomiGetPreferences(
+            final jsonJString = AniyomiSourceMethods.INSTANCE.getPreferences(
               sourceId,
               isAnime.toJBoolean()..releasedBy(arena),
             );
@@ -206,7 +206,7 @@ class JniBridge {
               jValueObj = (value?.toString() ?? '').toJString()..releasedBy(arena);
             }
 
-            final result = DesktopExtensionLoader.aniyomiSavePreference(
+            final result = AniyomiSourceMethods.INSTANCE.savePreference(
               sourceId,
               key,
               jValueObj,
@@ -214,6 +214,45 @@ class JniBridge {
             );
 
             return result.toDartString(releaseOriginal: true) == 'success';
+
+          case 'csLoadExtensions':
+            final folderPath = args['folderPath'] as String;
+            final jsonJString = await CloudStreamExtensionLoader.INSTANCE.loadExtensions(
+              folderPath.toJString()..releasedBy(arena),
+            );
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
+
+          case 'csSearch':
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
+            final query = (args['query'] as String).toJString()..releasedBy(arena);
+            final page = args['page'] as int;
+
+            final jsonJString = await CloudStreamExtensionLoader.INSTANCE.search(
+              sourceId,
+              query,
+              page,
+            );
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
+
+          case 'csGetDetail':
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
+            final url = (args['url'] as String).toJString()..releasedBy(arena);
+
+            final jsonJString = await CloudStreamExtensionLoader.INSTANCE.fetchDetails(
+              sourceId,
+              url,
+            );
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
+
+          case 'csGetVideoList':
+            final sourceId = (args['sourceId'] as String).toJString()..releasedBy(arena);
+            final url = (args['url'] as String).toJString()..releasedBy(arena);
+
+            final jsonJString = await CloudStreamExtensionLoader.INSTANCE.fetchVideoList(
+              sourceId,
+              url,
+            );
+            return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
 
           default:
             throw UnimplementedError(

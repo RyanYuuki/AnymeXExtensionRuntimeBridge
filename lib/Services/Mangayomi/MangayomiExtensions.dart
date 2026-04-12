@@ -104,6 +104,8 @@ class MangayomiExtensions extends Extension {
     try {
       final res = await _client.get(Uri.parse(m.sourceCodeUrl!));
 
+      print("Installing source: ${m.id} => ${m.sourceCodeUrl}");
+
       if (res.statusCode != 200) {
         throw Exception("Extension download failed");
       }

@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import '../../anymex_extension_runtime_bridge.dart';
+import '../anymex_extension_runtime_bridge.dart';
 
 class RuntimePaths {
   static final RuntimePaths _instance = RuntimePaths._internal();

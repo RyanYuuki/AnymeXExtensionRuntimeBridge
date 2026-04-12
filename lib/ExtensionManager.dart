@@ -9,11 +9,16 @@ import 'Services/CloudStream/CloudStreamExtensions.dart';
 import 'Services/Mangayomi/MangayomiExtensions.dart';
 import 'Services/Sora/Models/Source.dart';
 import 'Services/Sora/SoraExtensions.dart';
-import 'Services/AniyomiDesktop/DesktopAniyomiExtensions.dart';
 import 'anymex_extension_runtime_bridge.dart';
 
 class ExtensionManager extends GetxController {
   final managers = <Extension>[].obs;
+  final bridgeType = BridgeType.sidecar.obs;
+
+  void setBridgeType(BridgeType type) {
+    bridgeType.value = type;
+    BridgeDispatcher().setMode(type);
+  }
 
   final installedAnimeExtensions = <Source>[].obs;
   final installedMangaExtensions = <Source>[].obs;
@@ -56,9 +61,9 @@ class ExtensionManager extends GetxController {
             AniyomiExtensions(),
             CloudStreamExtensions(),
           ] else if (Platform.isWindows ||
-              Platform.isLinux ||
-              Platform.isMacOS) ...[
+              Platform.isLinux || Platform.isMacOS) ...[
             DesktopAniyomiExtensions(),
+            DesktopCloudStreamExtensions(),
           ],
         ],
         insertAtStart: true,
@@ -347,7 +352,9 @@ Extension getSourceManager(Source source) {
   }
   if (source is MSource) return em.findById('mangayomi')!;
   if (source is SSource) return em.findById('sora')!;
-  if (source is CloudStreamSource) return em.findById('cloudstream')!;
+  if (source is CloudStreamSource) {
+    return em.findById('cloudstream') ?? em.findById('cloudstream-desktop')!;
+  }
 
   return em.findById('mangayomi')!;
 }

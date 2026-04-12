@@ -2,10 +2,10 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'Logger.dart';
 import 'Settings/KvStore.dart';
-import 'Services/Runtime/RuntimeDownloader.dart';
-import 'Services/AniyomiDesktop/BridgeDispatcher.dart';
-import 'Services/Runtime/RuntimeController.dart';
-import 'Services/Runtime/RuntimePaths.dart';
+import 'Runtime/RuntimeDownloader.dart';
+import 'Runtime/Bridge/BridgeDispatcher.dart';
+import 'Runtime/RuntimeController.dart';
+import 'Runtime/RuntimePaths.dart';
 import 'dart:async';
 
 

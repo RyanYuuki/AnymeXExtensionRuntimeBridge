@@ -3,7 +3,7 @@ summarizer:
 
 output:
   dart:
-    path: lib/generated_bindings.dart
+    path: lib/Native/AnymeXNativeBindings.dart
     structure: single_file
 
 class_path:
@@ -11,3 +11,5 @@ class_path:
 
 classes:
   - 'com.anymex.desktop.DesktopExtensionLoader'
+  - 'com.anymex.desktop.AniyomiSourceMethods'
+  - 'com.anymex.desktop.cloudstream.CloudStreamExtensionLoader'

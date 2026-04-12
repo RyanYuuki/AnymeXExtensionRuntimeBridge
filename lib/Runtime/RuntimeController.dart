@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
 
-import '../../Logger.dart';
+import '../Logger.dart';
 
 class RuntimeController extends GetxController {
   static RuntimeController get it => Get.put(RuntimeController());

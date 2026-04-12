@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:archive/archive_io.dart';
-import '../../AnymeXBridge.dart';
+import '../AnymeXBridge.dart';
 import 'RuntimePaths.dart';
 import 'RuntimeController.dart';
 

@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../anymex_extension_runtime_bridge.dart';
 import '../Aniyomi/Models/Source.dart';
-import 'BridgeDispatcher.dart';
+import '../../Runtime/Bridge/BridgeDispatcher.dart';
 import '../../Logger.dart';
 
 class DesktopAniyomiSourceMethods extends SourceMethods {
@@ -32,10 +32,14 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
       if (parameters != null) 'parameters': parameters.toJson(),
     });
 
-    return await compute(
+    final data = await compute(
       DMedia.fromJson,
       Map<String, dynamic>.from(result as Map),
     );
+
+    print("AnymeX Bridge: getDetail result: ${data.toJson()}");
+
+    return data;
   }
 
   @override

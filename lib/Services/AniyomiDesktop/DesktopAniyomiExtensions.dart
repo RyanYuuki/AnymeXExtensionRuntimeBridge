@@ -11,17 +11,19 @@ import '../../Settings/KvStore.dart';
 import '../../Models/Source.dart';
 import '../../Extensions/Extensions.dart';
 import '../../Extensions/SourceMethods.dart';
-import 'DesktopAniyomiSourceMethods.dart';
-import 'BridgeDispatcher.dart';
-import '../Runtime/RuntimePaths.dart';
-import '../Runtime/RuntimeDownloader.dart';
-import '../Runtime/RuntimeController.dart';
+import '../../Runtime/RuntimeTools.dart';
+import '../../Runtime/RuntimePaths.dart';
+import '../../Runtime/RuntimeDownloader.dart';
+import '../../Runtime/RuntimeController.dart';
+import '../../Runtime/Bridge/BridgeDispatcher.dart';
+import '../../Runtime/DesktopExtensionBase.dart';
 import 'package:get/get.dart';
 import '../Aniyomi/Models/Source.dart';
 import '../Mangayomi/http/m_client.dart';
 import 'package:archive/archive_io.dart';
+import 'DesktopAniyomiSourceMethods.dart';
 
-class DesktopAniyomiExtensions extends Extension {
+class DesktopAniyomiExtensions extends DesktopExtensionBase {
   final _client = MClient.init();
 
   @override
@@ -37,41 +39,12 @@ class DesktopAniyomiExtensions extends Extension {
   SourceMethods createSourceMethods(Source source) =>
       DesktopAniyomiSourceMethods(source);
 
-  @override
-  Future<void> initialize() async {
-    if (!Get.isRegistered<RuntimeController>()) {
-      Get.put(RuntimeController());
-    }
-
-    final paths = RuntimePaths();
-    final controller = RuntimeController.it;
-
-    if (controller.isReady.value) {
-      final bridgeJarPath = await paths.bridgePath;
-      await BridgeDispatcher().initialize(bridgeJarPath);
-    } else {
-      Logger.log(
-          "AnymeX Bridge initialization deferred: Runtime not ready or download failed.");
-    }
-
-    await super.initialize();
-
-    await Future.wait([
-      fetchInstalledAnimeExtensions(),
-      fetchInstalledMangaExtensions(),
-    ]);
-
-    Logger.log("AnymeX Bridge: Desktop Extensions fetched on startup.");
-  }
-
   Future<String> _getExtensionsPath() async {
-    final dir = await RuntimePaths().extensionsDir;
-    return dir.path;
+    return getExtensionsPath('Aniyomi');
   }
 
   Future<String> _getToolsPath() async {
-    final dir = await RuntimePaths().toolsDir;
-    return dir.path;
+    return getToolsPath();
   }
 
   @override
@@ -246,7 +219,8 @@ class DesktopAniyomiExtensions extends Extension {
 
       return List.unmodifiable(filtered);
     } catch (e) {
-      debugPrint("AnymeXExtensionBridge: [Desktop Source] Failed to parse extensions from $repoUrl: $e");
+      debugPrint(
+          "AnymeXExtensionBridge: [Desktop Source] Failed to parse extensions from $repoUrl: $e");
       return const [];
     }
   }
@@ -379,28 +353,6 @@ class DesktopAniyomiExtensions extends Extension {
         throw Exception("Java executable not found. Cannot run dex2jar.");
       }
 
-      final dex2jarExt = Platform.isWindows ? 'bat' : 'sh';
-      final dex2jarPath =
-          p.join(toolsDir, 'dex-tools-v2.4', 'd2j-dex2jar.$dex2jarExt');
-      
-      if (!File(dex2jarPath).existsSync()) {
-        final zipUri = "https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip";
-        final zipPath = p.join(toolsDir, 'dex2jar.zip');
-
-        final res = await _client.get(Uri.parse(zipUri));
-        if (res.statusCode != 200 && res.statusCode != 302) {
-          throw Exception('Failed to download Dex2Jar: HTTP ${res.statusCode}');
-        }
-        File(zipPath).writeAsBytesSync(res.bodyBytes);
-
-        try {
-          await _extractZip(zipPath, toolsDir);
-          if (File(zipPath).existsSync()) File(zipPath).deleteSync();
-        } catch (e) {
-          throw Exception('Failed to install Dex2Jar: $e');
-        }
-      }
-
       final extDir = await _getExtensionsPath();
       final tempZipPath = p.join(extDir, '$pkgName.zip');
       final tempExtractedPath = p.join(extDir, '${pkgName}_extracted');
@@ -413,7 +365,7 @@ class DesktopAniyomiExtensions extends Extension {
       File(tempZipPath).writeAsBytesSync(apkRes.bodyBytes);
 
       try {
-        await _extractZip(tempZipPath, tempExtractedPath);
+        await extractZip(tempZipPath, tempExtractedPath);
       } catch (e) {
         throw Exception('Failed to extract extension APK: $e');
       }
@@ -424,40 +376,11 @@ class DesktopAniyomiExtensions extends Extension {
       }
 
       final outJarPath = p.join(extDir, '$pkgName.jar');
-      if (Platform.isLinux || Platform.isMacOS) {
-        await Process.run('chmod', ['+x', dex2jarPath]);
-        final dexToolsDir = p.dirname(dex2jarPath);
-        final libDir = p.join(p.dirname(dexToolsDir), 'lib');
-        final binDir = Directory(dexToolsDir);
-        if (await binDir.exists()) {
-          await for (final file in binDir.list()) {
-            if (file is File && file.path.endsWith('.sh')) {
-              await Process.run('chmod', ['+x', file.path]);
-            }
-          }
-        }
-      }
-
-      final javaBinDir = p.dirname(javaPath);
-      final env = Map<String, String>.from(Platform.environment);
-      final pathKey = env.keys.firstWhere((k) => k.toUpperCase() == 'PATH', orElse: () => 'PATH');
-      final separator = Platform.isWindows ? ';' : ':';
-      final currentPath = env[pathKey] ?? '';
-      
-      env[pathKey] = '$javaBinDir$separator$currentPath';
-      env['JAVA_HOME'] = p.dirname(javaBinDir);
-
-      process = await Process.run(
-          dex2jarPath, ['--force', classesDex, '-o', outJarPath],
-          environment: env);
-
-      if (process.exitCode != 0) {
-        throw Exception(
-            'Failed to run dex2jar compilation: ${process.stderr}\n${process.stdout}');
-      }
+      Logger.log("Converting Aniyomi APK to JAR...");
+      await RuntimeTools().runDex2Jar(classesDex, outJarPath);
 
       if (aSource.iconUrl != null) {
-        setVal('desktop_ext_icon_${pkgName}', aSource.iconUrl);
+        setVal('desktop_ext_icon_$pkgName', aSource.iconUrl);
       }
 
       try {
@@ -493,7 +416,8 @@ class DesktopAniyomiExtensions extends Extension {
 
     try {
       try {
-        await BridgeDispatcher().invokeMethod('unloadExtension', {'sourceId': s.id});
+        await BridgeDispatcher()
+            .invokeMethod('unloadExtension', {'sourceId': s.id});
       } catch (e) {
         Logger.log('Warning: Could not natively unload extension from JVM: $e');
       }
@@ -502,7 +426,7 @@ class DesktopAniyomiExtensions extends Extension {
       final jarPath = p.join(extPath, '$pkgName.jar');
 
       if (File(jarPath).existsSync()) File(jarPath).deleteSync();
-      KvStore.remove('desktop_ext_icon_${pkgName}');
+      KvStore.remove('desktop_ext_icon_$pkgName');
 
       final raw = getRawAvailableRx(s.itemType!).value;
       final installed =
@@ -528,20 +452,4 @@ class DesktopAniyomiExtensions extends Extension {
 
   @override
   Future<void> cancelRequest(String token) async {}
-
-  Future<void> _extractZip(String archivePath, String targetDir) async {
-    final bytes = await File(archivePath).readAsBytes();
-    final archive = ZipDecoder().decodeBytes(bytes);
-    for (final file in archive) {
-      final filename = file.name;
-      if (file.isFile) {
-        final data = file.content as List<int>;
-        File(p.join(targetDir, filename))
-          ..createSync(recursive: true)
-          ..writeAsBytesSync(data);
-      } else {
-        Directory(p.join(targetDir, filename)).createSync(recursive: true);
-      }
-    }
-  }
 }

@@ -3,6 +3,7 @@ import '../../../Models/Source.dart';
 class CloudStreamSource extends Source {
   String? internalName;
   String? pluginUrl;
+  String? jarUrl;
 
   CloudStreamSource({
     super.id,
@@ -19,10 +20,10 @@ class CloudStreamSource extends Source {
     super.hasUpdate,
     this.internalName,
     this.pluginUrl,
+    this.jarUrl,
   });
 
   factory CloudStreamSource.fromJson(Map<String, dynamic> json) {
-    // print('FROM JSONING CS SOURCE => ${json.toString()}');
     return CloudStreamSource(
       id: json['id']?.toString().toLowerCase() ??
           json['name']?.toString().toLowerCase() ??
@@ -38,6 +39,7 @@ class CloudStreamSource extends Source {
       managerId: 'cloudstream',
       hasUpdate: json['hasUpdate'] ?? false,
       itemType: ItemType.anime,
+      jarUrl: json['jarUrl'] ?? json['jar'],
       internalName: json['internalName'] ?? json['name'],
       pluginUrl: json['pluginUrl'] ?? json['plugin'] ?? json['url'],
     );
