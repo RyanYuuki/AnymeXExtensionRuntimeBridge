@@ -23,7 +23,7 @@ class SourcePreference {
     if (checkBoxPreference != null) return checkBoxPreference!.value;
     if (switchPreferenceCompat != null) return switchPreferenceCompat!.value;
     if (listPreference != null) return listPreference!.value;
-    if (multiSelectListPreference != null) return multiSelectListPreference!.value;
+    if (multiSelectListPreference != null) return multiSelectListPreference!.values;
     if (editTextPreference != null) return editTextPreference!.value;
     return null;
   }
@@ -87,7 +87,9 @@ class SourcePreference {
               summary: json['summary'],
               entries: (json['entries'] as List?)?.cast<String>(),
               entryValues: (json['entryValues'] as List?)?.cast<String>(),
-              value: (json['value'] as List?)?.cast<String>(),
+              values: (json['value'] is List) 
+                  ? (json['value'] as List).map((e) => e.toString()).toList() 
+                  : (json['values'] is List) ? (json['values'] as List).map((e) => e.toString()).toList() : null,
             )
           : (json['multiSelectListPreference'] != null
               ? MultiSelectListPreference.fromJson(
@@ -217,10 +219,7 @@ class MultiSelectListPreference {
     this.entries,
     this.entryValues,
     this.values,
-    this.value,
   });
-
-  List<String>? value;
 
   Map<String, dynamic> toJson() => {
         'title': title,
@@ -228,17 +227,19 @@ class MultiSelectListPreference {
         'entries': entries?.cast<String>(),
         'entryValues': entryValues?.cast<String>(),
         'values': values?.cast<String>(),
-        'value': value,
       };
 
   factory MultiSelectListPreference.fromJson(Map<String, dynamic> json) {
     return MultiSelectListPreference(
       title: json['title'],
       summary: json['summary'],
-      entries: json['entries']?.cast<String>(),
-      entryValues: json['entryValues']?.cast<String>(),
-      values: json['values']?.cast<String>(),
-      value: json['value']?.cast<String>(),
+      entries: (json['entries'] as List?)?.map((e) => e.toString()).toList(),
+      entryValues: (json['entryValues'] as List?)?.map((e) => e.toString()).toList(),
+      values: (json['values'] is List)
+          ? (json['values'] as List).map((e) => e.toString()).toList()
+          : (json['value'] is List)
+              ? (json['value'] as List).map((e) => e.toString()).toList()
+              : null,
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:d4rt/d4rt.dart';
 import 'package:flutter_qjs/flutter_qjs.dart';
 
@@ -186,28 +187,28 @@ class MProviderBridged {
     interpreter.registertopLevelFunction(
       'substringAfter',
       (visitor, positionalArgs, namedArgs, _) => MBridge.substringAfter(
-        positionalArgs[0] as String,
+        positionalArgs[0] as String?,
         positionalArgs[1] as String,
       ),
     );
     interpreter.registertopLevelFunction(
       'substringBefore',
       (visitor, positionalArgs, namedArgs, _) => MBridge.substringBefore(
-        positionalArgs[0] as String,
+        positionalArgs[0] as String?,
         positionalArgs[1] as String,
       ),
     );
     interpreter.registertopLevelFunction(
       'substringBeforeLast',
       (visitor, positionalArgs, namedArgs, _) => MBridge.substringBeforeLast(
-        positionalArgs[0] as String,
+        positionalArgs[0] as String?,
         positionalArgs[1] as String,
       ),
     );
     interpreter.registertopLevelFunction(
       'substringAfterLast',
       (visitor, positionalArgs, namedArgs, _) => MBridge.substringAfterLast(
-        positionalArgs[0] as String,
+        positionalArgs[0] as String?,
         positionalArgs[1] as String,
       ),
     );
@@ -325,7 +326,22 @@ class MProviderBridged {
     interpreter.registertopLevelFunction(
       'parseHtml',
       (visitor, positionalArgs, namedArgs, _) =>
-          MBridge.parsHtml(positionalArgs[0] as String),
+          MBridge.parsHtml(positionalArgs[0] as String?),
+    );
+    interpreter.registertopLevelFunction(
+      'jsonDecode',
+      (visitor, positionalArgs, namedArgs, _) {
+        try {
+          final result = json.decode(positionalArgs[0] as String);
+          return result ?? {};
+        } catch (_) {
+          return {};
+        }
+      },
+    );
+    interpreter.registertopLevelFunction(
+      'jsonEncode',
+      (visitor, positionalArgs, namedArgs, _) => json.encode(positionalArgs[0]),
     );
     interpreter.registertopLevelFunction(
       'getUrlWithoutDomain',

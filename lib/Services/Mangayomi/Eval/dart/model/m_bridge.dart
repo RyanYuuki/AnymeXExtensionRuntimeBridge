@@ -59,8 +59,8 @@ class WordSet {
 }
 
 class MBridge {
-  static MDocument parsHtml(String html) {
-    return MDocument(Document.html(html));
+  static MDocument parsHtml(String? html) {
+    return MDocument(Document.html(html ?? ""));
   }
 
   ///Create query by html string
@@ -296,22 +296,22 @@ class MBridge {
   }
 
   //Utility to use substring
-  static String substringAfter(String text, String pattern) {
-    return text.substringAfter(pattern);
+  static String substringAfter(String? text, String pattern) {
+    return (text ?? "").substringAfter(pattern);
   }
 
   //Utility to use substring
-  static String substringBefore(String text, String pattern) {
-    return text.substringBefore(pattern);
+  static String substringBefore(String? text, String pattern) {
+    return (text ?? "").substringBefore(pattern);
   }
 
   //Utility to use substring
-  static String substringBeforeLast(String text, String pattern) {
-    return text.substringBeforeLast(pattern);
+  static String substringBeforeLast(String? text, String pattern) {
+    return (text ?? "").substringBeforeLast(pattern);
   }
 
-  static String substringAfterLast(String text, String pattern) {
-    return text.split(pattern).last;
+  static String substringAfterLast(String? text, String pattern) {
+    return (text ?? "").split(pattern).last;
   }
 
   //Parse a chapter date to millisecondsSinceEpoch

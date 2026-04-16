@@ -244,7 +244,6 @@ SourcePreference mapToSourcePreference(Map<String, dynamic> json) {
           entries: entries,
           entryValues: entryValues,
           values: values,
-          value: values,
         ),
       );
 

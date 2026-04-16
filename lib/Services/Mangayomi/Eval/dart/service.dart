@@ -22,7 +22,7 @@ class DartExtensionService implements ExtensionService {
     RegistrerBridge.registerBridge(interpreter);
 
     interpreter.execute(
-      source: source.sourceCode!.replaceAll('Client(source)', 'Client()'),
+      source: _patchSource(source.sourceCode!),
       args: source.toMSource(),
     );
     return interpreter;
@@ -181,5 +181,32 @@ class DartExtensionService implements ExtensionService {
     } catch (_) {
       return [];
     }
+  }
+  String _patchSource(String source) {
+    var patched = source.replaceAll('Client(source)', 'Client()');
+
+    patched = patched.replaceAll("import 'dart:convert';", "");
+    patched = patched.replaceAll('import "dart:convert";', "");
+
+    patched = patched.replaceAll('json.decode(', 'jsonDecode(');
+    patched = patched.replaceAll('json.encode(', 'jsonEncode(');
+
+    final nullAwareRegex = RegExp(r'([\w\.]+(?:\[[^\]]+\])*)\s*\?\[([^\]]+)\]');
+    while (patched.contains(nullAwareRegex)) {
+      patched = patched.replaceAllMapped(nullAwareRegex, (match) {
+        final target = match.group(1);
+        final index = match.group(2);
+        return '(($target == null) ? null : $target[$index])';
+      });
+    }
+
+    final bangIndexRegex = RegExp(r'([\w\.]+(?:\[[^\]]+\])*)!\s*\[([^\]]+)\]');
+    patched = patched.replaceAllMapped(bangIndexRegex, (match) {
+      final target = match.group(1);
+      final index = match.group(2);
+      return '$target[$index]';
+    });
+
+    return patched;
   }
 }

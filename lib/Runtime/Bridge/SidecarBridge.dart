@@ -32,12 +32,12 @@ class SidecarBridge {
     _process = await Process.start(javaPath, ['-jar', bridgeJarPath]);
 
     _process!.stdout
-        .transform(utf8.decoder)
+        .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
         .listen(_handleResponse);
 
     _process!.stderr
-        .transform(utf8.decoder)
+        .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
         .listen((line) {
       print('[Sidecar Log] $line');
