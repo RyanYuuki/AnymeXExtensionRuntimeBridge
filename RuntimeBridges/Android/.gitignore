@@ -1,0 +1,77 @@
+# Gradle
+
+.gradle/
+build/
+**/build/
+
+# Local config (VERY IMPORTANT — don't commit)
+
+local.properties
+
+# Android Studio / IntelliJ
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Kotlin
+
+*.class
+*.kotlin_module
+out/
+
+# Logs
+
+*.log
+
+# Generated files
+
+captures/
+.externalNativeBuild/
+.cxx/
+
+# OS files
+
+.DS_Store
+Thumbs.db
+
+# Keystore (IMPORTANT — never commit)
+
+*.jks
+*.keystore
+
+# Android specific
+
+*.apk
+*.aab
+
+# Navigation Safe Args
+
+.navigation/
+
+# Google Services
+
+google-services.json
+
+# Firebase crashlytics
+
+com_crashlytics_export_strings.xml
+
+# NDK
+
+obj/
+
+# Kotlin Multiplatform
+
+kotlin-js-store/
+node_modules/
+
+# Mac/Linux temp
+
+*.swp
+*.swo
+
+# Test outputs
+
+test-output/
