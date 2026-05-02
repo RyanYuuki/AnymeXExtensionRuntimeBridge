@@ -7,7 +7,7 @@ output:
     structure: single_file
 
 class_path:
-  - 'desktop_runtime_host/build/libs/desktop_bridge.jar'
+  - 'RuntimeBridges/Desktop/build/libs/desktop_bridge.jar'
 
 classes:
   - 'com.anymex.desktop.DesktopExtensionLoader'

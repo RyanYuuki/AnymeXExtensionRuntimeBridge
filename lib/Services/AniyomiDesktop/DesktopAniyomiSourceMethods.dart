@@ -176,7 +176,6 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
         'isAnime': isAnime,
       };
       final result = await BridgeDispatcher().invokeMethod('aniyomiGetPreferences', params);
-      print("params => $params & result: $result");
       final List<dynamic> decoded = (result is String) ? jsonDecode(result) : result;
       return decoded
           .map((e) =>

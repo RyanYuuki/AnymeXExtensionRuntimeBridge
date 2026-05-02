@@ -42,17 +42,17 @@ abstract class Extension {
   Future<void> initialize() async {
     try {
       if (supportsAnime) {
-        unawaited(fetchInstalledAnimeExtensions());
+        await fetchInstalledAnimeExtensions();
         unawaited(fetchAnimeExtensions());
       }
 
       if (supportsManga) {
-        unawaited(fetchInstalledMangaExtensions());
+        await fetchInstalledMangaExtensions();
         unawaited(fetchMangaExtensions());
       }
 
       if (supportsNovel) {
-        unawaited(fetchInstalledNovelExtensions());
+        await fetchInstalledNovelExtensions();
         unawaited(fetchNovelExtensions());
       }
     } catch (e, s) {

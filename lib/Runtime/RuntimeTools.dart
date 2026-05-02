@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:archive/archive_io.dart';
+import 'RuntimeController.dart';
 import 'RuntimePaths.dart';
 import '../Logger.dart';
 
@@ -14,22 +15,47 @@ class RuntimeTools {
   final _client = http.Client();
 
   Future<String> ensureDex2Jar() async {
+    final controller = RuntimeController.it;
     final toolsDir = await _paths.toolsDir;
-    final dex2jarExt = Platform.isWindows ? 'bat' : 'sh';
-    final dex2jarPath = p.join(toolsDir.path, 'dex-tools-v2.4', 'd2j-dex2jar.$dex2jarExt');
+    final dex2jarPath = await _paths.dex2jarPath;
 
     if (!File(dex2jarPath).existsSync()) {
-      Logger.log("Dex2Jar not found, downloading...");
-      final zipUri = "https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip";
+      Logger.log("Dex2Jar not found, downloading as fallback...");
+
+      const zipUri = "https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip";
       final zipPath = p.join(toolsDir.path, 'dex2jar.zip');
 
-      final res = await _client.get(Uri.parse(zipUri));
-      if (res.statusCode != 200 && res.statusCode != 302) {
-        throw Exception('Failed to download Dex2Jar: HTTP ${res.statusCode}');
+      controller.updateStatus("Downloading Dex2Jar...");
+      controller.updateProgress(0.0, "");
+
+      final request = http.Request('GET', Uri.parse(zipUri));
+      final response = await _client.send(request);
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download Dex2Jar: HTTP ${response.statusCode}');
       }
-      File(zipPath).writeAsBytesSync(res.bodyBytes);
+
+      final totalSize = response.contentLength ?? 0;
+      var downloaded = 0;
+      final sink = File(zipPath).openWrite();
+
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        downloaded += chunk.length;
+        if (totalSize > 0) {
+          final progress = (downloaded / totalSize).clamp(0.0, 1.0);
+          final info =
+              "${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB / ${(totalSize / 1024 / 1024).toStringAsFixed(1)} MB";
+          controller.updateProgress(progress, info);
+        } else {
+          controller.updateProgress(
+              0.0, "${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB downloaded");
+        }
+      }
+      await sink.close();
 
       try {
+        controller.updateStatus("Extracting Dex2Jar...");
         await _extractZip(zipPath, toolsDir.path);
         if (File(zipPath).existsSync()) File(zipPath).deleteSync();
         Logger.log("Dex2Jar installed successfully.");
@@ -39,6 +65,7 @@ class RuntimeTools {
     }
 
     if (Platform.isLinux || Platform.isMacOS) {
+      controller.updateStatus("Applying Dex2Jar permissions...");
       await Process.run('chmod', ['+x', dex2jarPath]);
       final dexToolsBinDir = Directory(p.dirname(dex2jarPath));
       if (await dexToolsBinDir.exists()) {
@@ -63,16 +90,17 @@ class RuntimeTools {
 
     final javaBinDir = p.dirname(javaPath);
     final env = Map<String, String>.from(Platform.environment);
-    final pathKey = env.keys.firstWhere((k) => k.toUpperCase() == 'PATH', orElse: () => 'PATH');
+    final pathKey =
+        env.keys.firstWhere((k) => k.toUpperCase() == 'PATH', orElse: () => 'PATH');
     final separator = Platform.isWindows ? ';' : ':';
-    
+
     env[pathKey] = '$javaBinDir$separator${env[pathKey] ?? ''}';
     env['JAVA_HOME'] = p.dirname(javaBinDir);
 
     final process = await Process.run(
-      dex2jarPath, 
+      dex2jarPath,
       ['--force', dexPath, '-o', outJarPath],
-      environment: env
+      environment: env,
     );
 
     if (process.exitCode != 0) {

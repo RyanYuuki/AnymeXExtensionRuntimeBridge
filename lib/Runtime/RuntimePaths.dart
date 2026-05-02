@@ -57,6 +57,12 @@ class RuntimePaths {
     return Directory(p.join(dir.path, 'jre'));
   }
 
+  Future<String> get dex2jarPath async {
+    final dir = await toolsDir;
+    final ext = Platform.isWindows ? 'bat' : 'sh';
+    return p.join(dir.path, 'dex-tools-v2.4', 'd2j-dex2jar.$ext');
+  }
+
   Future<String?> get jvmLibPath async {
     if (Platform.isAndroid) return null;
 

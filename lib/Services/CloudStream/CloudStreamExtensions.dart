@@ -101,6 +101,7 @@ class CloudStreamExtensions extends Extension {
   @override
   Future<void> fetchAnimeExtensions() async {
     final repos = _loadRepos();
+    print('CloudStream repos to fetch: ${repos.map((r) => r.url).toList()}');
     final allAvailable = <Source>[];
 
     for (final repo in repos) {

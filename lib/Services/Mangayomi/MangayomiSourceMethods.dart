@@ -124,8 +124,8 @@ class MangayomiSourceMethods implements SourceMethods {
           subtitles: e.subtitles?.map((s) => Track(file: s.file, label: s.label)).toList(),
         );
       }).toList();
-    } catch (e) {
-      Logger.log("Mangayomi: getVideoList failed: $e");
+    } catch (e, st) {
+      Logger.log("Mangayomi: getVideoList failed: $e\n$st");
       return [];
     }
   }

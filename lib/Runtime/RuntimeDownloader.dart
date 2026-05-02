@@ -14,10 +14,12 @@ class RuntimeDownloader {
   final _paths = RuntimePaths();
   final _client = http.Client();
 
-  static const String androidApkUrl = 
+  static const String androidApkUrl =
       "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/latest/download/anymex_runtime_host.apk";
-  static const String desktopJarUrl = 
+  static const String desktopJarUrl =
       "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/latest/download/anymex_desktop_runtime.jar";
+  static const String dex2jarUrl =
+      "https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip";
 
   static String get _jreUrl {
     if (Platform.isWindows) {
@@ -69,13 +71,18 @@ class RuntimeDownloader {
       final bridgePath = await _paths.bridgePath;
       final bridgeFile = File(bridgePath);
       final jreDir = await _paths.jreDir;
+      final toolsDir = await _paths.toolsDir;
+      final dex2jarPath = await _paths.dex2jarPath;
+
+      final bool isDesktop = !Platform.isAndroid;
 
       bool needsBridge =
           (localApkPath == null) && (force || !await bridgeFile.exists());
-      bool needsJre = !Platform.isAndroid && !await jreDir.exists();
+      bool needsJre = isDesktop && !await jreDir.exists();
+      bool needsDex2jar = isDesktop && !File(dex2jarPath).existsSync();
 
-
-      int totalFiles = (needsBridge ? 1 : 0) + (needsJre ? 1 : 0);
+      int totalFiles =
+          (needsBridge ? 1 : 0) + (needsJre ? 1 : 0) + (needsDex2jar ? 1 : 0);
       int currentFileIndex = 0;
 
       if (needsBridge) {
@@ -90,13 +97,13 @@ class RuntimeDownloader {
         currentFileIndex++;
         final ext = Platform.isWindows ? ".zip" : ".tar.gz";
         final jreArchive = File(p.join((await _paths.runtimeDir).path, "jre_archive$ext"));
-        
+
         final stepPrefix = totalFiles > 1 ? "($currentFileIndex/$totalFiles) " : "";
-        await _downloadFile(_jreUrl, jreArchive.path, "$stepPrefix Runtime");
-        
+        await _downloadFile(_jreUrl, jreArchive.path, "${stepPrefix}Java Runtime");
+
         controller.updateStatus("Extracting Java Runtime...");
         await _extractArchive(jreArchive.path, jreDir.path);
-        
+
         if (await jreArchive.exists()) await jreArchive.delete();
 
         if (Platform.isMacOS) {
@@ -124,13 +131,37 @@ class RuntimeDownloader {
         }
       }
 
+      if (needsDex2jar) {
+        currentFileIndex++;
+        final stepPrefix = totalFiles > 1 ? "($currentFileIndex/$totalFiles) " : "";
+        final zipPath = p.join(toolsDir.path, 'dex2jar.zip');
+        await _downloadFile(dex2jarUrl, zipPath, "${stepPrefix}Dex2Jar");
+
+        controller.updateStatus("Extracting Dex2Jar...");
+        await _extractArchive(zipPath, toolsDir.path);
+        if (File(zipPath).existsSync()) File(zipPath).deleteSync();
+
+        if (Platform.isLinux || Platform.isMacOS) {
+          controller.updateStatus("Applying Dex2Jar permissions...");
+          await Process.run('chmod', ['+x', dex2jarPath]);
+          final dexBinDir = Directory(p.dirname(dex2jarPath));
+          if (await dexBinDir.exists()) {
+            await for (final file in dexBinDir.list()) {
+              if (file is File && file.path.endsWith('.sh')) {
+                await Process.run('chmod', ['+x', file.path]);
+              }
+            }
+          }
+        }
+      }
+
       controller.updateStatus("Finalizing bridge...");
       bool isLoaded;
-      
+
       if (Platform.isAndroid) {
         isLoaded = await AnymeXRuntimeBridge.loadAnymeXRuntimeHost(localApkPath ?? bridgeFile.path);
       } else {
-        isLoaded = true; 
+        isLoaded = true;
       }
 
       if (isLoaded) {
