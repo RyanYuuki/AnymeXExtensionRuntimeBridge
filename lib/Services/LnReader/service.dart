@@ -161,12 +161,41 @@ const extension = exports.default;
 
   @override
   Future<MManga> getDetail(String url) async {
-    final item = SourceNovel.fromJson(
-      await _extensionCallAsync('parseNovel(`$url`)', {}),
-    );
-    final chapters = SourcePage.fromJson(
-      await _extensionCallAsync('parsePage(`${item.path}`, `1`)', {}),
-    );
+    Map<String, dynamic>? novelJson;
+    try {
+      novelJson = await _extensionCallAsync<Map<String, dynamic>?>(
+        'parseNovel(`$url`)',
+        null,
+      );
+    } catch (e) {
+      throw Exception(
+        'LNReader source "${source.name}" threw while parsing novel details '
+        'for "$url": $e. This usually means the site changed its layout, '
+        'blocked the request, or the extension itself is broken - it is not '
+        'a bridge bug.',
+      );
+    }
+
+    if (novelJson == null || novelJson['path'] == null) {
+      throw Exception(
+        'LNReader source "${source.name}" returned no usable data for '
+        '"$url" (missing "path"). The extension likely failed silently - '
+        'try updating the extension or check if the site is reachable.',
+      );
+    }
+
+    final item = SourceNovel.fromJson(novelJson);
+
+    Map<String, dynamic>? pageJson;
+    try {
+      pageJson = await _extensionCallAsync<Map<String, dynamic>?>(
+        'parsePage(`${item.path}`, `1`)',
+        null,
+      );
+    } catch (_) {
+      pageJson = null;
+    }
+    final chapters = SourcePage.fromJson(pageJson ?? {});
     final chaps =
         ((chapters.chapters.isNotEmpty ? chapters.chapters : item.chapters)
                 ?.map(
