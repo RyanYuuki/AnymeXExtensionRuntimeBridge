@@ -27,6 +27,9 @@ class CloudStreamSource extends Source {
 
   factory CloudStreamSource.fromJson(Map<String, dynamic> json) {
     final language = json['language'] as String?;
+    final rawVersion = json['version']?.toString() ?? json['versionLast']?.toString();
+    final versionStr = (rawVersion != null && rawVersion.isNotEmpty) ? rawVersion : "1.0.0";
+
     return CloudStreamSource(
       id: json['id']?.toString().toLowerCase() ??
           json['name']?.toString().toLowerCase() ??
@@ -36,8 +39,8 @@ class CloudStreamSource extends Source {
       lang: (language == null || language.trim().isEmpty) ? 'ALL' : language,
       iconUrl: json['iconUrl'],
       isNsfw: json['isNsfw'] ?? false,
-      version: json['version']?.toString() ?? "1.0.0",
-      versionLast: json['versionLast'] ?? "1.0.0",
+      version: versionStr,
+      versionLast: json['versionLast']?.toString() ?? versionStr,
       repo: json['repo'],
       managerId: 'cloudstream',
       hasUpdate: json['hasUpdate'] ?? false,

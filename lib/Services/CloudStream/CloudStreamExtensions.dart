@@ -266,6 +266,7 @@ class CloudStreamExtensions extends Extension {
         if (repoMatch != null) {
           source.pluginUrl ??= repoMatch.pluginUrl;
           source.repo ??= repoMatch.repo;
+          source.version ??= repoMatch.version;
           source.versionLast ??= repoMatch.version;
           source.iconUrl ??= repoMatch.iconUrl;
         }

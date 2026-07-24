@@ -9,6 +9,7 @@ import 'package:archive/archive_io.dart';
 
 import '../../Logger.dart';
 import '../../Settings/KvStore.dart';
+import 'package:collection/collection.dart';
 import '../../Models/Source.dart';
 import '../../Extensions/Extensions.dart';
 import '../../Extensions/SourceMethods.dart';
@@ -252,6 +253,30 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
   @override
   Future<void> installSource(Source source, {String? customPath}) async {
     if (source is CloudStreamSource) {
+      if (source.pluginUrl == null || source.pluginUrl!.isEmpty) {
+        final normName = _normalizeName(source.name);
+        final normInternalName = _normalizeName(source.internalName);
+        final repoMatch = availableAnimeExtensions.value
+            .whereType<CloudStreamSource>()
+            .firstWhereOrNull((s) {
+          final sNormName = _normalizeName(s.name);
+          final sNormInternalName = _normalizeName(s.internalName);
+          return sNormName == normName ||
+                 sNormInternalName == normInternalName ||
+                 (normInternalName.isNotEmpty && sNormName == normInternalName) ||
+                 (sNormInternalName.isNotEmpty && sNormInternalName == normName);
+        });
+
+        if (repoMatch != null) {
+          source.pluginUrl ??= repoMatch.pluginUrl;
+          source.jarUrl ??= repoMatch.jarUrl;
+          source.repo ??= repoMatch.repo;
+          source.version ??= repoMatch.version;
+          source.versionLast ??= repoMatch.version;
+          source.iconUrl ??= repoMatch.iconUrl;
+        }
+      }
+
       final pluginUrl = source.pluginUrl;
       final jarUrl = source.jarUrl;
 
