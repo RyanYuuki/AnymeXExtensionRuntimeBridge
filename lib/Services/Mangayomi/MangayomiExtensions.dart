@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../Extensions/Extensions.dart';
@@ -28,54 +29,60 @@ class MangayomiExtensions extends Extension {
   @override
   Future<void> fetchAnimeExtensions() async {
     final res = await _fetchExtensions(ItemType.anime);
-    getAvailableRx(ItemType.anime).value = res;
+    _detectUpdates(res, ItemType.anime);
   }
 
   @override
   Future<void> fetchMangaExtensions() async {
     final res = await _fetchExtensions(ItemType.manga);
-    getAvailableRx(ItemType.manga).value = res;
+    _detectUpdates(res, ItemType.manga);
   }
 
   @override
   Future<void> fetchNovelExtensions() async {
     final res = await _fetchExtensions(ItemType.novel);
-    getAvailableRx(ItemType.novel).value = res;
+    _detectUpdates(res, ItemType.novel);
+  }
+
+  Future<List<Source>> fetchExtensions(ItemType type) async {
+    return _fetchExtensions(type);
   }
 
   Future<List<Source>> _fetchExtensions(ItemType type) async {
     final repos = _loadRepos(type);
-    if (repos.isEmpty) return const [];
+    final allSources = <Source>[];
 
-    getReposRx(type).value = repos;
+    for (final repo in repos) {
+      final sources = await _fetchRepoSources(repo, type);
+      allSources.addAll(sources);
+    }
 
-    final results = await Future.wait(
-      repos.map((r) => _fetchRepo(r, type)),
-    );
-
-    final all = results.expand((e) => e).toList(growable: false);
+    final rawRx = getRawAvailableRx(type);
+    rawRx.value = List.unmodifiable(allSources);
 
     final installed = _loadInstalled(type);
     final installedIds = installed.map((e) => e.id).toSet();
 
-    _detectUpdates(all, type);
+    final filtered =
+        allSources.where((s) => !installedIds.contains(s.id)).toList();
 
-    getRawAvailableRx(type).value = List.unmodifiable(all);
-
-    return List.unmodifiable(
-      all.where((s) => !installedIds.contains(s.id)),
-    );
+    getAvailableRx(type).value = List.unmodifiable(filtered);
+    return filtered;
   }
 
-  Future<List<Source>> _fetchRepo(Repo repo, ItemType type) async {
+  Future<List<Source>> _fetchRepoSources(Repo repo, ItemType type) async {
     try {
       final res = await _client.get(Uri.parse(repo.url));
-      if (res.statusCode != 200) return const [];
+      if (res.statusCode != 200) {
+        throw Exception("Failed to fetch repo");
+      }
 
-      return compute(
+      final parsed = await compute(
         _parseExtensions,
         (res.body, repo.url, type),
       );
+
+      return parsed;
     } catch (e) {
       Logger.log("Repo failed ${repo.url}: $e");
       return const [];
@@ -100,6 +107,18 @@ class MangayomiExtensions extends Extension {
   @override
   Future<void> installSource(Source source) async {
     final m = source as MSource;
+    final type = m.itemType ?? ItemType.manga;
+
+    final available = getAvailableRx(type).value.whereType<MSource>();
+    final repoMatch = available.firstWhereOrNull((s) => s.id == m.id);
+
+    if (repoMatch?.sourceCodeUrl != null && repoMatch!.sourceCodeUrl!.isNotEmpty) {
+      m.sourceCodeUrl ??= repoMatch.sourceCodeUrl;
+    }
+
+    if (m.sourceCodeUrl == null || m.sourceCodeUrl!.isEmpty) {
+      throw Exception("Extension source URL is required for installation.");
+    }
 
     try {
       final res = await _client.get(Uri.parse(m.sourceCodeUrl!));
@@ -109,6 +128,13 @@ class MangayomiExtensions extends Extension {
       if (res.statusCode != 200) {
         throw Exception("Extension download failed");
       }
+
+      if (m.versionLast != null && m.versionLast!.isNotEmpty) {
+        m.version = m.versionLast;
+      } else if (repoMatch?.version != null && repoMatch!.version!.isNotEmpty) {
+        m.version = repoMatch.version;
+      }
+      m.hasUpdate = false;
 
       final installed = m
         ..sourceCode = res.body

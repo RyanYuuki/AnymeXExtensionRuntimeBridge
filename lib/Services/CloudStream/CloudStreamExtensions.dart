@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
@@ -249,7 +250,31 @@ class CloudStreamExtensions extends Extension {
 
   @override
   Future<void> installSource(Source source) async {
-    if (source is CloudStreamSource && source.pluginUrl != null) {
+    if (source is CloudStreamSource) {
+      if (source.pluginUrl == null || source.pluginUrl!.isEmpty) {
+        final normName = _normalizeName(source.name);
+        final normInternalName = _normalizeName(source.internalName);
+        final repoMatch = availableAnimeExtensions.value.whereType<CloudStreamSource>().firstWhereOrNull((s) {
+          final sNormName = _normalizeName(s.name);
+          final sNormInternalName = _normalizeName(s.internalName);
+          return sNormName == normName ||
+                 sNormInternalName == normInternalName ||
+                 (normInternalName.isNotEmpty && sNormName == normInternalName) ||
+                 (sNormInternalName.isNotEmpty && sNormInternalName == normName);
+        });
+
+        if (repoMatch != null) {
+          source.pluginUrl ??= repoMatch.pluginUrl;
+          source.repo ??= repoMatch.repo;
+          source.versionLast ??= repoMatch.version;
+          source.iconUrl ??= repoMatch.iconUrl;
+        }
+      }
+
+      if (source.pluginUrl == null || source.pluginUrl!.isEmpty) {
+        throw Exception("Plugin URL is required for installation.");
+      }
+
       try {
         Logger.log(
             "Downloading CloudStream plugin: ${source.name} from ${source.pluginUrl}");
@@ -309,6 +334,11 @@ class CloudStreamExtensions extends Extension {
         if (success) {
           Logger.log("Successfully loaded CloudStream plugin: ${source.name}");
           
+          if (source.versionLast != null && source.versionLast!.isNotEmpty) {
+            source.version = source.versionLast;
+          }
+          source.hasUpdate = false;
+
           final metaToSave = {
             'iconUrl': source.iconUrl,
             'language': source.lang,
