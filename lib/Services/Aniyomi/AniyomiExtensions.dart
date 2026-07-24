@@ -275,10 +275,12 @@ class AniyomiExtensions extends Extension {
 
     for (var i = 0; i < installed.length; i++) {
       final inst = installed[i];
-      final repo = available.firstWhereOrNull((s) =>
-          (s.pkgName != null && s.pkgName == inst.pkgName) ||
-          s.id == inst.id ||
-          s.name == inst.name);
+      final repo = available.firstWhereOrNull((s) {
+        if (inst.pkgName != null && inst.pkgName!.isNotEmpty) {
+          return s.pkgName == inst.pkgName;
+        }
+        return s.id == inst.id || s.name == inst.name;
+      });
 
       if (repo == null) continue;
 
@@ -307,10 +309,12 @@ class AniyomiExtensions extends Extension {
       ...getAvailableRx(ItemType.manga).value.whereType<ASource>(),
     ];
 
-    final repoMatch = allAvailable.firstWhereOrNull((s) =>
-        (s.pkgName != null && aSource.pkgName != null && s.pkgName == aSource.pkgName) ||
-        s.id == aSource.id ||
-        s.name == aSource.name);
+    final repoMatch = allAvailable.firstWhereOrNull((s) {
+      if (aSource.pkgName != null && aSource.pkgName!.isNotEmpty) {
+        return s.pkgName == aSource.pkgName;
+      }
+      return s.id == aSource.id || s.name == aSource.name;
+    });
 
     if (repoMatch != null) {
       aSource.apkName ??= repoMatch.apkName;

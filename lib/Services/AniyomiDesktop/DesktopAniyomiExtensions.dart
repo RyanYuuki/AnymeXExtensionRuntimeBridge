@@ -242,10 +242,12 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
 
     for (var i = 0; i < installed.length; i++) {
       final inst = installed[i];
-      final repo = available.firstWhereOrNull((s) =>
-          (s.pkgName != null && s.pkgName == inst.pkgName) ||
-          s.id == inst.id ||
-          s.name == inst.name);
+      final repo = available.firstWhereOrNull((s) {
+        if (inst.pkgName != null && inst.pkgName!.isNotEmpty) {
+          return s.pkgName == inst.pkgName;
+        }
+        return s.id == inst.id || s.name == inst.name;
+      });
 
       if (repo == null) continue;
 
