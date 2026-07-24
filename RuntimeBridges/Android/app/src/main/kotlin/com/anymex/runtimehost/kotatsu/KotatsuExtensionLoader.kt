@@ -38,11 +38,15 @@ class KotatsuAndroidPluginClassLoader(
 ) : dalvik.system.DexClassLoader(dexPath, optimizedDirectory, librarySearchPath, parent) {
 
     override fun loadClass(name: String, resolve: Boolean): Class<*> {
-        val shouldDelegate = name.startsWith("org.koitharu.kotatsu.parsers.bitmap.") ||
-                name.startsWith("org.koitharu.kotatsu.parsers.config.") ||
-                name == "org.koitharu.kotatsu.parsers.MangaLoaderContext" ||
-                name == "org.koitharu.kotatsu.parsers.model.MangaSource" ||
-                name == "org.koitharu.kotatsu.parsers.model.ContentType" ||
+        val shouldDelegate = (name.startsWith("org.koitharu.kotatsu.parsers.") && 
+                name != "org.koitharu.kotatsu.parsers.MangaParser" &&
+                name != "org.koitharu.kotatsu.parsers.MangaParserAuthProvider" &&
+                name != "org.koitharu.kotatsu.parsers.model.MangaParserSource" &&
+                name != "org.koitharu.kotatsu.parsers.util.LinkResolver" &&
+                !name.startsWith("org.koitharu.kotatsu.parsers.site.") &&
+                !name.startsWith("org.koitharu.kotatsu.parsers.core.") &&
+                !name.startsWith("org.koitharu.kotatsu.parsers.network.") &&
+                !name.startsWith("org.koitharu.kotatsu.parsers.util.")) ||
                 name.startsWith("okhttp3.") ||
                 name.startsWith("okio.") ||
                 name.startsWith("kotlin.") ||
@@ -409,7 +413,7 @@ object KotatsuExtensionLoader {
                                     classNames.addAll(extractClassNamesFromDex(bytes))
                                 }
                             } else if (entry.name.endsWith(".class") && !entry.name.contains("$")) {
-                                classNames.add(entry.name.replace("/", ".").removeSuffix(".class"))
+                                classNames.add(entry.name.replace('/', '.').replace('\\', '.').removeSuffix(".class"))
                             }
                         }
                         zipFile.close()
@@ -590,7 +594,7 @@ object KotatsuExtensionLoader {
                 source = parser.source
             )
             val details = parser.getDetails(dummyManga)
-            val chapters = details.chapters.orEmpty()
+            val chapters = details.chapters.orEmpty().reversed()
             val mappedChapters = chapters.map { ch ->
                 val chNum = ch.number
                 mapOf(

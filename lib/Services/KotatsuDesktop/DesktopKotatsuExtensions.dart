@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../../Logger.dart';
 import '../../anymex_extension_runtime_bridge.dart';
-import '../../Runtime/RuntimeTools.dart';
 import '../../Settings/KvStore.dart';
 import '../Mangayomi/http/m_client.dart';
 
@@ -141,32 +140,7 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
 
   @override
   Future<void> fetchInstalledNovelExtensions() async {}
-
-  Future<void> _ensureDexConverted(String extPath, File jarFile) async {
-    final markerFile = File(p.join(extPath, '.plugin_jar_converted'));
-    if (await markerFile.exists()) return;
-
-    Logger.log("Checking plugin.jar for DEX conversion...");
-    try {
-      final tempDexFile = File(p.join(extPath, 'plugin_dex.jar'));
-      if (await tempDexFile.exists()) await tempDexFile.delete();
-
-      if (await jarFile.exists()) {
-        await jarFile.rename(tempDexFile.path);
-        Logger.log("Converting Kotatsu plugin DEX to JVM JAR on startup...");
-        await RuntimeTools().runDex2Jar(tempDexFile.path, jarFile.path);
-        await tempDexFile.delete();
-        await markerFile.create();
-        Logger.log("Kotatsu plugin DEX conversion successful!");
-      }
-    } catch (e) {
-      Logger.log("Failed to convert Kotatsu plugin: $e");
-      final tempDexFile = File(p.join(extPath, 'plugin_dex.jar'));
-      if (await tempDexFile.exists() && !await jarFile.exists()) {
-        await tempDexFile.rename(jarFile.path);
-      }
-    }
-  }
+  Future<void> _ensureDexConverted(String extPath, File jarFile) async {}
 
   @override
   Future<void> fetchInstalledMangaExtensions() async {

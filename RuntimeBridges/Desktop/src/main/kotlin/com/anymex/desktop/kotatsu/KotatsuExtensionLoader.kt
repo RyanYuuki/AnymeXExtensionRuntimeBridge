@@ -43,18 +43,23 @@ class KotatsuPluginClassLoader(
 ) : URLClassLoader(urls, parent) {
 
     override fun loadClass(name: String, resolve: Boolean): Class<*> {
-        val shouldDelegate = name.startsWith("org.koitharu.kotatsu.parsers.bitmap.") ||
-                name.startsWith("org.koitharu.kotatsu.parsers.config.") ||
-                name == "org.koitharu.kotatsu.parsers.MangaLoaderContext" ||
-                name == "org.koitharu.kotatsu.parsers.model.MangaSource" ||
-                name == "org.koitharu.kotatsu.parsers.model.ContentType" ||
+        val shouldDelegate = (name.startsWith("org.koitharu.kotatsu.parsers.") && 
+                name != "org.koitharu.kotatsu.parsers.MangaParser" &&
+                name != "org.koitharu.kotatsu.parsers.MangaParserAuthProvider" &&
+                name != "org.koitharu.kotatsu.parsers.model.MangaParserSource" &&
+                name != "org.koitharu.kotatsu.parsers.util.LinkResolver" &&
+                !name.startsWith("org.koitharu.kotatsu.parsers.site.") &&
+                !name.startsWith("org.koitharu.kotatsu.parsers.core.") &&
+                !name.startsWith("org.koitharu.kotatsu.parsers.network.") &&
+                !name.startsWith("org.koitharu.kotatsu.parsers.util.")) ||
                 name.startsWith("okhttp3.") ||
                 name.startsWith("okio.") ||
                 name.startsWith("kotlin.") ||
                 name.startsWith("java.") ||
                 name.startsWith("javax.") ||
                 name.startsWith("org.jsoup.") ||
-                name.startsWith("org.json.")
+                name.startsWith("org.json.") ||
+                name.startsWith("androidx.collection.")
 
         if (shouldDelegate) {
             return super.loadClass(name, resolve)
@@ -313,7 +318,7 @@ object KotatsuExtensionLoader {
                     val maxErrorsToLog = 5
                     for (entry in zipFile.entries()) {
                         if (entry.name.endsWith(".class") && !entry.name.contains("$")) {
-                            val className = entry.name.replace("/", ".").removeSuffix(".class")
+                            val className = entry.name.replace('/', '.').replace('\\', '.').removeSuffix(".class")
                             try {
                                 val clazz = Class.forName(className, false, classLoader)
                                 val mangaParserClass = classLoader.loadClass("org.koitharu.kotatsu.parsers.MangaParser")
@@ -376,7 +381,9 @@ object KotatsuExtensionLoader {
                             } catch (e: Throwable) {
                                 errorCount++
                                 if (errorCount <= maxErrorsToLog) {
-                                    System.err.println("  [Kotatsu] Failed to load/verify class $className: ${e.message} (${e.javaClass.name})")
+                                    val realEx = if (e is java.lang.reflect.InvocationTargetException) e.targetException else e
+                                    System.err.println("  [Kotatsu] Failed to load/verify class $className: ${realEx.message} (${realEx.javaClass.name})")
+                                    realEx.printStackTrace(System.err)
                                 }
                             }
                         }
@@ -481,7 +488,7 @@ object KotatsuExtensionLoader {
                 source = parser.source
             )
             val details = parser.getDetails(dummyManga)
-            val chapters = details.chapters.orEmpty()
+            val chapters = details.chapters.orEmpty().reversed()
             val mappedChapters = chapters.map { ch ->
                 val chNum = ch.number
                 mapOf(

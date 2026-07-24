@@ -519,4 +519,18 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
 
   @override
   Future<void> cancelRequest(String token) async {}
+
+  @override
+  Set<String> get schemes => {"aniyomi", "tachiyomi"};
+
+  @override
+  void handleSchemes(Uri uri) {
+    final url = uri.queryParameters["url"];
+    if (url != null && url.isNotEmpty) {
+      addRepo(
+        url,
+        uri.scheme == "aniyomi" ? ItemType.anime : ItemType.manga,
+      );
+    }
+  }
 }
