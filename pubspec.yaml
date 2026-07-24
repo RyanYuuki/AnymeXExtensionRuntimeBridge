@@ -11,6 +11,7 @@ dependencies:
     flutter:
         sdk: flutter
     plugin_platform_interface: ^2.1.8
+    collection: ^1.18.0
     http: ^1.6.0
     isar_community: 3.3.0-dev.3
     isar_community_flutter_libs: 3.3.0-dev.3
