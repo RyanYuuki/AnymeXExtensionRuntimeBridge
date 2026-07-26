@@ -10,6 +10,13 @@ version = "1.0.3"
 java {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
+    sourceSets {
+        main {
+            java {
+                exclude("androidx/**")
+            }
+        }
+    }
 }
 
 kotlin {
@@ -59,8 +66,10 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 dependencies {
-    implementation(libs.androidx.collection.ktx)
-    implementation(libs.androidx.annotation)
+    compileOnly(libs.androidx.collection.ktx) {
+        exclude(group = "androidx.annotation")
+    }
+    compileOnly(libs.androidx.annotation)
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
@@ -70,4 +79,8 @@ dependencies {
 
     implementation(libs.bundles.okhttp)
     implementation(libs.okio)
+}
+
+configurations.matching { it.name.contains("runtime", ignoreCase = true) }.all {
+    exclude(group = "androidx.annotation")
 }

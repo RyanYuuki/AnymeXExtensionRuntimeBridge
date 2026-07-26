@@ -1,23 +1,146 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 
+import '../ExtensionBridge.dart';
 import '../Logger.dart';
+import '../Models/DEpisode.dart';
+import '../Models/Video.dart';
 import 'torrent_url_detector.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:libtorrent_flutter/libtorrent_flutter.dart';
 
 class TorrentStreamResolver {
+  static const _channel = MethodChannel('anymeXBridge');
+  static bool _libraryLoaded = false;
   static bool _isInitialized = false;
   static final Map<int, _TorrentSession> _sessions = {};
   static int? _currentActiveTorrentId;
 
+  static Timer? _inactivityTimer;
+  static const Duration _inactivityTimeout = Duration(minutes: 5);
+
+  static void resetInactivityTimer() {
+    _inactivityTimer?.cancel();
+    if (!_isInitialized) return;
+    _inactivityTimer = Timer(_inactivityTimeout, () async {
+      Logger.log('[TorrentResolver] 5 minutes of inactivity reached. Disposing engine automatically...');
+      await dispose();
+    });
+  }
+
   static bool get isInitialized => _isInitialized;
   static int? get currentTorrentId => _currentActiveTorrentId;
 
+  static Future<String> getEngineSoPath() async {
+    final supportDir = await getApplicationSupportDirectory();
+    return p.join(supportDir.path, 'liblibtorrent_flutter.so');
+  }
+
+  static Future<bool> isEngineDownloaded() async {
+    if (!Platform.isAndroid) return true;
+    final path = await getEngineSoPath();
+    return File(path).exists();
+  }
+
+  static Future<String> getDeviceAbi() async {
+    if (!Platform.isAndroid) return '';
+    try {
+      final String? abi = await _channel.invokeMethod<String>('getAbi');
+      return abi ?? 'arm64-v8a';
+    } catch (e) {
+      Logger.log('[TorrentResolver] Failed to get ABI: $e');
+      return 'arm64-v8a';
+    }
+  }
+
+  static Future<void> downloadEngine({void Function(double progress)? onProgress}) async {
+    if (!Platform.isAndroid) return;
+    final abi = await getDeviceAbi();
+    final url = 'https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/download/so-binaries/liblibtorrent_flutter_$abi.so';
+    Logger.log('[TorrentResolver] Downloading torrent engine from: $url');
+    
+    final path = await getEngineSoPath();
+    final tempFile = File('$path.tmp');
+    if (await tempFile.exists()) {
+      await tempFile.delete();
+    }
+
+    final client = http.Client();
+    try {
+      final response = await client.send(http.Request('GET', Uri.parse(url)));
+      if (response.statusCode != 200) {
+        throw Exception('Server returned status code ${response.statusCode}');
+      }
+
+      final contentLength = response.contentLength ?? 0;
+      var downloadedBytes = 0;
+      final sink = tempFile.openWrite();
+
+      await response.stream.forEach((chunk) {
+        sink.add(chunk);
+        downloadedBytes += chunk.length;
+        if (contentLength > 0 && onProgress != null) {
+          onProgress(downloadedBytes / contentLength);
+        }
+      });
+
+      await sink.close();
+      
+      final finalFile = File(path);
+      if (await finalFile.exists()) {
+        await finalFile.delete();
+      }
+      await tempFile.rename(path);
+      Logger.log('[TorrentResolver] Download finished, saved to: $path');
+    } catch (e) {
+      Logger.log('[TorrentResolver] Download failed: $e');
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
+  static Future<bool> loadEngineLibrary() async {
+    if (!Platform.isAndroid) return true;
+    if (_libraryLoaded) return true;
+
+    try {
+      final path = await getEngineSoPath();
+      if (!await File(path).exists()) {
+        Logger.log('[TorrentResolver] Native library not found at: $path');
+        return false;
+      }
+
+      Logger.log('[TorrentResolver] Loading native library dynamically from: $path');
+      DynamicLibrary.open(path);
+      _libraryLoaded = true;
+      return true;
+    } catch (e) {
+      Logger.log('[TorrentResolver] Failed to load dynamic library: $e');
+      return false;
+    }
+  }
+
   static Future<bool> initialize() async {
-    if (_isInitialized) return true;
+    if (_isInitialized) {
+      resetInactivityTimer();
+      return true;
+    }
+
+    if (Platform.isAndroid) {
+      final loaded = await loadEngineLibrary();
+      if (!loaded) {
+        Logger.log('[TorrentResolver] Cannot initialize: native library not loaded.');
+        return false;
+      }
+    }
 
     Logger.log('[TorrentResolver] Initializing libtorrent engine...');
 
@@ -29,6 +152,7 @@ class TorrentStreamResolver {
       );
 
       _isInitialized = true;
+      resetInactivityTimer();
       Logger.log('[TorrentResolver] Engine ready — path: $downloadPath');
       return true;
     } catch (e) {
@@ -37,19 +161,101 @@ class TorrentStreamResolver {
     }
   }
 
+  static Future<List<Video>> processVideoList(
+    List<Video> videos, {
+    DEpisode? episode,
+    void Function(String message)? onProgressToast,
+  }) async {
+    if (videos.isEmpty) return videos;
+    final processed = <Video>[];
+
+    for (final video in videos) {
+      if (isTorrentUrl(video.url)) {
+        try {
+          final notify = onProgressToast ?? (msg) => AnymeXExtensionBridge.onLog(msg, true);
+
+          if (!await isEngineDownloaded()) {
+            notify('Downloading torrent engine (0%)...');
+            await downloadEngine(onProgress: (p) {
+              final pct = (p * 100).toStringAsFixed(0);
+              notify('Downloading torrent engine ($pct%)...');
+            });
+            notify('Torrent engine downloaded. Initializing...');
+          }
+
+          if (!isInitialized) {
+            final ok = await initialize();
+            if (!ok) {
+              processed.add(video);
+              continue;
+            }
+          }
+
+          notify('Resolving torrent stream...');
+          final episodeStr = episode?.episodeNumber != null
+              ? episode!.episodeNumber.toString()
+              : episode?.name;
+
+          final resolved = await resolve(
+            video.url,
+            episode: episodeStr,
+          );
+
+          resetInactivityTimer();
+
+          final resolvedSubtitles = (video.subtitles ?? []).toList();
+          for (final sub in resolved.subtitles) {
+            final subUrl = '${resolved.streamUrl}?subIndex=${sub.fileIndex}';
+            resolvedSubtitles.add(Track(file: subUrl, label: sub.language));
+          }
+
+          final proxifiedVideo = Video(
+            video.title ?? video.quality,
+            resolved.streamUrl,
+            video.quality.contains('Torrent') ? video.quality : '${video.quality} (Torrent)',
+            headers: video.headers,
+            subtitles: resolvedSubtitles,
+            audios: video.audios,
+          );
+          processed.add(proxifiedVideo);
+        } catch (e) {
+          Logger.log('[TorrentResolver] Auto-proxify failed for ${video.url}: $e');
+          processed.add(video);
+        }
+      } else {
+        processed.add(video);
+      }
+    }
+    return processed;
+  }
+
   static Future<ResolvedStream> resolve(
     String url, {
     void Function(double progress)? onProgress,
     void Function(List<TorrentFileInfo> files)? onFilesDiscovered,
     int? preferredFileIndex,
     String? episode,
+    void Function(String message)? onStatus,
   }) async {
+    final notify = onStatus ?? (msg) => AnymeXExtensionBridge.onLog(msg, true);
+
+    if (!await isEngineDownloaded()) {
+      notify('Downloading torrent engine (0%)...');
+      await downloadEngine(onProgress: (p) {
+        final pct = (p * 100).toStringAsFixed(0);
+        notify('Downloading torrent engine ($pct%)...');
+      });
+      notify('Torrent engine downloaded. Initializing...');
+    }
+
     if (!_isInitialized) {
       final ok = await initialize();
       if (!ok) {
         throw Exception('Torrent engine not available');
       }
     }
+
+    resetInactivityTimer();
 
     final engine = LibtorrentFlutter.instance;
     final infoHash = extractInfoHash(url) ?? url;
@@ -245,6 +451,7 @@ class TorrentStreamResolver {
       );
 
       _currentActiveTorrentId = torrentId;
+      resetInactivityTimer();
 
       return ResolvedStream(
         streamUrl: streamInfo.url,
@@ -322,7 +529,7 @@ class TorrentStreamResolver {
 
     final existing = engine.torrents[torrentId];
     if (existing != null && existing.hasMetadata) {
-      sub.cancel();
+      await sub.cancel();
       completer.complete();
     }
 
@@ -409,6 +616,8 @@ class TorrentStreamResolver {
   }
 
   static Future<void> dispose() async {
+    _inactivityTimer?.cancel();
+    _inactivityTimer = null;
     final activeTorrentIds = _sessions.keys.toList();
     for (final torrentId in activeTorrentIds) {
       _sessions.remove(torrentId);
@@ -420,6 +629,7 @@ class TorrentStreamResolver {
         }
       } catch (_) {}
     }
+    _sessions.clear();
     _currentActiveTorrentId = null;
 
     if (_isInitialized && LibtorrentFlutter.isInitialized) {

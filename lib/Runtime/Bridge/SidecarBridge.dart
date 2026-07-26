@@ -35,6 +35,7 @@ class SidecarBridge {
       '-Dsun.stderr.encoding=UTF-8',
       '-Xms128m',
       '-Xmx512m',
+      '-noverify',
       '-jar',
       bridgeJarPath
     ]);

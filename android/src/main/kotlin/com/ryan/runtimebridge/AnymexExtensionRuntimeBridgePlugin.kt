@@ -273,6 +273,10 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
     private fun handleAnymeX(call: MethodCall, result: MethodResult) {
         when (call.method) {
+            "getAbi" -> {
+                val primaryAbi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+                result.success(primaryAbi)
+            }
             "loadAnymeXRuntimeHost" -> {
                 val path = call.argument<String>("path")
                 val settingsMap = call.argument<Map<String, Any?>>("settings")
