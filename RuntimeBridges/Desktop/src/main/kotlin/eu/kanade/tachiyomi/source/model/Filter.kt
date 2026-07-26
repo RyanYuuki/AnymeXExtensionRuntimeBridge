@@ -3,13 +3,13 @@ package eu.kanade.tachiyomi.source.model
 sealed class Filter<T>(val name: String, var state: T) {
     open class Header(name: String) : Filter<Any>(name, 0)
     open class Separator(name: String = "") : Filter<Any>(name, 0)
-    abstract class Select<V>(name: String, val values: Array<V>, state: Int = 0) : Filter<Int>(
+    open class Select<V>(name: String, val values: Array<V>, state: Int = 0) : Filter<Int>(
         name,
         state,
     )
-    abstract class Text(name: String, state: String = "") : Filter<String>(name, state)
-    abstract class CheckBox(name: String, state: Boolean = false) : Filter<Boolean>(name, state)
-    abstract class TriState(name: String, state: Int = STATE_IGNORE) : Filter<Int>(name, state) {
+    open class Text(name: String, state: String = "") : Filter<String>(name, state)
+    open class CheckBox(name: String, state: Boolean = false) : Filter<Boolean>(name, state)
+    open class TriState(name: String, state: Int = STATE_IGNORE) : Filter<Int>(name, state) {
         fun isIgnored() = state == STATE_IGNORE
         fun isIncluded() = state == STATE_INCLUDE
         fun isExcluded() = state == STATE_EXCLUDE
@@ -21,12 +21,23 @@ sealed class Filter<T>(val name: String, var state: T) {
         }
     }
 
-    abstract class Group<V>(name: String, state: List<V>) : Filter<List<V>>(name, state)
+    open class Group<V>(name: String, state: List<V>) : Filter<List<V>>(name, state)
 
-    abstract class Sort(name: String, val values: Array<String>, state: Selection? = null) :
+    open class Sort(name: String, val values: Array<String>, state: Selection? = null) :
         Filter<Sort.Selection?>(name, state) {
         data class Selection(val index: Int, val ascending: Boolean)
     }
+
+    // SY -->
+    open class AutoComplete(
+        name: String,
+        val hint: String,
+        val values: List<String>,
+        val skipAutoFillTags: List<String> = emptyList(),
+        val validPrefixes: List<String> = emptyList(),
+        state: List<String>,
+    ) : Filter<List<String>>(name, state)
+    // SY <--
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

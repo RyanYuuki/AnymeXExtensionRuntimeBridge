@@ -17,8 +17,16 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.api.addSingletonFactory
 import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.serialization.json.Json
 import eu.kanade.tachiyomi.network.normalizeUrl
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import java.io.File
+import java.security.MessageDigest
+import java.net.URLEncoder
+import com.anymex.desktop.MangaImageProxy
 object AniyomiSourceMethods {
     private val gson = Gson()
     
@@ -201,8 +209,7 @@ object AniyomiSourceMethods {
                         System.err.println("[WARN] AnimeCatalogueSource not found for ID: '$className'. Available: ${DesktopExtensionLoader.loadedAnimeSources.keys}")
                         return "{\"list\": [], \"hasNextPage\": false}"
                     }
-                val filters = try { source.getFilterList() } catch (t: Throwable) { eu.kanade.tachiyomi.animesource.model.AnimeFilterList() }
-                val result = source.getSearchAnime(page, query, filters)
+                val result = source.getSearchAnime(page, query, source.getFilterList())
                 gson.toJson(mapOf("list" to result.animes.map { it.toDetailsMap() }, "hasNextPage" to result.hasNextPage))
             } else {
                 val source = DesktopExtensionLoader.loadedMangaSources[className] as? CatalogueSource
@@ -210,8 +217,7 @@ object AniyomiSourceMethods {
                         System.err.println("[WARN] CatalogueSource (Manga) not found for ID: '$className'. Available: ${DesktopExtensionLoader.loadedMangaSources.keys}")
                         return "{\"list\": [], \"hasNextPage\": false}"
                     }
-                val filters = try { source.getFilterList() } catch (t: Throwable) { eu.kanade.tachiyomi.source.model.FilterList() }
-                val result = source.getSearchManga(page, query, filters)
+                val result = source.getSearchManga(page, query, source.getFilterList())
                 gson.toJson(mapOf("list" to result.mangas.map { it.toDetailsMap() }, "hasNextPage" to result.hasNextPage))
             }
         } catch (e: Exception) {
@@ -327,9 +333,24 @@ object AniyomiSourceMethods {
                 this.name = name
             }
             val pages = source.getPageList(chapter)
-            gson.toJson(pages.map { page ->
-                mapOf("url" to page.imageUrl, "headers" to emptyMap<String, String>())
-            })
+            val httpSource = source as? HttpSource
+            val results = if (httpSource != null && MangaImageProxy.port > 0) {
+                val proxyPort = MangaImageProxy.port
+                pages.map { page ->
+                    val originalUrl = page.imageUrl ?: ""
+                    val proxyUrl = if (originalUrl.isNotEmpty() || page.url.isNotEmpty()) {
+                        "http://127.0.0.1:$proxyPort/image?sourceId=${URLEncoder.encode(className, "UTF-8")}&imageUrl=${URLEncoder.encode(originalUrl, "UTF-8")}&pageUrl=${URLEncoder.encode(page.url ?: "", "UTF-8")}&pageNumber=${page.index}"
+                    } else {
+                        originalUrl
+                    }
+                    mapOf("url" to proxyUrl, "headers" to emptyMap<String, String>())
+                }
+            } else {
+                pages.map { page ->
+                    mapOf("url" to page.imageUrl, "headers" to emptyMap<String, String>())
+                }
+            }
+            gson.toJson(results)
         } catch (e: Exception) {
             System.err.println("[ERROR] fetchPageList failed for source '$className' (url '$url')")
             e.printStackTrace()
@@ -556,22 +577,7 @@ object AniyomiSourceMethods {
         return false
     }
 
-
-
-    private fun canInstantiateDirectly(clazz: Class<*>): Boolean {
-        return try {
-            clazz.declaredConstructors.any { c ->
-                c.parameterCount == 0 || (c.parameterCount == 1 && c.parameterTypes[0] == Context::class.java)
-            } || clazz.declaredFields.any { f -> f.name == "INSTANCE" }
-        } catch (t: Throwable) {
-            System.err.println("    [CAN_INSTANTIATE FAIL] ${clazz.name}: ${t.javaClass.simpleName}: ${t.message}")
-            t.printStackTrace(System.err)
-            false
-        }
-    }
-
     private fun instantiateSource(clazz: Class<*>): Any? {
-        if (!canInstantiateDirectly(clazz)) return null
         try {
             try {
                 val constructor = clazz.getDeclaredConstructor(Context::class.java)
@@ -588,11 +594,11 @@ object AniyomiSourceMethods {
                 field.isAccessible = true
                 return field.get(null)
             } catch (e2: Throwable) {
-                 val cause = e.cause ?: e
-                 System.err.println("    [INSTANTIATE ERROR] ${clazz.name} constructor failed: ${cause.javaClass.simpleName}: ${cause.message}")
-                 cause.printStackTrace(System.err)
-                 return null
-             }
+                val cause = e.cause ?: e
+                System.err.println("    [INSTANTIATE ERROR] ${clazz.simpleName} constructor failed: ${cause.javaClass.simpleName}: ${cause.message}")
+                cause.printStackTrace(System.err)
+                return null
+            }
         }
     }
 
@@ -648,7 +654,7 @@ object AniyomiSourceMethods {
                 tempJar.deleteOnExit()
                 jar.copyTo(tempJar, overwrite = true)
 
-                val classLoader = com.anymex.desktop.ChildFirstURLClassLoader(arrayOf(tempJar.toURI().toURL()), DesktopExtensionLoader::class.java.classLoader)
+                val classLoader = java.net.URLClassLoader(arrayOf(tempJar.toURI().toURL()), DesktopExtensionLoader::class.java.classLoader)
                 var extractedVersion = "1.0.0"
                 var extractedPkgName = jar.nameWithoutExtension
 
@@ -681,7 +687,6 @@ object AniyomiSourceMethods {
                     if (entry.name.endsWith(".class") && !entry.name.contains("$")) {
                         val className = entry.name.replace('/', '.').replace('\\', '.').removeSuffix(".class")
 
-                        if (className.startsWith("kotlin.") || className.startsWith("kotlinx.") || className.startsWith("android.") || className.startsWith("androidx.")) continue
                         if (className.contains(".dto.")) continue
 
                         try {
@@ -689,7 +694,6 @@ object AniyomiSourceMethods {
                                 Class.forName(className, false, classLoader)
                             } catch (e: Throwable) {
                                 System.err.println("    [CLASS LOAD FAIL] $className: ${e.javaClass.simpleName}: ${e.message}")
-                                e.printStackTrace(System.err)
                                 continue
                             }
 
@@ -828,8 +832,6 @@ object AniyomiSourceMethods {
                                         }
                                     } catch (e: Throwable) {
                                         System.err.println("    [FACTORY ERROR] SourceFactory.createSources() failed for $className: ${e.javaClass.simpleName}: ${e.message}")
-                                        System.err.println("    [DELETED BROKEN EXTENSION] Skipped broken extension ${jar.name} (auto-delete disabled)")
-                                        // try { jar.delete() } catch (_: Throwable) {}
                                     }
                                 }
                             }
@@ -841,8 +843,6 @@ object AniyomiSourceMethods {
                 zipFile.close()
             } catch (e: Throwable) {
                 System.err.println("    [JAR ERROR] Failed to process ${jar.name}: ${e.javaClass.simpleName}: ${e.message}")
-                System.err.println("    [DELETED BROKEN EXTENSION] Skipped broken extension ${jar.name} (auto-delete disabled)")
-                // try { jar.delete() } catch (_: Throwable) {}
                 e.printStackTrace(System.err)
             }
         }

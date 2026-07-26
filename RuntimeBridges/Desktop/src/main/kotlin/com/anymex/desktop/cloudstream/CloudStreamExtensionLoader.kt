@@ -78,7 +78,7 @@ object CloudStreamExtensionLoader {
 
                     val tempJar = File.createTempFile("cs_ext_", ".jar").apply { deleteOnExit() }
                     jar.copyTo(tempJar, overwrite = true)
-                    val classLoader = URLClassLoader(arrayOf(tempJar.toURI().toURL()), CloudStreamExtensionLoader::class.java.classLoader)
+                    val classLoader = com.anymex.desktop.ChildFirstURLClassLoader(arrayOf(tempJar.toURI().toURL()), CloudStreamExtensionLoader::class.java.classLoader)
                     
                     val pluginClass = if (pluginClassName.isNotEmpty()) {
                         try { Class.forName(pluginClassName, false, classLoader) } catch (e: Throwable) {
@@ -220,7 +220,7 @@ object CloudStreamExtensionLoader {
             .filter { it.name.endsWith(".class") && !it.name.contains("$") }
         System.err.println("  [CS] Inspecting ${candidates.size} top-level classes in ${jar.name}")
         for (entry in candidates) {
-            val className = entry.name.replace("/", ".").removeSuffix(".class")
+            val className = entry.name.replace('/', '.').replace('\\', '.').removeSuffix(".class")
             try {
                 val clazz = Class.forName(className, false, classLoader)
                 if (isMainApiClass(clazz)) {
@@ -242,10 +242,10 @@ object CloudStreamExtensionLoader {
     private fun instantiateApi(clazz: Class<*>): Any? {
         return try {
             clazz.getDeclaredConstructor().newInstance()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             try {
                 clazz.getDeclaredField("INSTANCE").get(null)
-            } catch (e2: Exception) {
+            } catch (e2: Throwable) {
                 null
             }
         }

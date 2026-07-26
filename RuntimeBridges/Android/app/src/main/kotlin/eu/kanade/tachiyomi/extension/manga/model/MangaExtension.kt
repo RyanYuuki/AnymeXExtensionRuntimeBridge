@@ -33,6 +33,7 @@ sealed class MangaExtension {
         val hasUpdate: Boolean = false,
         val isObsolete: Boolean = false,
         val isUnofficial: Boolean = false,
+        val isShared: Boolean = false,
     ) : MangaExtension()
 
     data class Available(

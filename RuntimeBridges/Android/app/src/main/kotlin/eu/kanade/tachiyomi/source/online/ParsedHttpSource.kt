@@ -198,4 +198,12 @@ abstract class ParsedHttpSource : HttpSource() {
      * @param document the parsed document.
      */
     protected abstract fun imageUrlParse(document: Document): String
+    override fun relatedMangaListParse(response: Response): List<SManga> {
+        return response.asJsoup()
+            .select(relatedMangaListSelector()).map { relatedMangaFromElement(it) }
+    }
+
+    protected open fun relatedMangaListSelector(): String = popularMangaSelector()
+
+    protected open fun relatedMangaFromElement(element: Element): SManga = popularMangaFromElement(element)
 }

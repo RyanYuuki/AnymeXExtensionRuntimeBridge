@@ -25,6 +25,55 @@ public class Uri {
         return new Uri(uriString);
     }
 
+    public static String encode(String s) {
+        return encode(s, null);
+    }
+
+    public static String encode(String s, String allow) {
+        if (s == null) return null;
+        StringBuilder encoded = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (isAllowed(c, allow)) {
+                encoded.append(c);
+            } else {
+                byte[] bytes = String.valueOf(c).getBytes(StandardCharsets.UTF_8);
+                for (byte b : bytes) {
+                    encoded.append(String.format("%%%02X", b));
+                }
+            }
+        }
+        return encoded.toString();
+    }
+
+    private static boolean isAllowed(char c, String allow) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                || "_-!.~'()*".indexOf(c) != -1
+                || (allow != null && allow.indexOf(c) != -1);
+    }
+
+    public static String decode(String s) {
+        if (s == null) return null;
+        try {
+            return URLDecoder.decode(s, StandardCharsets.UTF_8.name());
+        } catch (Exception e) {
+            return s;
+        }
+    }
+
+    public static Uri fromFile(java.io.File file) {
+        if (file == null) return new Uri("");
+        return new Uri("file://" + file.getAbsolutePath());
+    }
+
+    public static Uri fromParts(String scheme, String ssp, String fragment) {
+        StringBuilder sb = new StringBuilder();
+        if (scheme != null) sb.append(scheme).append(":");
+        if (ssp != null) sb.append(ssp);
+        if (fragment != null) sb.append("#").append(fragment);
+        return new Uri(sb.toString());
+    }
+
     @Override
     public String toString() {
         return uriString;

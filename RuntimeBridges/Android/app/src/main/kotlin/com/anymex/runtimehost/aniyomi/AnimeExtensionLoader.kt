@@ -134,6 +134,12 @@ internal object AnimeExtensionLoader {
         val hasChangelog = appInfo.metaData.getInt(METADATA_HAS_CHANGELOG, 0) == 1
 
 
+        if (appInfo.sourceDir != null) {
+            try {
+                File(appInfo.sourceDir).setReadOnly()
+            } catch (_: Exception) {}
+        }
+
         val classLoader = try {
             ChildFirstPathClassLoader(appInfo.sourceDir, null, AnimeExtensionLoader::class.java.classLoader!!)
         } catch (e: Throwable) {

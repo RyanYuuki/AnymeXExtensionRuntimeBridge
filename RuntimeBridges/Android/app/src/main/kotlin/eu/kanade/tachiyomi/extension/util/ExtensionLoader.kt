@@ -58,7 +58,7 @@ internal object ExtensionLoader {
     const val ANIME_LIB_VERSION_MIN = 12
     const val ANIME_LIB_VERSION_MAX = 16
     const val MANGA_LIB_VERSION_MIN = 1.2
-    const val MANGA_LIB_VERSION_MAX = 1.5
+    const val MANGA_LIB_VERSION_MAX = 1.6
     val PACKAGE_FLAGS = PackageManager.GET_CONFIGURATIONS or
             PackageManager.GET_META_DATA or
             @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES or
@@ -131,6 +131,7 @@ internal object ExtensionLoader {
             emptyList()
         }
 
+        val sharedPkgsSet = sharedExtPkgs.map { it.packageName }.toSet()
         val allPkgs = (sharedExtPkgs + privateExtPkgs).distinctBy { it.packageName }
 
         if (allPkgs.isEmpty()) return emptyList()
@@ -138,7 +139,8 @@ internal object ExtensionLoader {
         // Load each extension concurrently and wait for completion
         return runBlocking {
             val deferred = allPkgs.map {
-                async { loadMangaExtension(context, it.packageName, it) }
+                val isShared = sharedPkgsSet.contains(it.packageName)
+                async { loadMangaExtension(context, it.packageName, it, isShared) }
             }
             deferred.map { it.await() }
         }
@@ -244,7 +246,8 @@ internal object ExtensionLoader {
     private fun loadMangaExtension(
         context: Context,
         pkgName: String,
-        pkgInfo: PackageInfo
+        pkgInfo: PackageInfo,
+        isShared: Boolean = false,
     ): MangaLoadResult {
         val pkgManager = context.packageManager
 
@@ -279,6 +282,12 @@ internal object ExtensionLoader {
         val hasReadme = appInfo.metaData.getInt("$MANGA_PACKAGE$XX_METADATA_HAS_README", 0) == 1
         val hasChangelog =
             appInfo.metaData.getInt("$MANGA_PACKAGE$XX_METADATA_HAS_CHANGELOG", 0) == 1
+
+        if (appInfo.sourceDir != null) {
+            try {
+                File(appInfo.sourceDir).setReadOnly()
+            } catch (_: Exception) {}
+        }
 
         val classLoader = try{
             ChildFirstPathClassLoader(appInfo.sourceDir, null, ExtensionLoader::class.java.classLoader!!)
@@ -340,6 +349,7 @@ internal object ExtensionLoader {
             pkgFactory = appInfo.metaData.getString("$MANGA_PACKAGE$XX_METADATA_SOURCE_FACTORY"),
             isUnofficial = true,
             iconUrl = context.getApplicationIcon(pkgInfo),
+            isShared = isShared,
         )
         Logger.log("Loaded Manga extension: $extName", LogLevel.INFO)
         return MangaLoadResult.Success(extension)

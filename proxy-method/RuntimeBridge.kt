@@ -1,17 +1,12 @@
 package com.anymex.runtimehost
 
-import android.app.Activity
-import android.app.Application
 import android.content.Context
-import android.content.ContextWrapper
-import android.os.Bundle
 import android.util.Log
 import com.anymex.runtimehost.aniyomi.AnimeSourceMethods
 import com.anymex.runtimehost.aniyomi.AniyomiExtensionManager
 import com.anymex.runtimehost.aniyomi.AniyomiSourceMethods
 import com.anymex.runtimehost.aniyomi.MangaSourceMethods
 import com.anymex.runtimehost.network.MangaImageProxy
-import java.lang.ref.WeakReference
 import java.net.URLEncoder
 
 import com.lagradost.cloudstream3.AcraApplication
@@ -64,8 +59,6 @@ object RuntimeBridge {
     private val aniyomiIsAnimeRegistry = mutableMapOf<String, Boolean>() 
     private val activeRequests = mutableMapOf<String, Job>() 
 
-    private var lastKnownActivity: WeakReference<Any>? = null 
-
     data class ProviderMetadata(
         val id: String,
         val name: String,
@@ -100,24 +93,6 @@ object RuntimeBridge {
             AcraApplication.context = context.applicationContext
             CloudStreamApp.context = context.applicationContext
 
-            (context.applicationContext as? Application)?.registerActivityLifecycleCallbacks(
-                object : Application.ActivityLifecycleCallbacks {
-                    override fun onActivityResumed(activity: Activity) {
-                        if (isSubclassOfAppCompatActivity(activity.javaClass)) {
-                            lastKnownActivity = WeakReference(activity)
-                        }
-                    }
-                    override fun onActivityCreated(a: Activity, b: Bundle?) {}
-                    override fun onActivityStarted(a: Activity) {}
-                    override fun onActivityPaused(a: Activity) {}
-                    override fun onActivityStopped(a: Activity) {}
-                    override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
-                    override fun onActivityDestroyed(a: Activity) {
-                        if (lastKnownActivity?.get() === a) lastKnownActivity = null
-                    }
-                }
-            )
-
             extensionManager = AniyomiExtensionManager(context.applicationContext)
             Injekt.addSingletonFactory<AniyomiExtensionManager> { extensionManager!! }
 
@@ -141,6 +116,11 @@ object RuntimeBridge {
                 cacheDir.deleteRecursively()
             }
         } catch (_: Exception) {}
+        try {
+            MangaImageProxy.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start MangaImageProxy: ${e.message}")
+        }
         initialized = true
     }
 
@@ -158,6 +138,8 @@ object RuntimeBridge {
             initialized = false
             activeRequests.values.forEach { it.cancel() }
             activeRequests.clear()
+
+            MangaImageProxy.stop()
 
             csPathRegistry.clear()
             csMetadataRegistry.clear()
@@ -195,7 +177,6 @@ object RuntimeBridge {
                     "hasUpdate" to ext.hasUpdate,
                     "isObsolete" to ext.isObsolete,
                     "isShared" to ext.isShared,
-                    "isPrivate" to (!ext.isShared),
                 )
             }
         }
@@ -226,8 +207,6 @@ object RuntimeBridge {
                     "itemType" to 0,
                     "hasUpdate" to ext.hasUpdate,
                     "isObsolete" to ext.isObsolete,
-                    "isShared" to ext.isShared,
-                    "isPrivate" to (!ext.isShared),
                 )
             }
         }
@@ -413,9 +392,25 @@ object RuntimeBridge {
             val m = media(context, sourceId, isAnime)
             m.parameters = parameters
             
-            m.getPageList(chapter).map { page ->
-                val imageUrl = page.imageUrl ?: ""
-                mapOf("url" to imageUrl, "headers" to emptyMap<String, String>())
+            val pages = m.getPageList(chapter)
+            val httpSource = m.getHttpSource() as? HttpSource
+            
+            if (httpSource != null && MangaImageProxy.port > 0) {
+                val proxyPort = MangaImageProxy.port
+                pages.map { page ->
+                    val originalUrl = page.imageUrl ?: ""
+                    val proxyUrl = if (originalUrl.isNotEmpty() || page.url.isNotEmpty()) {
+                        "http://127.0.0.1:$proxyPort/image?sourceId=${URLEncoder.encode(sourceId, "UTF-8")}&imageUrl=${URLEncoder.encode(originalUrl, "UTF-8")}&pageUrl=${URLEncoder.encode(page.url ?: "", "UTF-8")}&pageNumber=${page.index}"
+                    } else {
+                        originalUrl
+                    }
+                    mapOf("url" to proxyUrl, "headers" to emptyMap<String, String>())
+                }
+            } else {
+                pages.map { page ->
+                    val imageUrl = page.imageUrl ?: ""
+                    mapOf("url" to imageUrl, "headers" to emptyMap<String, String>())
+                }
             }
         }
         if (token != null) activeRequests[token] = job
@@ -445,41 +440,12 @@ object RuntimeBridge {
         val prefManager = androidx.preference.PreferenceManager(context)
         prefManager.sharedPreferencesName = "source_$sourceId"
         
-        val screen: androidx.preference.PreferenceScreen = try {
-            prefManager.createPreferenceScreen(context)
-        } catch (t: Throwable) {
-            android.util.Log.w("RuntimeBridge", "createPreferenceScreen failed ($t), using reflection fallback")
-            try {
-                val constructor = androidx.preference.PreferenceScreen::class.java.getDeclaredConstructor(
-                    Context::class.java,
-                    android.util.AttributeSet::class.java
-                )
-                constructor.isAccessible = true
-                val ps = constructor.newInstance(context, null)
-                try {
-                    val onAttached = androidx.preference.Preference::class.java.getDeclaredMethod(
-                        "onAttachedToHierarchy",
-                        androidx.preference.PreferenceManager::class.java
-                    )
-                    onAttached.isAccessible = true
-                    onAttached.invoke(ps, prefManager)
-                } catch (_: Throwable) {}
-                ps
-            } catch (t2: Throwable) {
-                android.util.Log.e("RuntimeBridge", "Failed to construct PreferenceScreen: $t2", t2)
-                return@runBlocking emptyList<Map<String, Any?>>()
-            }
-        }
+        val screen = prefManager.createPreferenceScreen(context)
         
         try {
             media(context, sourceId, isAnime).setupPreferenceScreen(screen)
         } catch (e: com.anymex.runtimehost.aniyomi.NoPreferenceScreenException) {
             return@runBlocking emptyList<Map<String, Any?>>()
-        } catch (t: Throwable) {
-            android.util.Log.w("RuntimeBridge", "setupPreferenceScreen failed for source $sourceId: $t")
-            if (screen.preferenceCount == 0) {
-                return@runBlocking emptyList<Map<String, Any?>>()
-            }
         }
 
         val list = mutableListOf<Map<String, Any?>>()
@@ -677,48 +643,19 @@ object RuntimeBridge {
         }
     }
 
-    private fun isSubclassOfAppCompatActivity(cls: Class<*>): Boolean {
-        var c: Class<*>? = cls
-        while (c != null) {
-            if (c.name == "androidx.appcompat.app.AppCompatActivity") return true
-            c = c.superclass
-        }
-        return false
-    }
-
-    private fun resolveAppCompatActivity(context: Context): androidx.appcompat.app.AppCompatActivity? {
-        var ctx: Context? = context
-        while (ctx != null) {
-            if (isSubclassOfAppCompatActivity(ctx.javaClass)) {
-                val result = ctx as? androidx.appcompat.app.AppCompatActivity
-                if (result != null) return result
-            }
-            ctx = if (ctx is ContextWrapper) ctx.baseContext else null
-        }
-        val cached = lastKnownActivity?.get()
-        if (cached != null && isSubclassOfAppCompatActivity(cached.javaClass)) {
-            return cached as? androidx.appcompat.app.AppCompatActivity
-        }
-        return null
-    }
-
     fun csOpenSettings(context: Context, pluginName: String): Boolean {
         val meta = csMetadataRegistry[pluginName] ?: return false
         val pluginInstance = PluginManager.plugins[meta.sourcePlugin]
         val plugin = pluginInstance as? com.lagradost.cloudstream3.plugins.Plugin ?: return false
         val openSettingsFn = plugin.openSettings ?: return false
-
-        val appCompatActivity = resolveAppCompatActivity(context)
-        if (appCompatActivity == null) {
-            Log.e(TAG, "csOpenSettings: could not find AppCompatActivity for $pluginName. " +
-                "Ensure MainActivity extends AppCompatActivity.")
-            return false
+        val activityContext = if (context is androidx.appcompat.app.AppCompatActivity) {
+            context
+        } else {
+            AppCompatActivityWrapper(context)
         }
-
-        openSettingsFn(appCompatActivity)
+        openSettingsFn(activityContext)
         return true
     }
-
 
     @JvmStatic
     @JvmOverloads

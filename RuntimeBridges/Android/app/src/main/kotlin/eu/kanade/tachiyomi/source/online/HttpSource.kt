@@ -242,6 +242,39 @@ abstract class HttpSource : CatalogueSource {
      */
     protected abstract fun mangaDetailsParse(response: Response): SManga
 
+    override val supportsRelatedMangas: Boolean get() = true
+
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> {
+        if (!isRelatedMangaListParseAvailable) return emptyList()
+
+        return client.newCall(relatedMangaListRequest(manga))
+            .awaitSuccess()
+            .use { response ->
+                relatedMangaListParse(response)
+            }
+    }
+
+    private val isRelatedMangaListParseAvailable by lazy(LazyThreadSafetyMode.NONE) {
+        try {
+            var clazz: Class<*>? = javaClass
+            while (clazz != null && clazz != HttpSource::class.java) {
+                if (clazz.declaredMethods.any { it.name == "relatedMangaListParse" || it.name == "popularMangaParse" }) {
+                    return@lazy true
+                }
+                clazz = clazz.superclass
+            }
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    protected open fun relatedMangaListRequest(manga: SManga): Request {
+        return mangaDetailsRequest(manga)
+    }
+
+    protected open fun relatedMangaListParse(response: Response): List<SManga> = popularMangaParse(response).mangas
+
     /**
      * Get all the available chapters for a manga.
      * Normally it's not needed to override this method.

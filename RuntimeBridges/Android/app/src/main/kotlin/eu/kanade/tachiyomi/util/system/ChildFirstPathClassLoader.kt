@@ -6,12 +6,6 @@ import java.io.InputStream
 import java.net.URL
 import java.util.Enumeration
 
-/**
- * A parent-last class loader that will try in order:
- * - the system class loader
- * - the child class loader
- * - the parent class loader.
- */
 class ChildFirstPathClassLoader(
     dexPath: String,
     librarySearchPath: String?,
@@ -30,11 +24,13 @@ class ChildFirstPathClassLoader(
         }
 
         if (c == null) {
-            c = try {
-                findClass(name)
-            } catch (_: ClassNotFoundException) {
-                super.loadClass(name, resolve)
-            }
+            try {
+                c = findClass(name)
+            } catch (_: ClassNotFoundException) {}
+        }
+
+        if (c == null) {
+            c = parent.loadClass(name) 
         }
 
         if (resolve) {
