@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import '../../Logger.dart';
 import '../../anymex_extension_runtime_bridge.dart';
 import '../Aniyomi/Models/Source.dart';
 import '../../Runtime/Bridge/BridgeDispatcher.dart';
-import '../../Logger.dart';
+import '../../Torrent/torrent_stream_resolver.dart';
 
 class DesktopAniyomiSourceMethods extends SourceMethods {
   @override
