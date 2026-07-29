@@ -165,6 +165,7 @@ class AnymeXRuntimeBridge {
         } catch (e) {
           Logger.log('Failed to save runtime host APK path to KvStore: $e');
         }
+        controller.setReady(true);
       }
 
       _loadCompleter!.complete(isLoaded);
@@ -183,7 +184,11 @@ class AnymeXRuntimeBridge {
     if (Platform.isAndroid) {
       try {
         final result = await _channel.invokeMethod<bool>('isLoaded');
-        return result ?? false;
+        final loaded = result ?? false;
+        if (loaded && !controller.isReady.value) {
+          controller.setReady(true);
+        }
+        return loaded;
       } catch (e) {
         return false;
       }
