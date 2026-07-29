@@ -100,7 +100,7 @@ class AniyomiExtensions extends Extension {
     try {
       final List<dynamic> result = await platform.invokeMethod(method, path);
       final parsed = result
-          .map((e) => ASource.fromJson(Map<String, dynamic>.from(e)))
+          .map((e) => ASource.fromJson(Map<String, dynamic>.from(e))..managerId = id)
           .where((s) => s.itemType == type)
           .toList(growable: false);
 
@@ -187,7 +187,7 @@ class AniyomiExtensions extends Extension {
     try {
       final res = await _client.get(Uri.parse(repo.url));
       if (res.statusCode != 200) return const [];
-      return compute(_parseExtensions, (res.body, repo.url, type));
+      return compute(_parseExtensions, (res.body, repo.url, type, id));
     } catch (e) {
       Logger.log("Repo failed ${repo.url}: $e");
       return const [];
@@ -195,9 +195,9 @@ class AniyomiExtensions extends Extension {
   }
 
   static List<Source> _parseExtensions(
-    (String body, String repoUrl, ItemType itemType) args,
+    (String body, String repoUrl, ItemType itemType, String managerId) args,
   ) {
-    final (body, repoUrl, targetType) = args;
+    final (body, repoUrl, targetType, managerId) = args;
 
     try {
       final decoded = jsonDecode(body);
@@ -236,7 +236,7 @@ class AniyomiExtensions extends Extension {
             itemType: detectedType,
             repo: repoUrl,
             iconUrl: "$baseIconUrl/icon/${map['pkg']}.png",
-          ),
+          )..managerId = managerId,
         );
       }
 
@@ -279,7 +279,14 @@ class AniyomiExtensions extends Extension {
         if (inst.pkgName != null && inst.pkgName!.isNotEmpty) {
           return s.pkgName == inst.pkgName;
         }
-        return s.id == inst.id || s.name == inst.name;
+        if (s.id != null && s.id!.isNotEmpty && s.id == inst.id) return true;
+        if (s.name == inst.name) {
+          final sId = s.managerId;
+          final iId = inst.managerId;
+          if (sId != null && iId != null) return sId == iId;
+          return true;
+        }
+        return false;
       });
 
       if (repo == null) continue;
@@ -557,7 +564,7 @@ class AniyomiExtensions extends Extension {
 
       final parsed = await compute(
         _parseExtensions,
-        (res.body, repoUrl, type),
+        (res.body, repoUrl, type, id),
       );
 
       final rx = getAvailableRx(type);

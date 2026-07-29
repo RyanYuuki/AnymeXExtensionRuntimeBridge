@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart'
     as flutter_inappwebview;
 import 'package:http/io_client.dart';
@@ -18,9 +19,13 @@ class MClient {
     MSource? source,
     Map<String, dynamic>? reqcopyWith,
   }) {
+    final client = AnymeXExtensionBridge.context.http ?? IOClient(HttpClient());
     return InterceptedClient.build(
-      client: IOClient(HttpClient()),
-      interceptors: [MCookieManager(reqcopyWith)],
+      client: client,
+      interceptors: [
+        MCookieManager(reqcopyWith),
+        LoggerInterceptor(),
+      ],
     );
   }
 
@@ -105,10 +110,22 @@ class MCookieManager extends InterceptorContract {
       }
     }
 
-    if (cookieStr != null && cookieStr.isNotEmpty) {
-      if (request.headers[HttpHeaders.cookieHeader] == null) {
-        request.headers[HttpHeaders.cookieHeader] = cookieStr;
+    final existingCookie = request.headers.entries
+        .firstWhereOrNull((e) => e.key.toLowerCase() == 'cookie')
+        ?.value;
+    String? finalCookie;
+    if (existingCookie != null && existingCookie.isNotEmpty) {
+      if (cookieStr != null && cookieStr.isNotEmpty) {
+        finalCookie = _mergeCookies(cookieStr, existingCookie);
+      } else {
+        finalCookie = existingCookie;
       }
+    } else {
+      finalCookie = cookieStr;
+    }
+    if (finalCookie != null && finalCookie.isNotEmpty) {
+      request.headers.removeWhere((k, v) => k.toLowerCase() == 'cookie');
+      request.headers['Cookie'] = finalCookie;
     }
 
     var userAgent = AnymeXRuntimeBridge.userAgentMap[host];
@@ -120,10 +137,31 @@ class MCookieManager extends InterceptorContract {
       }
     }
 
-    if (userAgent != null && userAgent.isNotEmpty) {
-      if (request.headers[HttpHeaders.userAgentHeader] == null) {
-        request.headers[HttpHeaders.userAgentHeader] = userAgent;
+    final existingUA = request.headers.entries
+        .firstWhereOrNull((e) => e.key.toLowerCase() == 'user-agent')
+        ?.value;
+    String? finalUA;
+    if (existingUA != null && existingUA.isNotEmpty && !existingUA.startsWith('Dart/')) {
+      finalUA = existingUA;
+      AnymeXRuntimeBridge.userAgentMap[host] = existingUA;
+      final parts = host.split('.');
+      if (parts.length >= 2) {
+        final parentDomain = parts.sublist(parts.length - 2).join('.');
+        AnymeXRuntimeBridge.userAgentMap[parentDomain] = existingUA;
       }
+    } else {
+      finalUA = userAgent;
+    }
+    if (finalUA != null && finalUA.isNotEmpty) {
+      request.headers.removeWhere((k, v) => k.toLowerCase() == 'user-agent');
+      request.headers['User-Agent'] = finalUA;
+    }
+    final existingContentType = request.headers.entries
+        .firstWhereOrNull((e) => e.key.toLowerCase() == 'content-type')
+        ?.value;
+    if (existingContentType != null && existingContentType.isNotEmpty) {
+      request.headers.removeWhere((k, v) => k.toLowerCase() == 'content-type');
+      request.headers['Content-Type'] = existingContentType;
     }
     try {
       if (reqcopyWith != null) {
@@ -142,6 +180,25 @@ class MCookieManager extends InterceptorContract {
       }
     } catch (_) {}
     return request;
+  }
+
+  String _mergeCookies(String bridgeCookie, String requestCookie) {
+    final map = <String, String>{};
+    void parse(String str) {
+      for (final part in str.split(';')) {
+        final index = part.indexOf('=');
+        if (index != -1) {
+          final key = part.substring(0, index).trim();
+          final val = part.substring(index + 1).trim();
+          if (key.isNotEmpty) {
+            map[key] = val;
+          }
+        }
+      }
+    }
+    parse(bridgeCookie);
+    parse(requestCookie);
+    return map.entries.map((e) => '${e.key}=${e.value}').join('; ');
   }
 
   @override

@@ -563,6 +563,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 val function1Class = loader.loadClass("kotlin.jvm.functions.Function1")
                 val unitClass = loader.loadClass("kotlin.Unit")
                 val unitInstance = unitClass.getField("INSTANCE").get(null)
+                val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
                 val proxyCallback = Proxy.newProxyInstance(
                     loader,
@@ -571,9 +572,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                         override fun invoke(proxy: Any?, method: Method?, args: Array<out Any?>?): Any? {
                             if (method?.name == "invoke") {
                                 val video = args?.get(0)
-                                runBlocking(Dispatchers.Main) {
-                                    events?.success(video)
-                                }
+                                mainHandler.post { events?.success(video) }
                                 return unitInstance
                             }
                             return null
@@ -582,8 +581,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 )
 
                 call("csGetVideoListStream", ctx, apiName, url, proxyCallback, parameters)
-                delay(1000)
-                withContext(Dispatchers.Main) { events?.endOfStream() }
+                mainHandler.post { events?.endOfStream() }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Throwable) {

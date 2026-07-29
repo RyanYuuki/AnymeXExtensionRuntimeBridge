@@ -29,6 +29,7 @@ String _normalizeName(String? name) {
 List<CloudStreamSource> _hydrateCloudStreamSources(Map<String, dynamic> args) {
   final List<dynamic> result = args['result'];
   final Map<String, String?> metas = args['metas'];
+  final String managerId = args['managerId'] as String? ?? 'cloudstream';
 
   return result.map((e) {
     final map = Map<String, dynamic>.from(e);
@@ -47,7 +48,7 @@ List<CloudStreamSource> _hydrateCloudStreamSources(Map<String, dynamic> args) {
       } catch (_) {}
     }
 
-    return CloudStreamSource.fromJson(map);
+    return CloudStreamSource.fromJson(map)..managerId = managerId;
   }).toList();
 }
 
@@ -126,8 +127,10 @@ class CloudStreamExtensions extends Extension {
           final List<dynamic> data =
               await compute(_decodeJsonList, response.body);
           for (final item in data) {
-            allAvailable
-                .add(CloudStreamSource.fromJson(item..['repo'] = repo.url));
+            allAvailable.add(
+              CloudStreamSource.fromJson(item..['repo'] = repo.url)
+                ..managerId = id,
+            );
           }
         }
       } catch (e, st) {
@@ -234,6 +237,7 @@ class CloudStreamExtensions extends Extension {
       final sources = await compute(_hydrateCloudStreamSources, {
         'result': result,
         'metas': metas,
+        'managerId': id,
       });
 
       installedAnimeExtensions.value = sources;

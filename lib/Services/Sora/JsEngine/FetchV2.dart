@@ -48,17 +48,36 @@ const fetch = fetchv2;
 
   Future<dynamic> handle(Map data) async {
     final url = data['url'] as String;
-    final method = (data['method'] as String? ?? 'GET').toUpperCase();
-    final body = data['body'];
+    var method = (data['method'] as String? ?? 'GET').toUpperCase();
+    var body = data['body'];
 
     final headers = Map<String, String>.from(_defaultHeaders);
 
-    final Map? extHeaders = data['headers'];
+    var extHeaders = data['headers'] as Map?;
+    if (extHeaders != null) {
+      final hasHeaders = extHeaders.containsKey('headers') || extHeaders.containsKey('Headers');
+      final hasMethod = extHeaders.containsKey('method') || extHeaders.containsKey('Method');
+      final hasBody = extHeaders.containsKey('body') || extHeaders.containsKey('Body');
+      if (hasHeaders || hasMethod || hasBody) {
+        final optMethod = extHeaders['method'] ?? extHeaders['Method'];
+        if (optMethod != null) {
+          method = optMethod.toString().toUpperCase();
+        }
+        final optBody = extHeaders['body'] ?? extHeaders['Body'];
+        if (optBody != null) {
+          body = optBody;
+        }
+        extHeaders = (extHeaders['headers'] ?? extHeaders['Headers']) as Map?;
+      }
+    }
+
     if (extHeaders != null) {
       extHeaders.forEach((k, v) {
         headers[k.toString()] = v.toString();
       });
     }
+
+    final normalizedHeaders = _normalizeHeaderKeys(headers);
 
     try {
       final uri = Uri.parse(url);
@@ -66,11 +85,11 @@ const fetch = fetchv2;
       http.Response response;
 
       if (method == 'GET') {
-        response = await _client.get(uri, headers: headers);
+        response = await _client.get(uri, headers: normalizedHeaders);
       } else if (method == 'HEAD') {
-        response = await _client.head(uri, headers: headers);
+        response = await _client.head(uri, headers: normalizedHeaders);
       } else {
-        final req = http.Request(method, uri)..headers.addAll(headers);
+        final req = http.Request(method, uri)..headers.addAll(normalizedHeaders);
 
         if (body != null) {
           req.body = body is String ? body : jsonEncode(body);
@@ -93,5 +112,21 @@ const fetch = fetchv2;
     } catch (e) {
       throw Exception('fetchv2 failed: $e');
     }
+  }
+
+  Map<String, String> _normalizeHeaderKeys(Map<String, String> headers) {
+    final Map<String, String> normalized = {};
+    headers.forEach((key, value) {
+      final String normalizedKey = key.split('-').map((part) {
+        if (part.isEmpty) return '';
+        final lower = part.toLowerCase();
+        if (lower == 'ua') return 'UA';
+        if (lower == 'gpc') return 'GPC';
+        if (lower == 'ch') return 'CH';
+        return part[0].toUpperCase() + part.substring(1).toLowerCase();
+      }).join('-');
+      normalized[normalizedKey] = value;
+    });
+    return normalized;
   }
 }

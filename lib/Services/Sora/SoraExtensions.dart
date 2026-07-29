@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:collection/collection.dart';
 import 'package:http/http.dart';
 
 import '../../Extensions/Extensions.dart';
@@ -86,7 +87,7 @@ class SoraExtensions extends Extension {
 
       final parsed = await compute(
         _parseExtensions,
-        (res.body, repoUrl, type),
+        (res.body, repoUrl, type, id),
       );
 
       String? repoName;
@@ -188,7 +189,7 @@ class SoraExtensions extends Extension {
 
       return compute(
         _parseExtensions,
-        (res.body, repo.url, type),
+        (res.body, repo.url, type, id),
       );
     } catch (e) {
       Logger.log("Repo failed ${repo.url}: $e");
@@ -197,8 +198,8 @@ class SoraExtensions extends Extension {
   }
 
   static List<Source> _parseExtensions(
-      (String body, String repoUrl, ItemType itemType) args) {
-    final (body, repoUrl, itemType) = args;
+      (String body, String repoUrl, ItemType itemType, String managerId) args) {
+    final (body, repoUrl, itemType, managerId) = args;
 
     try {
       final decoded = jsonDecode(body);
@@ -243,7 +244,7 @@ class SoraExtensions extends Extension {
             baseUrl: ext['baseUrl'],
             sourceCodeUrl: ext['scriptUrl'] ?? ext['scriptURL'],
             repo: repoUrl,
-          ),
+          )..managerId = managerId,
         );
       }
 
@@ -258,16 +259,31 @@ class SoraExtensions extends Extension {
     final s = source as SSource;
 
     try {
-      if (s.sourceCodeUrl == null) {
+      SSource? remote;
+      for (final t in ItemType.values) {
+        final list = getRawAvailableRx(t).value;
+        final found = list.firstWhereOrNull((e) => e.id == s.id);
+        if (found != null) {
+          remote = found as SSource;
+          break;
+        }
+      }
+
+      final target = remote ?? s;
+
+      if (target.sourceCodeUrl == null) {
         throw Exception("Missing sourceCodeUrl");
       }
 
-      final res = await _client.get(Uri.parse(s.sourceCodeUrl!));
+      final res = await _client.get(Uri.parse(target.sourceCodeUrl!));
       if (res.statusCode != 200) {
         throw Exception("Failed to download extension");
       }
 
-      final installed = s..sourceCode = res.body;
+      final installed = SSource.fromJson(target.toJson())
+        ..sourceCode = res.body
+        ..hasUpdate = false
+        ..versionLast = null;
 
       final installedList = _loadInstalled(s.itemType!);
 
@@ -368,7 +384,7 @@ class SoraExtensions extends Extension {
 
     for (final e in encoded) {
       try {
-        list.add(SSource.fromJson(jsonDecode(e)));
+        list.add(SSource.fromJson(jsonDecode(e))..managerId = id);
       } catch (_) {}
     }
 

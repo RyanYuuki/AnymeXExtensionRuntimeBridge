@@ -28,10 +28,9 @@ mkdir -p "$DEST_DIR"
 cp -f "build/libs/desktop_bridge.jar" "$DEST_DIR/$DEST_FILE"
 
 LOCAL_SHARE_DIR="$HOME/Documents/AnymeX/Runtime"
-if [ -d "$LOCAL_SHARE_DIR" ]; then
-    echo "[COPY] Copying to local runtime share directory: $LOCAL_SHARE_DIR/$DEST_FILE"
-    cp -f "build/libs/desktop_bridge.jar" "$LOCAL_SHARE_DIR/$DEST_FILE"
-fi
+echo "[COPY] Copying to local runtime share directory: $LOCAL_SHARE_DIR/$DEST_FILE"
+mkdir -p "$LOCAL_SHARE_DIR"
+cp -f "build/libs/desktop_bridge.jar" "$LOCAL_SHARE_DIR/$DEST_FILE"
 
 echo "[DONE] Build and copy completed successfully!"
 echo

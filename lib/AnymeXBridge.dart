@@ -321,4 +321,12 @@ class AnymeXRuntimeBridge {
       }
     }
   }
+
+  static Future<bool> isLoadedFromStorage() async {
+    if (!Platform.isAndroid) return false;
+    final savedPath = getVal<String>('runtime_host_path');
+    if (savedPath == null || savedPath.isEmpty) return false;
+    final defaultPath = await RuntimePaths().bridgePath;
+    return savedPath != defaultPath;
+  }
 }

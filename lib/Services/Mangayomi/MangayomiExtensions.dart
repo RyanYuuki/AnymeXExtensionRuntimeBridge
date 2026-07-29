@@ -79,7 +79,7 @@ class MangayomiExtensions extends Extension {
 
       final parsed = await compute(
         _parseExtensions,
-        (res.body, repo.url, type),
+        (res.body, repo.url, type, id),
       );
 
       return parsed;
@@ -107,39 +107,38 @@ class MangayomiExtensions extends Extension {
   @override
   Future<void> installSource(Source source) async {
     final m = source as MSource;
-    final type = m.itemType ?? ItemType.manga;
-
-    final available = getAvailableRx(type).value.whereType<MSource>();
-    final repoMatch = available.firstWhereOrNull((s) => s.id == m.id);
-
-    if (repoMatch?.sourceCodeUrl != null && repoMatch!.sourceCodeUrl!.isNotEmpty) {
-      m.sourceCodeUrl ??= repoMatch.sourceCodeUrl;
-    }
-
-    if (m.sourceCodeUrl == null || m.sourceCodeUrl!.isEmpty) {
-      throw Exception("Extension source URL is required for installation.");
-    }
 
     try {
-      final res = await _client.get(Uri.parse(m.sourceCodeUrl!));
+      MSource? remote;
+      for (final t in ItemType.values) {
+        final list = getRawAvailableRx(t).value;
+        final found = list.firstWhereOrNull((e) => e.id == m.id);
+        if (found != null) {
+          remote = found as MSource;
+          break;
+        }
+      }
 
-      print("Installing source: ${m.id} => ${m.sourceCodeUrl}");
+      final target = remote ?? m;
+
+      if (target.sourceCodeUrl == null || target.sourceCodeUrl!.isEmpty) {
+        throw Exception("Extension source URL is required for installation.");
+      }
+
+      final res = await _client.get(Uri.parse(target.sourceCodeUrl!));
+
+      print("Installing source: ${target.id} => ${target.sourceCodeUrl}");
 
       if (res.statusCode != 200) {
         throw Exception("Extension download failed");
       }
 
-      if (m.versionLast != null && m.versionLast!.isNotEmpty) {
-        m.version = m.versionLast;
-      } else if (repoMatch?.version != null && repoMatch!.version!.isNotEmpty) {
-        m.version = repoMatch.version;
-      }
-      m.hasUpdate = false;
-
-      final installed = m
+      final installed = MSource.fromJson(target.toJson())
         ..sourceCode = res.body
+        ..hasUpdate = false
+        ..versionLast = null
         ..headers = jsonEncode(
-          getExtensionService(m).getHeaders(),
+          getExtensionService(target).getHeaders(),
         );
 
       final list = _loadInstalled(m.itemType!);
@@ -240,7 +239,7 @@ class MangayomiExtensions extends Extension {
       _saveRepos(updatedRepos, type);
       final parsed = await compute(
         _parseExtensions,
-        (res.body, repoUrl, type),
+        (res.body, repoUrl, type, id),
       );
 
       final rx = getAvailableRx(type);
@@ -260,8 +259,8 @@ class MangayomiExtensions extends Extension {
   }
 
   static List<Source> _parseExtensions(
-      (String body, String repoUrl, ItemType itemType) args) {
-    final (body, repoUrl, itemType) = args;
+      (String body, String repoUrl, ItemType itemType, String managerId) args) {
+    final (body, repoUrl, itemType, managerId) = args;
 
     final decoded = jsonDecode(body);
 
@@ -273,7 +272,7 @@ class MangayomiExtensions extends Extension {
       final ext = Map<String, dynamic>.from(e);
 
       sources.add(
-        MSource.fromJson(ext)..repo = repoUrl,
+        MSource.fromJson(ext)..repo = repoUrl..managerId = managerId,
       );
     }
 
@@ -302,7 +301,7 @@ class MangayomiExtensions extends Extension {
     final encoded = getVal<List<String>>('$id-Installed-${type.name}');
     if (encoded == null) return [];
 
-    return encoded.map((e) => MSource.fromJson(jsonDecode(e))).toList();
+    return encoded.map((e) => MSource.fromJson(jsonDecode(e))..managerId = id).toList();
   }
 
   void _saveInstalled(List<MSource> list, ItemType type) {

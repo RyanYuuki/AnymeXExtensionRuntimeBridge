@@ -12,16 +12,12 @@ import '../../Settings/KvStore.dart';
 import '../../Models/Source.dart';
 import '../../Extensions/Extensions.dart';
 import '../../Extensions/SourceMethods.dart';
-import '../../Runtime/RuntimeTools.dart';
-import '../../Runtime/RuntimePaths.dart';
-import '../../Runtime/RuntimeDownloader.dart';
 import '../../Runtime/RuntimeController.dart';
 import '../../Runtime/Bridge/BridgeDispatcher.dart';
 import '../../Runtime/DesktopExtensionBase.dart';
 import 'package:get/get.dart';
 import '../Aniyomi/Models/Source.dart';
 import '../Mangayomi/http/m_client.dart';
-import 'package:archive/archive_io.dart';
 import 'DesktopAniyomiSourceMethods.dart';
 
 class DesktopAniyomiExtensions extends DesktopExtensionBase {
@@ -372,14 +368,6 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
           aSource.apkName?.replaceAll('.apk', '') ??
           'unknown_ext';
 
-      final toolsDir = await _getToolsPath();
-      final jrePaths = RuntimePaths();
-      final javaPath = await jrePaths.javaExecutablePath;
-
-      if (javaPath == null) {
-        throw Exception("Java executable not found. Cannot run dex2jar.");
-      }
-
       final extDir = await _getExtensionsPath();
       final tempZipPath = p.join(extDir, '$pkgName.zip');
       final tempExtractedPath = p.join(extDir, '${pkgName}_extracted');
@@ -391,55 +379,15 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
       }
       File(tempZipPath).writeAsBytesSync(apkRes.bodyBytes);
 
-      try {
-        await extractZip(tempZipPath, tempExtractedPath);
-      } catch (e) {
-        throw Exception('Failed to extract extension APK: $e');
-      }
-
-      final classesDex = p.join(tempExtractedPath, 'classes.dex');
-      if (!File(classesDex).existsSync()) {
-        throw Exception("No classes.dex found in APK. Not a valid extension.");
-      }
-
       final outJarPath = p.join(extDir, '$pkgName.jar');
-      Logger.log("Converting Aniyomi APK to JAR and bundling assets...");
-      
-      final tempClassesJarPath = p.join(extDir, '${pkgName}_classes.jar');
-      await RuntimeTools().runDex2Jar(classesDex, tempClassesJarPath);
+      Logger.log("Converting Aniyomi APK to JAR via sidecar (embedded dex2jar)...");
 
-      if (File(tempClassesJarPath).existsSync()) {
-        await extractZip(tempClassesJarPath, tempExtractedPath);
-        try {
-          File(tempClassesJarPath).deleteSync();
-        } catch (_) {}
-      }
-
-      final archive = Archive();
-      final dir = Directory(tempExtractedPath);
-      if (dir.existsSync()) {
-        final list = dir.listSync(recursive: true);
-        for (final entity in list) {
-          if (entity is File) {
-            final relPath = p.relative(entity.path, from: tempExtractedPath);
-            final normalizedPath = relPath.replaceAll('\\', '/');
-            if (normalizedPath == 'AndroidManifest.xml' ||
-                normalizedPath == 'resources.arsc' ||
-                normalizedPath.endsWith('.dex') ||
-                normalizedPath.startsWith('res/')) {
-              continue;
-            }
-            final bytes = entity.readAsBytesSync();
-            archive.addFile(ArchiveFile(normalizedPath, bytes.length, bytes));
-          }
-        }
-      }
-      
-      final zipData = ZipEncoder().encode(archive);
-      if (zipData == null) {
-        throw Exception("Failed to encode packaged JAR for $pkgName");
-      }
-      File(outJarPath).writeAsBytesSync(zipData);
+      // Delegate conversion to the sidecar which uses de.femtopedia.dex2jar library
+      // (same as Dartotsu) — produces correct bytecode for modern coroutine/lambda patterns
+      await BridgeDispatcher().invokeMethod('convertApk', {
+        'apkPath': tempZipPath,
+        'outJarPath': outJarPath,
+      });
 
       if (aSource.iconUrl != null) {
         setVal('desktop_ext_icon_$pkgName', aSource.iconUrl);

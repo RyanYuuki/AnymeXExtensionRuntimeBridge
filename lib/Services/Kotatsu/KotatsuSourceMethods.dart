@@ -20,10 +20,16 @@ class KotatsuSourceMethods extends SourceMethods {
       'cover': media.cover,
     });
 
-    return await compute(
+    final dMedia = await compute(
       DMedia.fromJson,
       Map<String, dynamic>.from(result as Map),
     );
+
+    if (dMedia.episodes != null) {
+      dMedia.episodes = dMedia.episodes!.reversed.toList();
+    }
+
+    return dMedia;
   }
 
   @override
