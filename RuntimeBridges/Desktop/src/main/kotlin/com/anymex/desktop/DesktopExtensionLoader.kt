@@ -149,6 +149,12 @@ fun main(args: Array<String>) = runBlocking {
 
                 val resultData = withContext(ioContext) {
                     when (method) {
+                        "convertApk" -> {
+                            val apkPath = getSafeString("apkPath")
+                            val outJarPath = getSafeString("outJarPath")
+                            ApkConverter.convertApkToJar(apkPath, outJarPath)
+                            mapOf("success" to true, "outJarPath" to outJarPath)
+                        }
                         "loadExtensions" -> {
                             val path = getSafeString("folderPath")
                             AniyomiSourceMethods.loadExtensions(path)
