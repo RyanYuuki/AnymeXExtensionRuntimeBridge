@@ -262,10 +262,33 @@ object AniyomiSourceMethods {
                     this.title = title
                     this.thumbnail_url = cover.takeIf { it.isNotBlank() }?.normalizeUrl()
                 }
-                val details = source.getMangaDetails(manga)
-                val chapters = source.getChapterList(manga)
-                map.putAll(details.toDetailsMap())
-                map["episodes"] = chapters.map { it.toDetailsMap() }
+                var details: SManga? = null
+                var chapters: List<SChapter>? = null
+                try {
+                    details = source.getMangaDetails(manga)
+                } catch (e: Throwable) {
+                    if (e is UnsupportedOperationException || e is IllegalStateException) {
+                        val update = source.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true)
+                        details = update.manga
+                        chapters = update.chapters
+                    } else {
+                        throw e
+                    }
+                }
+                if (chapters == null) {
+                    chapters = try {
+                        source.getChapterList(manga)
+                    } catch (e: Throwable) {
+                        if (e is UnsupportedOperationException || e is IllegalStateException) {
+                            val update = source.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
+                            update.chapters
+                        } else {
+                            throw e
+                        }
+                    }
+                }
+                map.putAll(details!!.toDetailsMap())
+                map["episodes"] = chapters!!.map { it.toDetailsMap() }
             }
             gson.toJson(map)
         } catch (e: Exception) {

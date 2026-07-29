@@ -14,21 +14,29 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 class NetworkHelper(
-    context: Context
+    context: Context,
 ) {
     companion object {
-        /**
-         * Static accessor kept for internal usages (HttpSource, AnimeHttpSource header builder).
-         */
-        fun defaultUserAgentProvider() =
-            System.getProperty("anymex.ua.default")?.takeIf { it.isNotBlank() }
-                ?: "Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
+        @Volatile
+        private var resolvedUa: String? = null
+
+        fun defaultUserAgentProvider(): String {
+            return System.getProperty("anymex.ua.default")?.takeIf { it.isNotBlank() }
+                ?: resolvedUa
+                ?: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+        }
+
+        internal fun initUserAgent(context: Context) {
+            if (resolvedUa != null) return
+            try {
+                val raw = android.webkit.WebSettings.getDefaultUserAgent(context)
+                resolvedUa = raw
+                    .replace("; wv)", ")")
+                    .replace(" Version/[\\d.]+ ".toRegex(), " ")
+            } catch (_: Throwable) {}
+        }
     }
 
-    /**
-     * Instance method called by extensions compiled against Komikku/SY extension-lib.
-     * Extensions call `networkHelper.defaultUserAgentProvider()` as a virtual dispatch.
-     */
     fun defaultUserAgentProvider() = Companion.defaultUserAgentProvider()
 
     val cookieJar = AndroidCookieJar()
@@ -47,7 +55,7 @@ class NetworkHelper(
                 ),
             )
             .addInterceptor(UncaughtExceptionInterceptor())
-            .addInterceptor(CloudflareInterceptor(context))
+            .addInterceptor(CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider))
             .addInterceptor(BrotliInterceptor)
             .addInterceptor(IgnoreGzipInterceptor())
             .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))

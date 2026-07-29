@@ -68,7 +68,16 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     override suspend fun getDetails(media: SAnime): SAnime {
         val smanga = media.toSManga()
         try {
-            val details = source.getMangaDetails(smanga)
+            val details = try {
+                source.getMangaDetails(smanga)
+            } catch (e: Throwable) {
+                if (e is UnsupportedOperationException || e is IllegalStateException) {
+                    val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = true, fetchChapters = false)
+                    update.manga
+                } else {
+                    throw e
+                }
+            }
             return details.toSAnime(smanga.url)
         } catch (e: Throwable) {
             Logger.log("getDetails failed: message=${e.message}")
@@ -78,7 +87,17 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     }
 
     override suspend fun getChapterList(media: SAnime): List<SEpisode> {
-        return source.getChapterList(media.toSManga()).map { it.toSEpisode() }
+        val smanga = media.toSManga()
+        return try {
+            source.getChapterList(smanga).map { it.toSEpisode() }
+        } catch (e: Throwable) {
+            if (e is UnsupportedOperationException || e is IllegalStateException) {
+                val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = false, fetchChapters = true)
+                update.chapters.map { it.toSEpisode() }
+            } else {
+                throw e
+            }
+        }
     }
 
     override suspend fun getPageList( chapter: SChapter): List<Page> {

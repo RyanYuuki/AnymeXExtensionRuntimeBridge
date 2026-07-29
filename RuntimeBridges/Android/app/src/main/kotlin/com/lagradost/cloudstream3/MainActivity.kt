@@ -120,5 +120,12 @@ class MainActivity : CommonActivity() {
         var context: android.content.Context? = null
         var activity: android.app.Activity? = null
         val afterPluginsLoadedEvent = Event<Boolean>()
+        val bookmarksUpdatedEvent = Event<Boolean>()
+        val libraryUpdatedEvent   = Event<Boolean>()
+        val onBackPressedEvent = Event<Boolean>()
+        val reloadHomeEvent  = Event<Boolean>()
+        val reloadPageEvent  = Event<Boolean>()
+        val reinitFirebase = Event<Boolean>()
+        val restartApp     = Event<Boolean>()
     }
 }

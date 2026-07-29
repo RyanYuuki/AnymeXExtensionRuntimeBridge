@@ -87,6 +87,7 @@ object RuntimeBridge {
             Injekt.addSingletonFactory<android.app.Application> {
                 context.applicationContext as android.app.Application
             }
+            eu.kanade.tachiyomi.network.NetworkHelper.initUserAgent(context.applicationContext)
             Injekt.addSingletonFactory { NetworkHelper(context.applicationContext) }
             Injekt.addSingletonFactory { Injekt.get<NetworkHelper>().client }
             Injekt.addSingletonFactory {
@@ -686,7 +687,7 @@ object RuntimeBridge {
         return false
     }
 
-    private fun resolveAppCompatActivity(context: Context): androidx.appcompat.app.AppCompatActivity? {
+    fun resolveAppCompatActivity(context: Context): androidx.appcompat.app.AppCompatActivity? {
         var ctx: Context? = context
         while (ctx != null) {
             if (isSubclassOfAppCompatActivity(ctx.javaClass)) {
@@ -821,10 +822,6 @@ object RuntimeBridge {
                 
                 com.anymex.runtimehost.cloudstream.CloudStreamSourceMethods(provider)
                     .loadLinksStream(url, onLinkFound)
-
-                while (coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
-                    kotlinx.coroutines.delay(10000)
-                }
             }
         } catch (e: Exception) {
             if (e !is kotlinx.coroutines.CancellationException) {
