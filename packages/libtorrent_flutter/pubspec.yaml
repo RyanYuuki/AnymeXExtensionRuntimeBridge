@@ -1,0 +1,41 @@
+name: libtorrent_flutter
+description: >
+  Native libtorrent 2.0 bindings for Flutter with a built-in HTTP streaming
+  server for instant torrent video playback. Supports Windows, Linux, macOS,
+  iOS, and Android.
+version: 1.8.5
+homepage: https://github.com/ayman708-UX/libtorrent_flutter
+repository: https://github.com/ayman708-UX/libtorrent_flutter
+issue_tracker: https://github.com/ayman708-UX/libtorrent_flutter/issues
+topics:
+  - torrent
+  - streaming
+  - libtorrent
+  - ffi
+
+environment:
+  sdk: ^3.5.0
+  flutter: '>=3.3.0'
+
+dependencies:
+  ffi: ^2.1.0
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  ffigen: ^12.0.0
+  flutter_lints: ^5.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+      ios:
+        ffiPlugin: true
+      linux:
+        ffiPlugin: true
+      macos:
+        ffiPlugin: true
+      windows:
+        ffiPlugin: true

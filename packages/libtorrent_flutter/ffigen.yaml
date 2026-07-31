@@ -1,0 +1,15 @@
+# Run with `dart run ffigen --config ffigen.yaml`.
+name: LibtorrentFlutterBindings
+description: |
+  Bindings for `src/libtorrent_flutter.h`.
+
+  Regenerate bindings with `dart run ffigen --config ffigen.yaml`.
+output: 'lib/libtorrent_flutter_bindings_generated.dart'
+headers:
+  entry-points:
+    - 'src/libtorrent_flutter.h'
+  include-directives:
+    - 'src/libtorrent_flutter.h'
+comments:
+  style: any
+  length: full

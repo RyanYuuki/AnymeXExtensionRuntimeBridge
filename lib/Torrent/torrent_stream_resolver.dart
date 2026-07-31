@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import '../ExtensionBridge.dart';
 import '../Logger.dart';
@@ -15,19 +15,21 @@ import 'package:libtorrent_flutter/libtorrent_flutter.dart';
 
 class TorrentStreamResolver {
   static const _channel = MethodChannel('anymeXBridge');
-  static bool _libraryLoaded = false;
   static bool _isInitialized = false;
+  static String? _lastEngineError;
   static final Map<int, _TorrentSession> _sessions = {};
   static int? _currentActiveTorrentId;
 
   static Timer? _inactivityTimer;
   static const Duration _inactivityTimeout = Duration(minutes: 5);
+  static const Duration _downloadNotifyInterval = Duration(seconds: 5);
 
   static void resetInactivityTimer() {
     _inactivityTimer?.cancel();
     if (!_isInitialized) return;
     _inactivityTimer = Timer(_inactivityTimeout, () async {
-      Logger.log('[TorrentResolver] 5 minutes of inactivity reached. Disposing engine automatically...');
+      Logger.log(
+          '[TorrentResolver] 5 minutes of inactivity reached. Disposing engine automatically...');
       await dispose();
     });
   }
@@ -41,9 +43,21 @@ class TorrentStreamResolver {
   }
 
   static Future<bool> isEngineDownloaded() async {
+    if (kDebugMode) {
+      print('[TorrentResolver] kDebugMode is active. Forcing engine redownload.');
+      return false;
+    }
     if (!Platform.isAndroid) return true;
     final path = await getEngineSoPath();
-    return File(path).exists();
+    final file = File(path);
+    final exists = await file.exists();
+    print('[TorrentResolver] File exists check for $path: $exists');
+    if (!exists) return false;
+    final size = await file.length();
+    print('[TorrentResolver] File size: $size bytes');
+    final valid = size > 1024 * 1024;
+    print('[TorrentResolver] File valid check (size > 1MB): $valid');
+    return valid;
   }
 
   static Future<String> getDeviceAbi() async {
@@ -57,12 +71,14 @@ class TorrentStreamResolver {
     }
   }
 
-  static Future<void> downloadEngine({void Function(double progress)? onProgress}) async {
+  static Future<void> downloadEngine(
+      {void Function(double progress)? onProgress}) async {
     if (!Platform.isAndroid) return;
     final abi = await getDeviceAbi();
-    final url = 'https://raw.githubusercontent.com/RyanYuuki/AnymeXExtensionRuntimeBridge/main/prebuilt/android/$abi/liblibtorrent_flutter.so';
+    final url =
+        'https://raw.githubusercontent.com/RyanYuuki/AnymeXExtensionRuntimeBridge/main/prebuilt/android/$abi/liblibtorrent_flutter.so';
     Logger.log('[TorrentResolver] Downloading torrent engine from: $url');
-    
+
     final path = await getEngineSoPath();
     final tempFile = File('$path.tmp');
     if (await tempFile.exists()) {
@@ -79,17 +95,24 @@ class TorrentStreamResolver {
       final contentLength = response.contentLength ?? 0;
       var downloadedBytes = 0;
       final sink = tempFile.openWrite();
+      DateTime? lastNotify;
 
       await response.stream.forEach((chunk) {
         sink.add(chunk);
         downloadedBytes += chunk.length;
         if (contentLength > 0 && onProgress != null) {
-          onProgress(downloadedBytes / contentLength);
+          final now = DateTime.now();
+          if (lastNotify == null ||
+              now.difference(lastNotify!) >= const Duration(seconds: 5) ||
+              downloadedBytes == contentLength) {
+            lastNotify = now;
+            onProgress(downloadedBytes / contentLength);
+          }
         }
       });
 
       await sink.close();
-      
+
       final finalFile = File(path);
       if (await finalFile.exists()) {
         await finalFile.delete();
@@ -109,21 +132,24 @@ class TorrentStreamResolver {
 
   static Future<bool> loadEngineLibrary() async {
     if (!Platform.isAndroid) return true;
-    if (_libraryLoaded) return true;
 
     try {
       final path = await getEngineSoPath();
-      if (!await File(path).exists()) {
-        Logger.log('[TorrentResolver] Native library not found at: $path');
+      final fileExists = await File(path).exists();
+      print('[TorrentResolver] loadEngineLibrary file exists check at $path: $fileExists');
+      if (!fileExists) {
+        _lastEngineError = 'Native library not found at: $path';
+        print('[TorrentResolver] $_lastEngineError');
         return false;
       }
 
-      Logger.log('[TorrentResolver] Loading native library dynamically from: $path');
-      DynamicLibrary.open(path);
-      _libraryLoaded = true;
+      customLibraryPath = path;
+      print('[TorrentResolver] Set customLibraryPath to: $customLibraryPath');
+      _lastEngineError = null;
       return true;
     } catch (e) {
-      Logger.log('[TorrentResolver] Failed to load dynamic library: $e');
+      _lastEngineError = 'Failed to configure library path: $e';
+      print('[TorrentResolver] $_lastEngineError');
       return false;
     }
   }
@@ -137,7 +163,8 @@ class TorrentStreamResolver {
     if (Platform.isAndroid) {
       final loaded = await loadEngineLibrary();
       if (!loaded) {
-        Logger.log('[TorrentResolver] Cannot initialize: native library not loaded.');
+        Logger.log(
+            '[TorrentResolver] Cannot initialize: ${_lastEngineError ?? 'native library not loaded.'}');
         return false;
       }
     }
@@ -152,11 +179,13 @@ class TorrentStreamResolver {
       );
 
       _isInitialized = true;
+      _lastEngineError = null;
       resetInactivityTimer();
       Logger.log('[TorrentResolver] Engine ready — path: $downloadPath');
       return true;
     } catch (e) {
-      Logger.log('[TorrentResolver] Init failed: $e');
+      _lastEngineError = 'Init failed: $e';
+      Logger.log('[TorrentResolver] $_lastEngineError');
       return false;
     }
   }
@@ -172,11 +201,22 @@ class TorrentStreamResolver {
     for (final video in videos) {
       if (isTorrentUrl(video.url)) {
         try {
-          final notify = onProgressToast ?? (msg) => AnymeXExtensionBridge.onLog(msg, true);
+          final notify = onProgressToast ??
+              (msg) => AnymeXExtensionBridge.onLog(msg, true);
 
           if (!await isEngineDownloaded()) {
+            DateTime? lastDownloadNotifyAt;
             notify('Downloading torrent engine (0%)...');
+            lastDownloadNotifyAt = DateTime.now();
             await downloadEngine(onProgress: (p) {
+              final now = DateTime.now();
+              if (lastDownloadNotifyAt != null &&
+                  now.difference(lastDownloadNotifyAt!) <
+                      _downloadNotifyInterval &&
+                  p < 1) {
+                return;
+              }
+              lastDownloadNotifyAt = now;
               final pct = (p * 100).toStringAsFixed(0);
               notify('Downloading torrent engine ($pct%)...');
             });
@@ -212,14 +252,17 @@ class TorrentStreamResolver {
           final proxifiedVideo = Video(
             video.title ?? video.quality,
             resolved.streamUrl,
-            video.quality.contains('Torrent') ? video.quality : '${video.quality} (Torrent)',
+            video.quality.contains('Torrent')
+                ? video.quality
+                : '${video.quality} (Torrent)',
             headers: video.headers,
             subtitles: resolvedSubtitles,
             audios: video.audios,
           );
           processed.add(proxifiedVideo);
         } catch (e) {
-          Logger.log('[TorrentResolver] Auto-proxify failed for ${video.url}: $e');
+          Logger.log(
+              '[TorrentResolver] Auto-proxify failed for ${video.url}: $e');
           processed.add(video);
         }
       } else {
@@ -240,8 +283,17 @@ class TorrentStreamResolver {
     final notify = onStatus ?? (msg) => AnymeXExtensionBridge.onLog(msg, true);
 
     if (!await isEngineDownloaded()) {
+      DateTime? lastDownloadNotifyAt;
       notify('Downloading torrent engine (0%)...');
+      lastDownloadNotifyAt = DateTime.now();
       await downloadEngine(onProgress: (p) {
+        final now = DateTime.now();
+        if (lastDownloadNotifyAt != null &&
+            now.difference(lastDownloadNotifyAt!) < _downloadNotifyInterval &&
+            p < 1) {
+          return;
+        }
+        lastDownloadNotifyAt = now;
         final pct = (p * 100).toStringAsFixed(0);
         notify('Downloading torrent engine ($pct%)...');
       });
@@ -251,7 +303,8 @@ class TorrentStreamResolver {
     if (!_isInitialized) {
       final ok = await initialize();
       if (!ok) {
-        throw Exception('Torrent engine not available');
+        throw Exception(
+            'Torrent engine not available: ${_lastEngineError ?? 'unknown initialization error'}');
       }
     }
 
@@ -267,13 +320,16 @@ class TorrentStreamResolver {
 
         int targetFileIndex = session.fileIndex;
         if (episode != null) {
-          final allFiles = engine.getFiles(session.torrentId).map((f) => TorrentFileInfo(
-                index: f.index,
-                name: f.name,
-                path: f.path,
-                size: f.size,
-                isVideo: _isVideoExtension(f.path),
-              )).toList();
+          final allFiles = engine
+              .getFiles(session.torrentId)
+              .map((f) => TorrentFileInfo(
+                    index: f.index,
+                    name: f.name,
+                    path: f.path,
+                    size: f.size,
+                    isVideo: _isVideoExtension(f.path),
+                  ))
+              .toList();
           final idx = _findFileIndexForEpisode(allFiles, episode);
           if (idx != null) {
             targetFileIndex = idx;
@@ -283,20 +339,26 @@ class TorrentStreamResolver {
         }
 
         if (targetFileIndex != session.fileIndex) {
-          Logger.log('[TorrentResolver] Switching session stream from file index ${session.fileIndex} to $targetFileIndex for episode $episode');
+          Logger.log(
+              '[TorrentResolver] Switching session stream from file index ${session.fileIndex} to $targetFileIndex for episode $episode');
           try {
             engine.stopAllStreamsForTorrent(session.torrentId);
 
-            final allFiles = engine.getFiles(session.torrentId).map((f) => TorrentFileInfo(
-                  index: f.index,
-                  name: f.name,
-                  path: f.path,
-                  size: f.size,
-                  isVideo: _isVideoExtension(f.path),
-                )).toList();
-            final chosenFile = allFiles.firstWhere((f) => f.index == targetFileIndex);
+            final allFiles = engine
+                .getFiles(session.torrentId)
+                .map((f) => TorrentFileInfo(
+                      index: f.index,
+                      name: f.name,
+                      path: f.path,
+                      size: f.size,
+                      isVideo: _isVideoExtension(f.path),
+                    ))
+                .toList();
+            final chosenFile =
+                allFiles.firstWhere((f) => f.index == targetFileIndex);
 
-            final matchedSubs = _findMatchingSubtitles(chosenFile.name, allFiles);
+            final matchedSubs =
+                _findMatchingSubtitles(chosenFile.name, allFiles);
             final matchedAudio = _findMatchingAudio(chosenFile.name, allFiles);
             if (matchedSubs.isNotEmpty || matchedAudio.isNotEmpty) {
               final priorities = List<int>.filled(allFiles.length, 0);
@@ -310,7 +372,8 @@ class TorrentStreamResolver {
               engine.setFilePriorities(session.torrentId, priorities);
             }
 
-            final streamInfo = engine.startStream(session.torrentId, fileIndex: targetFileIndex);
+            final streamInfo = engine.startStream(session.torrentId,
+                fileIndex: targetFileIndex);
             engine.preloadStream(streamInfo.id);
 
             session.fileIndex = targetFileIndex;
@@ -325,22 +388,27 @@ class TorrentStreamResolver {
               audioTracks: matchedAudio,
             );
           } catch (e) {
-            Logger.log('[TorrentResolver] Failed to switch stream within session: $e');
+            Logger.log(
+                '[TorrentResolver] Failed to switch stream within session: $e');
             await stop(session.torrentId);
             break;
           }
         }
 
         Logger.log('[TorrentResolver] Reusing stream: ${session.streamUrl}');
-        
-        final allFiles = engine.getFiles(session.torrentId).map((f) => TorrentFileInfo(
-              index: f.index,
-              name: f.name,
-              path: f.path,
-              size: f.size,
-              isVideo: _isVideoExtension(f.path),
-            )).toList();
-        final chosenFile = allFiles.firstWhere((f) => f.index == session.fileIndex);
+
+        final allFiles = engine
+            .getFiles(session.torrentId)
+            .map((f) => TorrentFileInfo(
+                  index: f.index,
+                  name: f.name,
+                  path: f.path,
+                  size: f.size,
+                  isVideo: _isVideoExtension(f.path),
+                ))
+            .toList();
+        final chosenFile =
+            allFiles.firstWhere((f) => f.index == session.fileIndex);
         final matchedSubs = _findMatchingSubtitles(chosenFile.name, allFiles);
         final matchedAudio = _findMatchingAudio(chosenFile.name, allFiles);
 
@@ -373,13 +441,15 @@ class TorrentStreamResolver {
       Logger.log('[TorrentResolver] Metadata received');
 
       final files = engine.getFiles(torrentId);
-      final allFiles = files.map((f) => TorrentFileInfo(
-            index: f.index,
-            name: f.name,
-            path: f.path,
-            size: f.size,
-            isVideo: _isVideoExtension(f.path),
-          )).toList();
+      final allFiles = files
+          .map((f) => TorrentFileInfo(
+                index: f.index,
+                name: f.name,
+                path: f.path,
+                size: f.size,
+                isVideo: _isVideoExtension(f.path),
+              ))
+          .toList();
 
       final videoFiles = allFiles.where((f) => f.isVideo).toList();
       onFilesDiscovered?.call(allFiles);
@@ -392,7 +462,8 @@ class TorrentStreamResolver {
       if (episode != null) {
         final idx = _findFileIndexForEpisode(allFiles, episode);
         if (idx != null) {
-          Logger.log('[TorrentResolver] Auto-selected file index $idx for episode $episode');
+          Logger.log(
+              '[TorrentResolver] Auto-selected file index $idx for episode $episode');
           fileIndex = idx;
         } else if (preferredFileIndex != null &&
             videoFiles.any((f) => f.index == preferredFileIndex)) {
@@ -400,9 +471,8 @@ class TorrentStreamResolver {
         } else if (videoFiles.length == 1) {
           fileIndex = videoFiles.first.index;
         } else {
-          fileIndex = videoFiles
-              .reduce((a, b) => a.size > b.size ? a : b)
-              .index;
+          fileIndex =
+              videoFiles.reduce((a, b) => a.size > b.size ? a : b).index;
         }
       } else if (preferredFileIndex != null &&
           videoFiles.any((f) => f.index == preferredFileIndex)) {
@@ -410,9 +480,7 @@ class TorrentStreamResolver {
       } else if (videoFiles.length == 1) {
         fileIndex = videoFiles.first.index;
       } else {
-        fileIndex = videoFiles
-            .reduce((a, b) => a.size > b.size ? a : b)
-            .index;
+        fileIndex = videoFiles.reduce((a, b) => a.size > b.size ? a : b).index;
       }
 
       final chosenFile = allFiles.firstWhere((f) => f.index == fileIndex);
@@ -431,7 +499,8 @@ class TorrentStreamResolver {
         }
         priorities[fileIndex] = 7;
         engine.setFilePriorities(torrentId, priorities);
-        Logger.log('[TorrentResolver] Found ${matchedSubs.length} subs, ${matchedAudio.length} audio tracks');
+        Logger.log(
+            '[TorrentResolver] Found ${matchedSubs.length} subs, ${matchedAudio.length} audio tracks');
       }
 
       final streamInfo = engine.startStream(torrentId, fileIndex: fileIndex);
@@ -466,14 +535,17 @@ class TorrentStreamResolver {
     }
   }
 
-  static int? _findFileIndexForEpisode(List<TorrentFileInfo> files, String episode) {
+  static int? _findFileIndexForEpisode(
+      List<TorrentFileInfo> files, String episode) {
     final intEp = int.tryParse(episode);
     if (intEp == null) return null;
 
     final normalizedEpisode = intEp.toString();
     final paddedEpisode = intEp.toString().padLeft(2, '0');
 
-    final epPattern1 = RegExp(r'\b(?:e|ep|episode|ep\.)\s*0*(' + normalizedEpisode + r')\b', caseSensitive: false);
+    final epPattern1 = RegExp(
+        r'\b(?:e|ep|episode|ep\.)\s*0*(' + normalizedEpisode + r')\b',
+        caseSensitive: false);
 
     for (final file in files) {
       if (!file.isVideo) continue;
@@ -492,7 +564,11 @@ class TorrentStreamResolver {
         if (numStr == null) continue;
         final numVal = int.tryParse(numStr);
         if (numVal == intEp) {
-          if (intEp == 720 || intEp == 1080 || intEp == 2160 || intEp == 480 || (intEp >= 1990 && intEp <= 2030)) {
+          if (intEp == 720 ||
+              intEp == 1080 ||
+              intEp == 2160 ||
+              intEp == 480 ||
+              (intEp >= 1990 && intEp <= 2030)) {
             continue;
           }
           return file.index;
@@ -503,10 +579,14 @@ class TorrentStreamResolver {
     for (final file in files) {
       if (!file.isVideo) continue;
       final name = p.basename(file.path).toLowerCase();
-      if (name.contains('e$paddedEpisode') || name.contains('ep$paddedEpisode') || name.contains('episode $paddedEpisode')) {
+      if (name.contains('e$paddedEpisode') ||
+          name.contains('ep$paddedEpisode') ||
+          name.contains('episode $paddedEpisode')) {
         return file.index;
       }
-      if (name.contains('e$normalizedEpisode') || name.contains('ep$normalizedEpisode') || name.contains('episode $normalizedEpisode')) {
+      if (name.contains('e$normalizedEpisode') ||
+          name.contains('ep$normalizedEpisode') ||
+          name.contains('episode $normalizedEpisode')) {
         return file.index;
       }
     }
@@ -514,7 +594,8 @@ class TorrentStreamResolver {
     return null;
   }
 
-  static Future<void> _waitForMetadata(int torrentId, {required Duration timeout}) async {
+  static Future<void> _waitForMetadata(int torrentId,
+      {required Duration timeout}) async {
     final engine = LibtorrentFlutter.instance;
     final completer = Completer<void>();
 
@@ -547,7 +628,8 @@ class TorrentStreamResolver {
             'Failed to download .torrent file: HTTP ${response.statusCode}');
       }
       final dir = await _getDownloadPath();
-      final filePath = p.join(dir, 'temp_${DateTime.now().millisecondsSinceEpoch}.torrent');
+      final filePath =
+          p.join(dir, 'temp_${DateTime.now().millisecondsSinceEpoch}.torrent');
       final file = File(filePath);
       await file.writeAsBytes(response.bodyBytes);
       return filePath;
@@ -635,7 +717,8 @@ class TorrentStreamResolver {
     if (_isInitialized && LibtorrentFlutter.isInitialized) {
       try {
         await LibtorrentFlutter.instance.dispose();
-        Logger.log('[TorrentResolver] Torrent engine disposed and turned off completely.');
+        Logger.log(
+            '[TorrentResolver] Torrent engine disposed and turned off completely.');
       } catch (e) {
         Logger.log('[TorrentResolver] Error disposing engine: $e');
       }
@@ -646,44 +729,105 @@ class TorrentStreamResolver {
   static List<TorrentSubtitle> _findMatchingSubtitles(
       String videoName, List<TorrentFileInfo> allFiles) {
     final videoBaseName = videoName.replaceAll(RegExp(r'\.[^.]+$'), '');
-    final subFiles = allFiles.where((f) => _isSubtitleExtension(f.path)).toList();
+    final subFiles =
+        allFiles.where((f) => _isSubtitleExtension(f.path)).toList();
     if (subFiles.isEmpty) return [];
 
     final langMap = {
-      'eng': 'English', 'en': 'English', 'english': 'English',
-      'jpn': 'Japanese', 'ja': 'Japanese', 'jap': 'Japanese', 'japanese': 'Japanese',
-      'chi': 'Chinese', 'zh': 'Chinese', 'chs': 'Chinese Simplified', 'cht': 'Chinese Traditional', 'chinese': 'Chinese',
-      'kor': 'Korean', 'ko': 'Korean', 'korean': 'Korean',
-      'spa': 'Spanish', 'es': 'Spanish', 'spanish': 'Spanish',
-      'fre': 'French', 'fr': 'French', 'french': 'French',
-      'ger': 'German', 'de': 'German', 'german': 'German',
-      'por': 'Portuguese', 'pt': 'Portuguese', 'portuguese': 'Portuguese',
-      'ita': 'Italian', 'it': 'Italian', 'italian': 'Italian',
-      'rus': 'Russian', 'ru': 'Russian', 'russian': 'Russian',
-      'ara': 'Arabic', 'ar': 'Arabic', 'arabic': 'Arabic',
-      'hin': 'Hindi', 'hi': 'Hindi', 'hindi': 'Hindi',
-      'tha': 'Thai', 'th': 'Thai', 'thai': 'Thai',
-      'vie': 'Vietnamese', 'vi': 'Vietnamese', 'vietnamese': 'Vietnamese',
-      'ind': 'Indonesian', 'id': 'Indonesian', 'indonesian': 'Indonesian',
-      'may': 'Malay', 'ms': 'Malay', 'malay': 'Malay',
-      'tur': 'Turkish', 'tr': 'Turkish', 'turkish': 'Turkish',
-      'pol': 'Polish', 'pl': 'Polish', 'polish': 'Polish',
-      'nld': 'Dutch', 'nl': 'Dutch', 'dutch': 'Dutch',
-      'swe': 'Swedish', 'sv': 'Swedish', 'swedish': 'Swedish',
-      'nor': 'Norwegian', 'no': 'Norwegian', 'norwegian': 'Norwegian',
-      'dan': 'Danish', 'da': 'Danish', 'danish': 'Danish',
-      'fin': 'Finnish', 'fi': 'Finnish', 'finnish': 'Finnish',
-      'ukr': 'Ukrainian', 'uk': 'Ukrainian', 'ukrainian': 'Ukrainian',
-      'rum': 'Romanian', 'ro': 'Romanian', 'romanian': 'Romanian',
-      'hun': 'Hungarian', 'hu': 'Hungarian', 'hungarian': 'Hungarian',
-      'cze': 'Czech', 'cs': 'Czech', 'czech': 'Czech',
-      'bra': 'Portuguese (BR)', 'pt-BR': 'Portuguese (BR)',
-      'lat': 'Spanish (LAT)', 'es-419': 'Spanish (LAT)',
+      'eng': 'English',
+      'en': 'English',
+      'english': 'English',
+      'jpn': 'Japanese',
+      'ja': 'Japanese',
+      'jap': 'Japanese',
+      'japanese': 'Japanese',
+      'chi': 'Chinese',
+      'zh': 'Chinese',
+      'chs': 'Chinese Simplified',
+      'cht': 'Chinese Traditional',
+      'chinese': 'Chinese',
+      'kor': 'Korean',
+      'ko': 'Korean',
+      'korean': 'Korean',
+      'spa': 'Spanish',
+      'es': 'Spanish',
+      'spanish': 'Spanish',
+      'fre': 'French',
+      'fr': 'French',
+      'french': 'French',
+      'ger': 'German',
+      'de': 'German',
+      'german': 'German',
+      'por': 'Portuguese',
+      'pt': 'Portuguese',
+      'portuguese': 'Portuguese',
+      'ita': 'Italian',
+      'it': 'Italian',
+      'italian': 'Italian',
+      'rus': 'Russian',
+      'ru': 'Russian',
+      'russian': 'Russian',
+      'ara': 'Arabic',
+      'ar': 'Arabic',
+      'arabic': 'Arabic',
+      'hin': 'Hindi',
+      'hi': 'Hindi',
+      'hindi': 'Hindi',
+      'tha': 'Thai',
+      'th': 'Thai',
+      'thai': 'Thai',
+      'vie': 'Vietnamese',
+      'vi': 'Vietnamese',
+      'vietnamese': 'Vietnamese',
+      'ind': 'Indonesian',
+      'id': 'Indonesian',
+      'indonesian': 'Indonesian',
+      'may': 'Malay',
+      'ms': 'Malay',
+      'malay': 'Malay',
+      'tur': 'Turkish',
+      'tr': 'Turkish',
+      'turkish': 'Turkish',
+      'pol': 'Polish',
+      'pl': 'Polish',
+      'polish': 'Polish',
+      'nld': 'Dutch',
+      'nl': 'Dutch',
+      'dutch': 'Dutch',
+      'swe': 'Swedish',
+      'sv': 'Swedish',
+      'swedish': 'Swedish',
+      'nor': 'Norwegian',
+      'no': 'Norwegian',
+      'norwegian': 'Norwegian',
+      'dan': 'Danish',
+      'da': 'Danish',
+      'danish': 'Danish',
+      'fin': 'Finnish',
+      'fi': 'Finnish',
+      'finnish': 'Finnish',
+      'ukr': 'Ukrainian',
+      'uk': 'Ukrainian',
+      'ukrainian': 'Ukrainian',
+      'rum': 'Romanian',
+      'ro': 'Romanian',
+      'romanian': 'Romanian',
+      'hun': 'Hungarian',
+      'hu': 'Hungarian',
+      'hungarian': 'Hungarian',
+      'cze': 'Czech',
+      'cs': 'Czech',
+      'czech': 'Czech',
+      'bra': 'Portuguese (BR)',
+      'pt-BR': 'Portuguese (BR)',
+      'lat': 'Spanish (LAT)',
+      'es-419': 'Spanish (LAT)',
     };
 
     final matched = <TorrentSubtitle>[];
     for (final sub in subFiles) {
-      final subName = sub.name.replaceAll(RegExp(r'\.[^.]+$'), '').toLowerCase();
+      final subName =
+          sub.name.replaceAll(RegExp(r'\.[^.]+$'), '').toLowerCase();
       final videoLower = videoBaseName.toLowerCase();
 
       if (subName == videoLower ||
@@ -710,44 +854,105 @@ class TorrentStreamResolver {
   static List<TorrentAudioTrack> _findMatchingAudio(
       String videoName, List<TorrentFileInfo> allFiles) {
     final videoBaseName = videoName.replaceAll(RegExp(r'\.[^.]+$'), '');
-    final audioFiles = allFiles.where((f) => _isAudioExtension(f.path)).toList();
+    final audioFiles =
+        allFiles.where((f) => _isAudioExtension(f.path)).toList();
     if (audioFiles.isEmpty) return [];
 
     final langMap = {
-      'eng': 'English', 'en': 'English', 'english': 'English',
-      'jpn': 'Japanese', 'ja': 'Japanese', 'jap': 'Japanese', 'japanese': 'Japanese',
-      'chi': 'Chinese', 'zh': 'Chinese', 'chs': 'Chinese Simplified', 'cht': 'Chinese Traditional', 'chinese': 'Chinese',
-      'kor': 'Korean', 'ko': 'Korean', 'korean': 'Korean',
-      'spa': 'Spanish', 'es': 'Spanish', 'spanish': 'Spanish',
-      'fre': 'French', 'fr': 'French', 'french': 'French',
-      'ger': 'German', 'de': 'German', 'german': 'German',
-      'por': 'Portuguese', 'pt': 'Portuguese', 'portuguese': 'Portuguese',
-      'ita': 'Italian', 'it': 'Italian', 'italian': 'Italian',
-      'rus': 'Russian', 'ru': 'Russian', 'russian': 'Russian',
-      'ara': 'Arabic', 'ar': 'Arabic', 'arabic': 'Arabic',
-      'hin': 'Hindi', 'hi': 'Hindi', 'hindi': 'Hindi',
-      'tha': 'Thai', 'th': 'Thai', 'thai': 'Thai',
-      'vie': 'Vietnamese', 'vi': 'Vietnamese', 'vietnamese': 'Vietnamese',
-      'ind': 'Indonesian', 'id': 'Indonesian', 'indonesian': 'Indonesian',
-      'may': 'Malay', 'ms': 'Malay', 'malay': 'Malay',
-      'tur': 'Turkish', 'tr': 'Turkish', 'turkish': 'Turkish',
-      'pol': 'Polish', 'pl': 'Polish', 'polish': 'Polish',
-      'nld': 'Dutch', 'nl': 'Dutch', 'dutch': 'Dutch',
-      'swe': 'Swedish', 'sv': 'Swedish', 'swedish': 'Swedish',
-      'nor': 'Norwegian', 'no': 'Norwegian', 'norwegian': 'Norwegian',
-      'dan': 'Danish', 'da': 'Danish', 'danish': 'Danish',
-      'fin': 'Finnish', 'fi': 'Finnish', 'finnish': 'Finnish',
-      'ukr': 'Ukrainian', 'uk': 'Ukrainian', 'ukrainian': 'Ukrainian',
-      'rum': 'Romanian', 'ro': 'Romanian', 'romanian': 'Romanian',
-      'hun': 'Hungarian', 'hu': 'Hungarian', 'hungarian': 'Hungarian',
-      'cze': 'Czech', 'cs': 'Czech', 'czech': 'Czech',
-      'bra': 'Portuguese (BR)', 'pt-BR': 'Portuguese (BR)',
-      'lat': 'Spanish (LAT)', 'es-419': 'Spanish (LAT)',
+      'eng': 'English',
+      'en': 'English',
+      'english': 'English',
+      'jpn': 'Japanese',
+      'ja': 'Japanese',
+      'jap': 'Japanese',
+      'japanese': 'Japanese',
+      'chi': 'Chinese',
+      'zh': 'Chinese',
+      'chs': 'Chinese Simplified',
+      'cht': 'Chinese Traditional',
+      'chinese': 'Chinese',
+      'kor': 'Korean',
+      'ko': 'Korean',
+      'korean': 'Korean',
+      'spa': 'Spanish',
+      'es': 'Spanish',
+      'spanish': 'Spanish',
+      'fre': 'French',
+      'fr': 'French',
+      'french': 'French',
+      'ger': 'German',
+      'de': 'German',
+      'german': 'German',
+      'por': 'Portuguese',
+      'pt': 'Portuguese',
+      'portuguese': 'Portuguese',
+      'ita': 'Italian',
+      'it': 'Italian',
+      'italian': 'Italian',
+      'rus': 'Russian',
+      'ru': 'Russian',
+      'russian': 'Russian',
+      'ara': 'Arabic',
+      'ar': 'Arabic',
+      'arabic': 'Arabic',
+      'hin': 'Hindi',
+      'hi': 'Hindi',
+      'hindi': 'Hindi',
+      'tha': 'Thai',
+      'th': 'Thai',
+      'thai': 'Thai',
+      'vie': 'Vietnamese',
+      'vi': 'Vietnamese',
+      'vietnamese': 'Vietnamese',
+      'ind': 'Indonesian',
+      'id': 'Indonesian',
+      'indonesian': 'Indonesian',
+      'may': 'Malay',
+      'ms': 'Malay',
+      'malay': 'Malay',
+      'tur': 'Turkish',
+      'tr': 'Turkish',
+      'turkish': 'Turkish',
+      'pol': 'Polish',
+      'pl': 'Polish',
+      'polish': 'Polish',
+      'nld': 'Dutch',
+      'nl': 'Dutch',
+      'dutch': 'Dutch',
+      'swe': 'Swedish',
+      'sv': 'Swedish',
+      'swedish': 'Swedish',
+      'nor': 'Norwegian',
+      'no': 'Norwegian',
+      'norwegian': 'Norwegian',
+      'dan': 'Danish',
+      'da': 'Danish',
+      'danish': 'Danish',
+      'fin': 'Finnish',
+      'fi': 'Finnish',
+      'finnish': 'Finnish',
+      'ukr': 'Ukrainian',
+      'uk': 'Ukrainian',
+      'ukrainian': 'Ukrainian',
+      'rum': 'Romanian',
+      'ro': 'Romanian',
+      'romanian': 'Romanian',
+      'hun': 'Hungarian',
+      'hu': 'Hungarian',
+      'hungarian': 'Hungarian',
+      'cze': 'Czech',
+      'cs': 'Czech',
+      'czech': 'Czech',
+      'bra': 'Portuguese (BR)',
+      'pt-BR': 'Portuguese (BR)',
+      'lat': 'Spanish (LAT)',
+      'es-419': 'Spanish (LAT)',
     };
 
     final matched = <TorrentAudioTrack>[];
     for (final audio in audioFiles) {
-      final audioName = audio.name.replaceAll(RegExp(r'\.[^.]+$'), '').toLowerCase();
+      final audioName =
+          audio.name.replaceAll(RegExp(r'\.[^.]+$'), '').toLowerCase();
       final videoLower = videoBaseName.toLowerCase();
 
       if (audioName == videoLower ||
@@ -757,10 +962,14 @@ class TorrentStreamResolver {
         String label = 'Audio';
         final nameLower = audio.name.toLowerCase();
 
-        if (nameLower.contains('.ja.') || nameLower.contains('.jpn.') || nameLower.contains('.japanese.')) {
+        if (nameLower.contains('.ja.') ||
+            nameLower.contains('.jpn.') ||
+            nameLower.contains('.japanese.')) {
           lang = 'Japanese';
           label = 'Japanese';
-        } else if (nameLower.contains('.en.') || nameLower.contains('.eng.') || nameLower.contains('.english.')) {
+        } else if (nameLower.contains('.en.') ||
+            nameLower.contains('.eng.') ||
+            nameLower.contains('.english.')) {
           lang = 'English';
           label = 'English';
         } else {
@@ -775,12 +984,29 @@ class TorrentStreamResolver {
 
         final ext = audio.path.split('.').last.toLowerCase();
         final codecMap = {
-          'flac': 'FLAC', 'aac': 'AAC', 'ac3': 'AC3', 'eac3': 'E-AC3',
-          'dts': 'DTS', 'dtshd': 'DTS-HD', 'truehd': 'TrueHD', 'thd': 'TrueHD',
-          'opus': 'Opus', 'ogg': 'OGG', 'wav': 'WAV', 'wma': 'WMA',
-          'm4a': 'AAC', 'mp3': 'MP3', 'alac': 'ALAC', 'ape': 'APE',
-          'tak': 'TAK', 'tta': 'TTA', 'wv': 'WavPack', 'lpcm': 'LPCM',
-          'pcm': 'PCM', 'aiff': 'AIFF', 'mka': 'MKA',
+          'flac': 'FLAC',
+          'aac': 'AAC',
+          'ac3': 'AC3',
+          'eac3': 'E-AC3',
+          'dts': 'DTS',
+          'dtshd': 'DTS-HD',
+          'truehd': 'TrueHD',
+          'thd': 'TrueHD',
+          'opus': 'Opus',
+          'ogg': 'OGG',
+          'wav': 'WAV',
+          'wma': 'WMA',
+          'm4a': 'AAC',
+          'mp3': 'MP3',
+          'alac': 'ALAC',
+          'ape': 'APE',
+          'tak': 'TAK',
+          'tta': 'TTA',
+          'wv': 'WavPack',
+          'lpcm': 'LPCM',
+          'pcm': 'PCM',
+          'aiff': 'AIFF',
+          'mka': 'MKA',
         };
         final codec = codecMap[ext] ?? ext.toUpperCase();
 
@@ -813,25 +1039,115 @@ class TorrentStreamResolver {
   }
 
   static const _videoExtensions = {
-    'mkv', 'mp4', 'avi', 'webm', 'mov', 'wmv', 'flv', 'ts', 'm4v', 'ogv',
-    'mpg', 'mpeg', 'mpe', 'mpv', '3gp', '3g2', 'rmvb', 'divx', 'vob',
-    'f4v', 'h264', 'h265', 'hevc', 'm2ts', 'mts', 'm2t', 'tivo', 'ogm',
-    'asf', 'asx', 'dat', 'vro', 'rec', 'wtv', 'xvid', 'prores',
-    'swf', 'ivf', 'gxf', 'mxf', 'nut', 'mk3d',
+    'mkv',
+    'mp4',
+    'avi',
+    'webm',
+    'mov',
+    'wmv',
+    'flv',
+    'ts',
+    'm4v',
+    'ogv',
+    'mpg',
+    'mpeg',
+    'mpe',
+    'mpv',
+    '3gp',
+    '3g2',
+    'rmvb',
+    'divx',
+    'vob',
+    'f4v',
+    'h264',
+    'h265',
+    'hevc',
+    'm2ts',
+    'mts',
+    'm2t',
+    'tivo',
+    'ogm',
+    'asf',
+    'asx',
+    'dat',
+    'vro',
+    'rec',
+    'wtv',
+    'xvid',
+    'prores',
+    'swf',
+    'ivf',
+    'gxf',
+    'mxf',
+    'nut',
+    'mk3d',
   };
 
   static const _audioExtensions = {
-    'aac', 'flac', 'ogg', 'opus', 'wav', 'wma', 'm4a', 'mp3', 'ac3',
-    'eac3', 'dts', 'dtshd', 'truehd', 'thd', 'lpcm', 'pcm', 'alac',
-    'amr', 'awb', 'ape', 'tak', 'wv', 'tta', 'mka', 'mpa', 'mp2',
-    'm2a', 'aiff', 'aif', 'aifc', 'snd', 'au', 'ra', 'mid', 'midi',
-    'oga', 'm4b', 'm4p',
+    'aac',
+    'flac',
+    'ogg',
+    'opus',
+    'wav',
+    'wma',
+    'm4a',
+    'mp3',
+    'ac3',
+    'eac3',
+    'dts',
+    'dtshd',
+    'truehd',
+    'thd',
+    'lpcm',
+    'pcm',
+    'alac',
+    'amr',
+    'awb',
+    'ape',
+    'tak',
+    'wv',
+    'tta',
+    'mka',
+    'mpa',
+    'mp2',
+    'm2a',
+    'aiff',
+    'aif',
+    'aifc',
+    'snd',
+    'au',
+    'ra',
+    'mid',
+    'midi',
+    'oga',
+    'm4b',
+    'm4p',
   };
 
   static const _subtitleExtensions = {
-    'srt', 'ass', 'ssa', 'vtt', 'sub', 'sup', 'idx', 'lrc', 'sbv',
-    'smi', 'sami', 'rt', 'dfxp', 'ttml', 'stl', 'pjs', 'psb', 'jss',
-    'ssf', 'usf', 'cdg', 'ktv', 'mks',
+    'srt',
+    'ass',
+    'ssa',
+    'vtt',
+    'sub',
+    'sup',
+    'idx',
+    'lrc',
+    'sbv',
+    'smi',
+    'sami',
+    'rt',
+    'dfxp',
+    'ttml',
+    'stl',
+    'pjs',
+    'psb',
+    'jss',
+    'ssf',
+    'usf',
+    'cdg',
+    'ktv',
+    'mks',
   };
 
   static bool _isVideoExtension(String path) {

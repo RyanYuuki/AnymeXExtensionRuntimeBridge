@@ -17,6 +17,7 @@ import 'Util/ChapterRecognition.dart';
 import 'Util/extension_preferences_providers.dart';
 import 'Util/get_source_preference.dart';
 import 'Util/lib.dart';
+import 'Eval/dart/model/filter.dart';
 
 class MangayomiSourceMethods implements SourceMethods {
   @override
@@ -88,7 +89,17 @@ class MangayomiSourceMethods implements SourceMethods {
   @override
   Future<Pages> search(String query, int page, List filters,
       {SourceParams? parameters}) async {
-    final data = await getExtensionService(source).search(query, page, filters);
+    List<dynamic> activeFilters = filters;
+    if (filters.isNotEmpty && filters.first is Map) {
+      try {
+        final filterList = getExtensionService(source).getFilterList();
+        _applyMangayomiFilters(filterList.filters, filters);
+        activeFilters = filterList.filters;
+      } catch (e) {
+        Logger.log('MangayomiSourceMethods apply filters error: $e');
+      }
+    }
+    final data = await getExtensionService(source).search(query, page, activeFilters);
 
     return Pages(hasNextPage: data.hasNextPage, list: _mapMediaList(data.list));
   }
@@ -97,10 +108,110 @@ class MangayomiSourceMethods implements SourceMethods {
   Future<List<dynamic>> getFilterList() async {
     try {
       final filterList = getExtensionService(source).getFilterList();
-      return filterList.filters;
+      return filterList.filters.map((f) => _mapMangayomiFilter(f)).toList();
     } catch (e) {
       Logger.log('MangayomiSourceMethods getFilterList error: $e');
       return [];
+    }
+  }
+
+  Map<String, dynamic> _mapMangayomiFilter(dynamic filter) {
+    if (filter is HeaderFilter) {
+      return {
+        'name': filter.name,
+        'type': 'Header',
+        'state': null,
+      };
+    } else if (filter is SeparatorFilter) {
+      return {
+        'name': '',
+        'type': 'Separator',
+        'state': null,
+      };
+    } else if (filter is CheckBoxFilter) {
+      return {
+        'name': filter.name,
+        'type': 'CheckBox',
+        'state': filter.state,
+      };
+    } else if (filter is TriStateFilter) {
+      return {
+        'name': filter.name,
+        'type': 'TriState',
+        'state': filter.state,
+      };
+    } else if (filter is SelectFilter) {
+      return {
+        'name': filter.name,
+        'type': 'Select',
+        'state': filter.state,
+        'values': filter.values
+            .map((v) => v is SelectFilterOption ? v.name : v.toString())
+            .toList(),
+      };
+    } else if (filter is SortFilter) {
+      return {
+        'name': filter.name,
+        'type': 'Sort',
+        'state': {
+          'index': filter.state.index,
+          'ascending': filter.state.ascending,
+        },
+        'values': filter.values
+            .map((v) => v is SelectFilterOption ? v.name : v.toString())
+            .toList(),
+      };
+    } else if (filter is TextFilter) {
+      return {
+        'name': filter.name,
+        'type': 'Text',
+        'state': filter.state,
+      };
+    } else if (filter is GroupFilter) {
+      return {
+        'name': filter.name,
+        'type': 'Group',
+        'state': filter.state.map((sub) => _mapMangayomiFilter(sub)).toList(),
+      };
+    } else {
+      if (filter is Map) {
+        return Map<String, dynamic>.from(filter);
+      }
+      return {
+        'name': filter.toString(),
+        'type': 'Unknown',
+        'state': null,
+      };
+    }
+  }
+
+  void _applyMangayomiFilters(List<dynamic> filterList, List<dynamic> uiFilters) {
+    for (var i = 0; i < filterList.length && i < uiFilters.length; i++) {
+      final filter = filterList[i];
+      final uiFilter = uiFilters[i];
+      if (uiFilter is! Map) continue;
+
+      final state = uiFilter['state'];
+      if (state == null) continue;
+
+      if (filter is CheckBoxFilter) {
+        if (state is bool) filter.state = state;
+      } else if (filter is TriStateFilter) {
+        if (state is int) filter.state = state;
+      } else if (filter is SelectFilter) {
+        if (state is int) filter.state = state;
+      } else if (filter is TextFilter) {
+        if (state is String) filter.state = state;
+      } else if (filter is SortFilter) {
+        if (state is Map) {
+          filter.state.index = state['index'] ?? filter.state.index;
+          filter.state.ascending = state['ascending'] ?? filter.state.ascending;
+        }
+      } else if (filter is GroupFilter) {
+        if (state is List) {
+          _applyMangayomiFilters(filter.state, state);
+        }
+      }
     }
   }
 

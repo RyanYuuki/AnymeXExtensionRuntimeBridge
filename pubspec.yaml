@@ -42,6 +42,7 @@ dependencies:
     jni: ^0.15.0
     archive: ^4.0.9
     libtorrent_flutter: 1.8.5
+    ffi: ^2.1.2
 
 dev_dependencies:
     flutter_test:
@@ -65,3 +66,7 @@ flutter:
                 pluginClass: AnymexExtensionRuntimeBridgePlugin
             windows:
                 pluginClass: AnymexExtensionRuntimeBridgePlugin
+
+dependency_overrides:
+  libtorrent_flutter:
+    path: ./packages/libtorrent_flutter

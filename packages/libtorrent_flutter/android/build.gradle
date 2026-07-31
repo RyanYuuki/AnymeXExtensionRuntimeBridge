@@ -1,0 +1,118 @@
+// The Android Gradle Plugin builds the native code with the Android NDK.
+
+group = "com.libtorrentflutter.libtorrent_flutter"
+version = "1.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.11.1")
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+
+android {
+    namespace = "com.libtorrentflutter.libtorrent_flutter"
+    compileSdk = 36
+
+    ndkVersion = android.ndkVersion
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Prebuilt JNI libs: not shipped via pub.dev (too big). Pull them from
+    // the matching GitHub Release on first build.
+    //
+    //   https://github.com/ayman708-UX/libtorrent_flutter/releases/download/
+    //     v<pubspec.version>/android-native-lib-<abi>.zip
+    //
+    // Set -PlibtorrentFlutterAbis=arm64-v8a (or comma-separated list) on the
+    // Gradle command line to limit which ABIs are fetched. Default = all 3.
+    // Set -PlibtorrentFlutterSkipDownload=true to opt out (e.g. when you've
+    // dropped your own .so files into prebuilt/android/<abi>/).
+    // ─────────────────────────────────────────────────────────────────────
+    def prebuiltDir = file("${projectDir}/../prebuilt/android")
+    def skipDownload = (project.findProperty('libtorrentFlutterSkipDownload') ?: 'false').toString().toBoolean()
+    def requestedAbis = (project.findProperty('libtorrentFlutterAbis') ?: 'arm64-v8a,armeabi-v7a,x86_64')
+        .toString().split(',').collect { it.trim() }.findAll { it }
+
+    if (!skipDownload) {
+        // Resolve plugin version from pubspec.yaml (sibling of android/)
+        def pubspecFile = file("${projectDir}/../pubspec.yaml")
+        def pluginVersion = null
+        if (pubspecFile.exists()) {
+            pubspecFile.eachLine { line ->
+                def m = (line =~ /^version:\s*(\S+)/)
+                if (m && pluginVersion == null) pluginVersion = m[0][1]
+            }
+        }
+        if (pluginVersion == null) {
+            println "libtorrent_flutter: could not read version from pubspec.yaml; skipping prebuilt download"
+        } else {
+            def releaseBase = "https://github.com/ayman708-UX/libtorrent_flutter/releases/download/v${pluginVersion}"
+            requestedAbis.each { abi ->
+                def soFile = file("${prebuiltDir}/${abi}/liblibtorrent_flutter.so")
+                if (soFile.exists()) return
+                def zipUrl  = "${releaseBase}/android-native-lib-${abi}.zip"
+                def zipFile = file("${buildDir}/libtorrent-flutter-cache/android-native-lib-${abi}.zip")
+                zipFile.parentFile.mkdirs()
+                soFile.parentFile.mkdirs()
+                println "libtorrent_flutter: downloading prebuilt ${abi} from ${zipUrl}"
+                try {
+                    new java.net.URL(zipUrl).withInputStream { input ->
+                        zipFile.withOutputStream { out -> out << input }
+                    }
+                    // CI uploads the artifact with the .so directly at the
+                    // zip root (path: prebuilt/android/<abi>/), so unzip into
+                    // the per-abi directory.
+                    ant.unzip(src: zipFile, dest: soFile.parentFile, overwrite: true)
+                    zipFile.delete()
+                    if (!soFile.exists()) {
+                        println "libtorrent_flutter: ${abi} zip extracted but .so not found at expected path"
+                    }
+                } catch (Exception e) {
+                    println "libtorrent_flutter: download failed for ${abi}: ${e.message}"
+                    println "libtorrent_flutter: falling back to building ${abi} from source via CMake"
+                }
+            }
+        }
+    }
+
+    def hasPrebuilt = prebuiltDir.exists() && prebuiltDir.listFiles()?.any { it.isDirectory() && it.listFiles()?.any { f -> f.name.endsWith('.so') } }
+
+    if (hasPrebuilt) {
+        // Use prebuilt .so files — no CMake compilation needed
+        sourceSets {
+            main {
+                jniLibs.srcDirs = ["${projectDir}/../prebuilt/android"]
+            }
+        }
+        println "libtorrent_flutter: Using PREBUILT native libraries"
+    } else {
+        // Build from source using CMake
+        externalNativeBuild {
+            cmake {
+                path = "../src/CMakeLists.txt"
+            }
+        }
+        println "libtorrent_flutter: Building native libraries from SOURCE"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        minSdk = 24
+    }
+}
