@@ -31,6 +31,10 @@ abstract class SourceMethods {
           {SourceParams? parameters}) =>
       null;
 
+  Future<List<dynamic>> getFilterList() async => [];
+
+  Future<void> stopHttpServer() async {}
+
   Future<String?> getNovelContent(String chapterTitle, String chapterId,
       {SourceParams? parameters});
 

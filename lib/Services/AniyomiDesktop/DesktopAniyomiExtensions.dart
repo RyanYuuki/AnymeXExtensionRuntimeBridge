@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import '../Aniyomi/PbDecoder.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -49,12 +51,22 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
 
   @override
   Future<void> fetchInstalledAnimeExtensions() async {
-    getInstalledRx(ItemType.anime).value = await _loadInstalled(ItemType.anime);
+    final list = await _loadInstalled(ItemType.anime);
+    getInstalledRx(ItemType.anime).value = list;
+    final available = getRawAvailableRx(ItemType.anime).value.whereType<ASource>().toList();
+    if (available.isNotEmpty) {
+      _detectUpdates(available, ItemType.anime);
+    }
   }
 
   @override
   Future<void> fetchInstalledMangaExtensions() async {
-    getInstalledRx(ItemType.manga).value = await _loadInstalled(ItemType.manga);
+    final list = await _loadInstalled(ItemType.manga);
+    getInstalledRx(ItemType.manga).value = list;
+    final available = getRawAvailableRx(ItemType.manga).value.whereType<ASource>().toList();
+    if (available.isNotEmpty) {
+      _detectUpdates(available, ItemType.manga);
+    }
   }
 
   @override
@@ -149,7 +161,7 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
     try {
       final res = await _client.get(Uri.parse(repo.url));
       if (res.statusCode != 200) return const [];
-      return compute(_parseExtensions, (res.body, repo.url, type));
+      return compute(_parseExtensions, (res.bodyBytes, repo.url, type));
     } catch (e) {
       Logger.log("Repo failed ${repo.url}: $e");
       return const [];
@@ -157,26 +169,57 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
   }
 
   static List<Source> _parseExtensions(
-    (String body, String repoUrl, ItemType itemType) args,
+    (Uint8List bodyBytes, String repoUrl, ItemType itemType) args,
   ) {
-    final (body, repoUrl, targetType) = args;
+    final (bodyBytes, repoUrl, targetType) = args;
 
     try {
-      final decoded = jsonDecode(body);
-      if (decoded is! List) return const [];
+      var bytes = bodyBytes as List<int>;
+      if (bytes.length >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B) {
+        try {
+          bytes = gzip.decode(bytes);
+        } catch (e) {
+          Logger.log("Failed to decompress gzip repo index: $e");
+        }
+      }
 
-      final baseIconUrl = repoUrl.replaceAll('/index.min.json', '');
+      final isJson = bytes.isNotEmpty && (bytes[0] == 0x7B || bytes[0] == 0x5B);
+      final List<dynamic> decoded;
+      if (isJson) {
+        final body = utf8.decode(bytes);
+        final parsed = jsonDecode(body);
+        if (parsed is! List) return const [];
+        decoded = parsed;
+      } else {
+        decoded = PbDecoder.decodeIndex(bytes);
+      }
+
+      final baseIconUrl = repoUrl
+          .replaceAll('/index.min.json', '')
+          .replaceAll('/index.pb.gz', '')
+          .replaceAll('/index.pb', '');
       final sources = <Source>[];
 
       for (final item in decoded) {
         final map = item as Map<String, dynamic>;
         final name = map['name'] as String? ?? '';
+        final pkg = map['pkg'] as String? ?? '';
 
-        final detectedType = name.startsWith('Aniyomi: ')
+        var detectedType = name.startsWith('Aniyomi: ')
             ? ItemType.anime
             : name.startsWith('Tachiyomi: ')
                 ? ItemType.manga
                 : null;
+
+        if (detectedType == null) {
+          if (pkg.contains('.anime.')) {
+            detectedType = ItemType.anime;
+          } else if (pkg.contains('.manga.')) {
+            detectedType = ItemType.manga;
+          } else {
+            detectedType = targetType;
+          }
+        }
 
         if (detectedType != targetType) continue;
 
@@ -187,9 +230,11 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
                     (map["sources"] as List).isNotEmpty
                 ? (map["sources"] as List).first['id']?.toString() ?? ''
                 : '',
-            name: detectedType == ItemType.anime
+            name: name.startsWith('Aniyomi: ')
                 ? name.substring(9)
-                : name.substring(10),
+                : name.startsWith('Tachiyomi: ')
+                    ? name.substring(10)
+                    : name,
             pkgName: map['pkg'],
             apkName: map['apk'],
             lang: map['lang'],
@@ -285,7 +330,7 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
 
       final parsed = await compute(
         _parseExtensions,
-        (res.body, repoUrl, type),
+        (res.bodyBytes, repoUrl, type),
       );
 
       final rx = getAvailableRx(type);
@@ -356,6 +401,7 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
       if (repoMatch != null) {
         aSource.apkName = repoMatch.apkName;
         aSource.iconUrl = repoMatch.iconUrl;
+        aSource.repo = repoMatch.repo;
       }
     }
 

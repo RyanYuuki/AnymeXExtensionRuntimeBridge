@@ -12,6 +12,8 @@ class Source {
   String? managerId;
   bool? hasUpdate;
   bool? isPrivate;
+  bool? supportsLatest;
+  bool? supportsPopular;
 
   Source({
     this.id = '',
@@ -27,6 +29,8 @@ class Source {
     this.managerId,
     this.hasUpdate = false,
     this.isPrivate,
+    this.supportsLatest = false,
+    this.supportsPopular = false,
   });
 
   Source.fromJson(Map<String, dynamic> json) {
@@ -42,6 +46,8 @@ class Source {
     managerId = json['managerId'];
     hasUpdate = json['hasUpdate'] ?? false;
     isPrivate = json['isPrivate'] ?? (json['isShared'] != null ? !(json['isShared'] as bool) : null);
+    supportsLatest = json['supportsLatest'] ?? false;
+    supportsPopular = json['supportsPopular'] ?? false;
 
     final isLnReader = json['site'] != null && json['url'] != null && json['sourceCodeLanguage'] == null;
     if (isLnReader) {
@@ -65,6 +71,8 @@ class Source {
         'managerId': managerId,
         'hasUpdate': hasUpdate,
         'isPrivate': isPrivate,
+        'supportsLatest': supportsLatest,
+        'supportsPopular': supportsPopular,
       };
 
   String get uniqueId => id ?? '';

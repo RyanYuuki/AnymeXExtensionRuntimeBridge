@@ -18,6 +18,8 @@ class ASource extends Source {
     super.repo,
     super.hasUpdate,
     super.isPrivate,
+    super.supportsLatest,
+    super.supportsPopular,
     this.pkgName,
     this.apkName,
   });
@@ -34,6 +36,8 @@ class ASource extends Source {
       repo: json['repo'],
       hasUpdate: json['hasUpdate'] ?? false,
       isPrivate: json['isPrivate'] ?? (json['isShared'] != null ? !(json['isShared'] as bool) : null),
+      supportsLatest: json['supportsLatest'] ?? false,
+      supportsPopular: json['supportsPopular'] ?? false,
       itemType: ItemType.values[json['itemType'] ?? 0],
       pkgName: json['pkgName'],
       apkName: json['apkName'],
@@ -50,14 +54,25 @@ class ASource extends Source {
 
   String? get apkUrl {
     if (apkName == null || apkName!.isEmpty) return null;
-    if (iconUrl == null || iconUrl!.isEmpty) return null;
 
-    final baseUrl = iconUrl!.replaceFirst('icon/', 'apk/');
-    final lastSlash = baseUrl.lastIndexOf('/');
-    if (lastSlash == -1) return "";
+    if (repo != null && repo!.startsWith('http')) {
+      final baseRepoUrl = repo!
+          .replaceAll('/index.min.json', '')
+          .replaceAll('/index.pb.gz', '')
+          .replaceAll('/index.pb', '');
+      return '$baseRepoUrl/apk/$apkName';
+    }
 
-    final cleanedUrl = baseUrl.substring(0, lastSlash);
-    return '$cleanedUrl/$apkName';
+    if (iconUrl != null && iconUrl!.startsWith('http')) {
+      final baseUrl = iconUrl!.replaceFirst('icon/', 'apk/');
+      final lastSlash = baseUrl.lastIndexOf('/');
+      if (lastSlash == -1) return "";
+
+      final cleanedUrl = baseUrl.substring(0, lastSlash);
+      return '$cleanedUrl/$apkName';
+    }
+
+    return null;
   }
 
   @override

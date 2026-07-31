@@ -137,6 +137,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
       'isAnime': isAnime,
       'query': query,
       'page': page,
+      'filters': filters,
       if (parameters != null) 'parameters': parameters.toJson(),
     });
 
@@ -144,6 +145,23 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
       Pages.fromJson,
       Map<String, dynamic>.from(result as Map),
     );
+  }
+
+  @override
+  Future<List<dynamic>> getFilterList() async {
+    try {
+      final result = await BridgeDispatcher().invokeMethod('getFilterList', {
+        'sourceId': source.id,
+        'isAnime': isAnime,
+      });
+      if (result is String) {
+        return jsonDecode(result) as List<dynamic>;
+      }
+      return result as List<dynamic>;
+    } catch (e) {
+      Logger.log('DesktopAniyomiSourceMethods getFilterList error: $e');
+      return [];
+    }
   }
 
   List<Video> parseVideos(List<dynamic> list) {
@@ -201,6 +219,18 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
     } catch (e) {
       Logger.log("AnymeX Bridge: Failed to save desktop preference ${pref.key} for ${source.name}: $e");
       return false;
+    }
+  }
+
+  @override
+  Future<void> stopHttpServer() async {
+    try {
+      await BridgeDispatcher().invokeMethod('stopHttpServer', {
+        'sourceId': source.id,
+        'isAnime': isAnime,
+      });
+    } catch (e) {
+      Logger.log("AnymeX Bridge: Failed to stop desktop http server: $e");
     }
   }
 }

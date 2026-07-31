@@ -16,6 +16,8 @@ class KotatsuSource extends Source {
     super.itemType,
     super.repo,
     super.hasUpdate,
+    super.supportsLatest = false,
+    super.supportsPopular = false,
     this.jarName,
     this.pkgName,
   });
@@ -32,6 +34,8 @@ class KotatsuSource extends Source {
       versionLast: json['versionLast'],
       repo: json['repo'],
       hasUpdate: json['hasUpdate'] ?? false,
+      supportsLatest: json['supportsLatest'] ?? false,
+      supportsPopular: json['supportsPopular'] ?? false,
       itemType: ItemType.values[json['itemType'] ?? 0],
       jarName: json['jarName'],
       pkgName: json['pkgName'],

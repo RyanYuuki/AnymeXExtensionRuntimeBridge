@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../../Logger.dart';
 import '../../anymex_extension_runtime_bridge.dart';
 import 'Models/Source.dart';
 
@@ -88,6 +89,18 @@ class AniyomiSourceMethods extends SourceMethods {
   }
 
   @override
+  Future<void> stopHttpServer() async {
+    try {
+      await platform.invokeMethod('stopHttpServer', {
+        'sourceId': source.id,
+        'isAnime': isAnime,
+      });
+    } catch (e) {
+      Logger.log("Failed to stop http server: $e");
+    }
+  }
+
+  @override
   Future<List<PageUrl>> getPageList(DEpisode episode,
       {SourceParams? parameters}) async {
     final result = await platform.invokeMethod('getPageList', {
@@ -115,6 +128,7 @@ class AniyomiSourceMethods extends SourceMethods {
       'isAnime': isAnime,
       'query': query,
       'page': page,
+      'filters': filters,
       if (parameters != null) 'parameters': parameters.toJson(),
     });
 
@@ -122,6 +136,20 @@ class AniyomiSourceMethods extends SourceMethods {
       Pages.fromJson,
       Map<String, dynamic>.from(result as Map),
     );
+  }
+
+  @override
+  Future<List<dynamic>> getFilterList() async {
+    try {
+      final result = await platform.invokeMethod('getFilterList', {
+        'sourceId': source.id,
+        'isAnime': isAnime,
+      });
+      return result as List<dynamic>;
+    } catch (e) {
+      Logger.log('AniyomiSourceMethods getFilterList error: $e');
+      return [];
+    }
   }
 
   List<Video> parseVideos(List<dynamic> list) {

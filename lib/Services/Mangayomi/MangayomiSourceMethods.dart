@@ -94,6 +94,17 @@ class MangayomiSourceMethods implements SourceMethods {
   }
 
   @override
+  Future<List<dynamic>> getFilterList() async {
+    try {
+      final filterList = getExtensionService(source).getFilterList();
+      return filterList.filters;
+    } catch (e) {
+      Logger.log('MangayomiSourceMethods getFilterList error: $e');
+      return [];
+    }
+  }
+
+  @override
   Future<List<PageUrl>> getPageList(DEpisode episode,
       {SourceParams? parameters}) async {
     try {
@@ -218,4 +229,7 @@ class MangayomiSourceMethods implements SourceMethods {
   Future<void> cancelRequest(String token) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<void> stopHttpServer() async {}
 }

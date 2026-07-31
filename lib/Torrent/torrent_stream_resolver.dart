@@ -60,7 +60,7 @@ class TorrentStreamResolver {
   static Future<void> downloadEngine({void Function(double progress)? onProgress}) async {
     if (!Platform.isAndroid) return;
     final abi = await getDeviceAbi();
-    final url = 'https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/download/so-binaries/liblibtorrent_flutter_$abi.so';
+    final url = 'https://raw.githubusercontent.com/RyanYuuki/AnymeXExtensionRuntimeBridge/main/prebuilt/android/$abi/liblibtorrent_flutter.so';
     Logger.log('[TorrentResolver] Downloading torrent engine from: $url');
     
     final path = await getEngineSoPath();
