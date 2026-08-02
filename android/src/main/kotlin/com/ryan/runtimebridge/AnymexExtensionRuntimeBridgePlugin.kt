@@ -444,6 +444,13 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                             args["sourceId"] as String,
                             args["isAnime"] as Boolean)
                     }
+                    "getImageBytes" -> {
+                        val args = call.arguments as Map<*, *>
+                        call("aniyomiGetImageBytes", ctx,
+                            args["sourceId"] as String,
+                            args["isAnime"] as Boolean,
+                            args["url"] as String)
+                    }
                     "getPageList" -> {
                         val args = call.arguments as Map<*, *>
                         call("aniyomiGetPageList", ctx,

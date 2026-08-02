@@ -279,6 +279,60 @@ class AnymeXRuntimeBridge {
     }
   }
 
+  static const _aniyomiChannel = MethodChannel('aniyomiExtensionBridge');
+
+  static final Map<String, Uint8List> _imageBytesCache = {};
+  static final _imageSemaphore = _SimpleSemaphore(3);
+
+  static Future<Uint8List?> getImageBytes(
+      String sourceId, bool isAnime, String url) async {
+    if (sourceId.isEmpty || sourceId == 'N/A' || url.isEmpty) return null;
+    if (_imageBytesCache.containsKey(url)) {
+      return _imageBytesCache[url]!;
+    }
+    if (!isSupportedPlatform) return null;
+    await _imageSemaphore.acquire();
+    try {
+      Uint8List? bytes;
+      if (Platform.isAndroid) {
+        try {
+          final result = await _aniyomiChannel.invokeMethod<Uint8List>('getImageBytes', {
+            'sourceId': sourceId,
+            'isAnime': isAnime,
+            'url': url,
+          });
+          bytes = result;
+        } catch (e) {
+          Logger.log('getImageBytes failed: $e');
+        }
+      } else {
+        try {
+          final result = await BridgeDispatcher().invokeMethod('getImageBytes', {
+            'sourceId': sourceId,
+            'isAnime': isAnime,
+            'url': url,
+          });
+          if (result != null) {
+            bytes = Uint8List.fromList(List<int>.from(result));
+          }
+        } catch (e) {
+          Logger.log('getImageBytes (desktop) failed: $e');
+        }
+      }
+      if (bytes != null) {
+        if (_imageBytesCache.length >= 150) {
+          _imageBytesCache.remove(_imageBytesCache.keys.first);
+        }
+        _imageBytesCache[url] = bytes;
+      }
+      return bytes;
+    } finally {
+      _imageSemaphore.release();
+    }
+  }
+
+
+
   static String get installedVersion {
     if (!isPluginInstalled) return '';
     return _cachedVersion;
@@ -333,5 +387,32 @@ class AnymeXRuntimeBridge {
     if (savedPath == null || savedPath.isEmpty) return false;
     final defaultPath = await RuntimePaths().bridgePath;
     return savedPath != defaultPath;
+  }
+}
+
+class _SimpleSemaphore {
+  final int maxConcurrent;
+  int _current = 0;
+  final List<Completer<void>> _queue = [];
+
+  _SimpleSemaphore(this.maxConcurrent);
+
+  Future<void> acquire() async {
+    if (_current < maxConcurrent) {
+      _current++;
+      return;
+    }
+    final completer = Completer<void>();
+    _queue.add(completer);
+    await completer.future;
+  }
+
+  void release() {
+    if (_queue.isNotEmpty) {
+      final next = _queue.removeAt(0);
+      next.complete();
+    } else {
+      _current--;
+    }
   }
 }

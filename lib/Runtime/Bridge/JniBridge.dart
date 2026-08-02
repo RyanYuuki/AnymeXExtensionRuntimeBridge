@@ -254,6 +254,9 @@ class JniBridge {
             );
             return jsonDecode(jsonJString.toDartString(releaseOriginal: true));
 
+          case 'getImageBytes':
+            return null;
+
           default:
             throw UnimplementedError(
                 'Method $method is not implemented in JniBridge.');

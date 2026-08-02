@@ -17,7 +17,8 @@ public inline fun HttpSource.getPreferencesLazy(
 public inline fun getPreferences(sourceId: Long): SharedPreferences {
     return try {
         Injekt.get(Application::class.java).getSharedPreferences("source_$sourceId", 0x0000)
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        android.util.Log.e("AnymeXPreferences", "Failed to get SharedPreferences for source $sourceId: ${e.message}", e)
         keiyoushi.utils.InMemorySharedPreferences()
     }
 }
