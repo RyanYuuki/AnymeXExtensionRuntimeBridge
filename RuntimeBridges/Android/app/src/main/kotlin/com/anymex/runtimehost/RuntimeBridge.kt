@@ -48,6 +48,7 @@ import uy.kohesive.injekt.api.get
 import java.io.File
 import java.security.MessageDigest
 import eu.kanade.tachiyomi.network.normalizeUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 
 @Suppress("unused")
@@ -83,6 +84,13 @@ object RuntimeBridge {
 
         Log.i(TAG, "Initializing Runtime Host - Version: 1.0.6")
 
+        val initialActivity = resolveAppCompatActivity(context)
+        if (initialActivity != null) {
+            lastKnownActivity = WeakReference(initialActivity)
+            com.lagradost.cloudstream3.MainActivity.activity = initialActivity
+            com.lagradost.cloudstream3.MainActivity.context = initialActivity
+        }
+
         try {
             Injekt.addSingletonFactory<android.app.Application> {
                 context.applicationContext as android.app.Application
@@ -101,20 +109,37 @@ object RuntimeBridge {
             AcraApplication.context = context.applicationContext
             CloudStreamApp.context = context.applicationContext
 
+            try {
+                okhttp3.OkHttp.initialize(context.applicationContext)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to initialize OkHttp platform context manually", e)
+            }
+
             (context.applicationContext as? Application)?.registerActivityLifecycleCallbacks(
                 object : Application.ActivityLifecycleCallbacks {
                     override fun onActivityResumed(activity: Activity) {
                         if (isSubclassOfAppCompatActivity(activity.javaClass)) {
                             lastKnownActivity = WeakReference(activity)
+                            com.lagradost.cloudstream3.MainActivity.activity = activity
+                            com.lagradost.cloudstream3.MainActivity.context = activity
                         }
                     }
-                    override fun onActivityCreated(a: Activity, b: Bundle?) {}
+                    override fun onActivityCreated(a: Activity, b: Bundle?) {
+                        if (isSubclassOfAppCompatActivity(a.javaClass)) {
+                            com.lagradost.cloudstream3.MainActivity.activity = a
+                            com.lagradost.cloudstream3.MainActivity.context = a
+                        }
+                    }
                     override fun onActivityStarted(a: Activity) {}
                     override fun onActivityPaused(a: Activity) {}
                     override fun onActivityStopped(a: Activity) {}
                     override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
                     override fun onActivityDestroyed(a: Activity) {
                         if (lastKnownActivity?.get() === a) lastKnownActivity = null
+                        if (com.lagradost.cloudstream3.MainActivity.activity === a) {
+                            com.lagradost.cloudstream3.MainActivity.activity = null
+                            com.lagradost.cloudstream3.MainActivity.context = null
+                        }
                     }
                 }
             )
@@ -183,6 +208,8 @@ object RuntimeBridge {
         return extensions.flatMap { ext ->
             ext.sources.map { source ->
                 val baseUrl = (source as? AnimeHttpSource)?.baseUrl.orEmpty()
+                val supportsLatest = (source as? eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)?.supportsLatest ?: false
+                val supportsPopular = source is eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
                 mapOf(
                     "id" to source.id.toString(),
                     "name" to ext.name,
@@ -197,6 +224,8 @@ object RuntimeBridge {
                     "isObsolete" to ext.isObsolete,
                     "isShared" to ext.isShared,
                     "isPrivate" to (!ext.isShared),
+                    "supportsLatest" to supportsLatest,
+                    "supportsPopular" to supportsPopular,
                 )
             }
         }
@@ -215,6 +244,8 @@ object RuntimeBridge {
         return extensions.flatMap { ext ->
             ext.sources.map { source ->
                 val baseUrl = (source as? HttpSource)?.baseUrl.orEmpty()
+                val supportsLatest = (source as? eu.kanade.tachiyomi.source.CatalogueSource)?.supportsLatest ?: false
+                val supportsPopular = source is eu.kanade.tachiyomi.source.CatalogueSource
                 mapOf(
                     "id" to source.id.toString(),
                     "name" to ext.name,
@@ -229,6 +260,8 @@ object RuntimeBridge {
                     "isObsolete" to ext.isObsolete,
                     "isShared" to ext.isShared,
                     "isPrivate" to (!ext.isShared),
+                    "supportsLatest" to supportsLatest,
+                    "supportsPopular" to supportsPopular,
                 )
             }
         }
@@ -290,12 +323,17 @@ object RuntimeBridge {
         isAnime: Boolean,
         query: String,
         page: Int,
+        filters: List<Any?>? = null,
         parameters: Map<String, Any?>? = null,
     ): Map<String, Any?> {
         val token = parameters?.get("token") as? String
         val job = scope.async {
             val m = media(context, sourceId, isAnime)
-            m.parameters = parameters
+            val combinedParams = parameters?.toMutableMap() ?: mutableMapOf()
+            if (filters != null) {
+                combinedParams["filters"] = filters
+            }
+            m.parameters = combinedParams
             val res = m.getSearchResults(query, page)
             mapOf("list" to res.animes.map { it.toMap() }, "hasNextPage" to res.hasNextPage)
         }
@@ -305,6 +343,106 @@ object RuntimeBridge {
         } finally {
             if (token != null) activeRequests.remove(token)
         }
+    }
+
+    @JvmStatic
+    fun aniyomiGetFilterList(
+        context: Context,
+        sourceId: String,
+        isAnime: Boolean
+    ): List<Map<String, Any?>> {
+        val m = media(context, sourceId, isAnime)
+        return if (isAnime) {
+            val source = (m as? com.anymex.runtimehost.aniyomi.AnimeSourceMethods)?.source ?: return emptyList()
+            val filterList = try { source.getFilterList() } catch (e: Throwable) { return emptyList() }
+            filterList.list.map { serializeAnimeFilter(it) }
+        } else {
+            val source = (m as? com.anymex.runtimehost.aniyomi.MangaSourceMethods)?.source ?: return emptyList()
+            val filterList = try { source.getFilterList() } catch (e: Throwable) { return emptyList() }
+            filterList.list.map { serializeMangaFilter(it) }
+        }
+    }
+
+    private fun serializeAnimeFilter(filter: eu.kanade.tachiyomi.animesource.model.AnimeFilter<*>): Map<String, Any?> {
+        val type = when (filter) {
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Header -> "Header"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Separator -> "Separator"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.CheckBox -> "CheckBox"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.TriState -> "TriState"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Select<*> -> "Select"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Group<*> -> "Group"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Sort -> "Sort"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Text -> "Text"
+            else -> "Unknown"
+        }
+
+        val state: Any? = when (filter) {
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Group<*> -> {
+                filter.state.map { serializeAnimeFilter(it as eu.kanade.tachiyomi.animesource.model.AnimeFilter<*>) }
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Sort -> {
+                mapOf("index" to filter.state?.index, "ascending" to filter.state?.ascending)
+            }
+            else -> filter.state
+        }
+
+        val values: List<String>? = when (filter) {
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Select<*> -> {
+                filter.values.map { it.toString() }
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Sort -> {
+                filter.values.toList()
+            }
+            else -> null
+        }
+
+        return mapOf(
+            "name" to filter.name,
+            "type" to type,
+            "state" to state,
+            "values" to values
+        )
+    }
+
+    private fun serializeMangaFilter(filter: eu.kanade.tachiyomi.source.model.Filter<*>): Map<String, Any?> {
+        val type = when (filter) {
+            is eu.kanade.tachiyomi.source.model.Filter.Header -> "Header"
+            is eu.kanade.tachiyomi.source.model.Filter.Separator -> "Separator"
+            is eu.kanade.tachiyomi.source.model.Filter.CheckBox -> "CheckBox"
+            is eu.kanade.tachiyomi.source.model.Filter.TriState -> "TriState"
+            is eu.kanade.tachiyomi.source.model.Filter.Select<*> -> "Select"
+            is eu.kanade.tachiyomi.source.model.Filter.Group<*> -> "Group"
+            is eu.kanade.tachiyomi.source.model.Filter.Sort -> "Sort"
+            is eu.kanade.tachiyomi.source.model.Filter.Text -> "Text"
+            else -> "Unknown"
+        }
+
+        val state: Any? = when (filter) {
+            is eu.kanade.tachiyomi.source.model.Filter.Group<*> -> {
+                filter.state.map { serializeMangaFilter(it as eu.kanade.tachiyomi.source.model.Filter<*>) }
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Sort -> {
+                mapOf("index" to filter.state?.index, "ascending" to filter.state?.ascending)
+            }
+            else -> filter.state
+        }
+
+        val values: List<String>? = when (filter) {
+            is eu.kanade.tachiyomi.source.model.Filter.Select<*> -> {
+                filter.values.map { it.toString() }
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Sort -> {
+                filter.values.toList()
+            }
+            else -> null
+        }
+
+        return mapOf(
+            "name" to filter.name,
+            "type" to type,
+            "state" to state,
+            "values" to values
+        )
     }
 
     @JvmStatic
@@ -345,7 +483,15 @@ object RuntimeBridge {
                 "episodes" to eps.map {
                     val parsed = parseEpisodeInfoFromName(it.name)
                     val seasonNum = parsed.second
-                    val epNum = if (parsed.first >= 0f) parsed.first else it.episode_number
+                    val epNum = if (it.episode_number != -1f) {
+                        it.episode_number
+                    } else if (parsed.first >= 0f) {
+                        parsed.first
+                    } else if (it.name.contains("oneshot", ignoreCase = true)) {
+                        1f
+                    } else {
+                        -1f
+                    }
                     
                     mapOf(
                         "name" to it.name,
@@ -395,6 +541,68 @@ object RuntimeBridge {
         }
     }
 
+    @JvmStatic
+    @JvmOverloads
+    fun aniyomiStopHttpServer(
+        context: Context,
+        sourceId: String,
+        isAnime: Boolean,
+    ): Boolean {
+        if (!isAnime) return false
+        return try {
+            val m = media(context, sourceId, isAnime)
+            val httpSource = m.getHttpSource() as? AnimeHttpSource ?: return false
+            val server = httpSource.server ?: return false
+            if (server.isRunning()) {
+                server.stop()
+                Log.d("RuntimeBridge", "Successfully stopped HTTP server for source: $sourceId")
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e("RuntimeBridge", "Failed to stop HTTP server for source: $sourceId", e)
+            false
+        }
+    }
+
+    @JvmStatic
+    @JvmOverloads
+    fun aniyomiGetImageBytes(
+        context: Context,
+        sourceId: String,
+        isAnime: Boolean,
+        url: String,
+    ): ByteArray? {
+        return try {
+            val m = media(context, sourceId, isAnime)
+            val httpSource = m.getHttpSource()
+            val client = when (httpSource) {
+                is HttpSource -> httpSource.client
+                is AnimeHttpSource -> httpSource.client
+                else -> Injekt.get<NetworkHelper>().client
+            }
+            val headers = when (httpSource) {
+                is HttpSource -> httpSource.headers
+                is AnimeHttpSource -> httpSource.headers
+                else -> okhttp3.Headers.Builder().build()
+            }
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .headers(headers)
+                .build()
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                response.body?.bytes()
+            } else {
+                Log.e("RuntimeBridge", "Failed to download image: HTTP ${response.code}")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("RuntimeBridge", "Failed to get image bytes for url $url", e)
+            null
+        }
+    }
 
     @JvmStatic
     @JvmOverloads
@@ -414,9 +622,36 @@ object RuntimeBridge {
             val m = media(context, sourceId, isAnime)
             m.parameters = parameters
             
-            m.getPageList(chapter).map { page ->
-                val imageUrl = page.imageUrl ?: ""
-                mapOf("url" to imageUrl, "headers" to emptyMap<String, String>())
+            val pages = m.getPageList(chapter)
+            val httpSource = m.getHttpSource() as? HttpSource
+            
+            pages.map { page ->
+                val imageUrl = try {
+                    if (httpSource != null) {
+                        httpSource.imageRequest(page).url.toString()
+                    } else {
+                        page.imageUrl ?: ""
+                    }
+                } catch (e: Exception) {
+                    Log.e("RuntimeBridge", "Error getting imageRequest URL: ${e.message}", e)
+                    page.imageUrl ?: ""
+                }
+                val headersMap = try {
+                    if (httpSource != null) {
+                        val reqHeaders = httpSource.imageRequest(page).headers
+                        val map = mutableMapOf<String, String>()
+                        for (i in 0 until reqHeaders.size) {
+                            map[reqHeaders.name(i)] = reqHeaders.value(i)
+                        }
+                        map
+                    } else {
+                        emptyMap()
+                    }
+                } catch (e: Exception) {
+                    Log.e("RuntimeBridge", "Error getting imageRequest headers: ${e.message}", e)
+                    emptyMap()
+                }
+                mapOf("url" to imageUrl, "headers" to headersMap)
             }
         }
         if (token != null) activeRequests[token] = job
@@ -716,6 +951,18 @@ object RuntimeBridge {
             return false
         }
 
+        com.lagradost.cloudstream3.MainActivity.activity = appCompatActivity
+        com.lagradost.cloudstream3.MainActivity.context = appCompatActivity
+
+        try {
+            val styleClass = Class.forName("com.google.android.material.R\$style")
+            val field = styleClass.getField("Theme_MaterialComponents_DayNight_NoActionBar")
+            val themeId = field.getInt(null)
+            appCompatActivity.setTheme(themeId)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to setTheme programmatically via reflection", e)
+        }
+
         openSettingsFn(appCompatActivity)
         return true
     }
@@ -887,8 +1134,17 @@ object RuntimeBridge {
         return extensionManager!!
     }
 
-    private fun media(context: Context, sourceId: String, isAnime: Boolean): AniyomiSourceMethods =
-        if (isAnime) AnimeSourceMethods(sourceId) else MangaSourceMethods(sourceId)
+    private val sourceMethodsCache = java.util.concurrent.ConcurrentHashMap<String, AniyomiSourceMethods>()
+
+    private fun media(context: Context, sourceId: String, isAnime: Boolean): AniyomiSourceMethods {
+        val key = "$sourceId-$isAnime"
+        var methods = sourceMethodsCache[key]
+        if (methods == null) {
+            methods = if (isAnime) AnimeSourceMethods(sourceId) else MangaSourceMethods(sourceId)
+            sourceMethodsCache[key] = methods
+        }
+        return methods
+    }
 
     private fun okhttp3.Headers?.toMap(): Map<String, String> = this?.names()?.associateWith { name -> get(name).orEmpty() }.orEmpty()
 

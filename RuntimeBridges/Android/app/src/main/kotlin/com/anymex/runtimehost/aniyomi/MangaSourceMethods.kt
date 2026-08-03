@@ -26,7 +26,7 @@ import eu.kanade.tachiyomi.network.normalizeUrl
 @Suppress("PrivatePropertyName")
 class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMethods {
 
-    private val source: CatalogueSource
+    val source: CatalogueSource
 
     init {
         val manager = Injekt.get<AniyomiExtensionManager>()
@@ -56,13 +56,67 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     }
 
     override suspend fun getSearchResults(query: String, page: Int): AnimesPage {
+        val filterList = source.getFilterList()
+        @Suppress("UNCHECKED_CAST")
+        val filtersData = parameters?.get("filters") as? List<Map<String, Any?>>
+        if (filtersData != null) {
+            applyMangaFilters(filterList, filtersData)
+        }
         return mangaPageToAnimePage(
             source.getSearchManga(
                 page = page,
                 query = query,
-                filters = source.getFilterList()
+                filters = filterList
             )
         )
+    }
+
+    private fun applyMangaFilters(filterList: eu.kanade.tachiyomi.source.model.FilterList, filtersData: List<Map<String, Any?>>) {
+        for (i in 0 until minOf(filterList.list.size, filtersData.size)) {
+            val filter = filterList.list[i]
+            val data = filtersData[i]
+            val state = data["state"]
+            if (state != null) {
+                applyMangaFilterState(filter, state)
+            }
+        }
+    }
+
+    private fun applyMangaFilterState(filter: eu.kanade.tachiyomi.source.model.Filter<*>, state: Any?) {
+        when (filter) {
+            is eu.kanade.tachiyomi.source.model.Filter.CheckBox -> {
+                if (state is Boolean) filter.state = state
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.TriState -> {
+                if (state is Number) filter.state = state.toInt()
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Select<*> -> {
+                if (state is Number) filter.state = state.toInt()
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Text -> {
+                if (state is String) filter.state = state
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Sort -> {
+                if (state is Map<*, *>) {
+                    val index = (state["index"] as? Number)?.toInt() ?: filter.state?.index ?: 0
+                    val ascending = (state["ascending"] as? Boolean) ?: filter.state?.ascending ?: true
+                    filter.state = eu.kanade.tachiyomi.source.model.Filter.Sort.Selection(index, ascending)
+                }
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Group<*> -> {
+                if (state is List<*>) {
+                    val subFilters = filter.state
+                    for (j in 0 until minOf(subFilters.size, state.size)) {
+                        val subFilter = subFilters[j] as? eu.kanade.tachiyomi.source.model.Filter<*>
+                        val subState = (state[j] as? Map<*, *>)?.get("state")
+                        if (subFilter != null && subState != null) {
+                            applyMangaFilterState(subFilter, subState)
+                        }
+                    }
+                }
+            }
+            else -> {}
+        }
     }
 
     override suspend fun getDetails(media: SAnime): SAnime {

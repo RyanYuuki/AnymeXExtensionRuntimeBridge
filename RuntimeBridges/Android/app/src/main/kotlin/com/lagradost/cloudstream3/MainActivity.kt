@@ -114,8 +114,91 @@ val app: Requests by lazy {
 
 val api: Requests get() = app
 
-open class CommonActivity : android.app.Activity()
-class MainActivity : CommonActivity() {
+object CommonActivity {
+    val activity: android.app.Activity?
+        get() = MainActivity.activity
+
+    val displayMetrics: android.util.DisplayMetrics
+        get() = android.content.res.Resources.getSystem().displayMetrics
+
+    val screenWidth: Int
+        get() = displayMetrics.widthPixels
+    val screenHeight: Int
+        get() = displayMetrics.heightPixels
+
+    fun showToast(message: String?, duration: Int? = null) {
+        val act = activity
+        if (act != null) {
+            act.runOnUiThread {
+                android.widget.Toast.makeText(act, message, duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            val ctx = com.lagradost.cloudstream3.CloudStreamApp.context ?: return
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(ctx, message, duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun showToast(message: Int, duration: Int? = null) {
+        val act = activity
+        if (act != null) {
+            act.runOnUiThread {
+                android.widget.Toast.makeText(act, message, duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            val ctx = com.lagradost.cloudstream3.CloudStreamApp.context ?: return
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(ctx, message, duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun showToast(message: UiText?, duration: Int? = null) {
+        val act = activity
+        if (message == null) return
+        if (act != null) {
+            act.runOnUiThread {
+                android.widget.Toast.makeText(act, message.asString(act), duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            val ctx = com.lagradost.cloudstream3.CloudStreamApp.context ?: return
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(ctx, message.asString(ctx), duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun showToast(act: android.app.Activity?, message: String?, duration: Int? = null) {
+        val a = act ?: activity
+        if (a != null) {
+            a.runOnUiThread {
+                android.widget.Toast.makeText(a, message, duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            val ctx = com.lagradost.cloudstream3.CloudStreamApp.context ?: return
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(ctx, message, duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun showToast(act: android.app.Activity?, message: Int, duration: Int? = null) {
+        val a = act ?: activity
+        if (a != null) {
+            a.runOnUiThread {
+                android.widget.Toast.makeText(a, message, duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            val ctx = com.lagradost.cloudstream3.CloudStreamApp.context ?: return
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(ctx, message, duration ?: android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+}
+
+class MainActivity : android.app.Activity() {
     companion object {
         var context: android.content.Context? = null
         var activity: android.app.Activity? = null

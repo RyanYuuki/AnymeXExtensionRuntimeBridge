@@ -17,6 +17,9 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.api.addSingletonFactory
 import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.source.model.Page
 import kotlinx.serialization.json.Json
 import eu.kanade.tachiyomi.network.normalizeUrl
 object AniyomiSourceMethods {
@@ -83,7 +86,16 @@ object AniyomiSourceMethods {
         val currentName = safe({ name }, "")
         val parsed = parseEpisodeInfoFromName(currentName)
         val seasonNum = parsed.second
-        val epNum = if (parsed.first >= 0f) parsed.first else safe({ episode_number }, -1f)
+        val originalEpNum = safe({ episode_number }, -1f)
+        val epNum = if (originalEpNum != -1f) {
+            originalEpNum
+        } else if (parsed.first >= 0f) {
+            parsed.first
+        } else if (currentName.contains("oneshot", ignoreCase = true)) {
+            1f
+        } else {
+            -1f
+        }
         
         val map = mutableMapOf<String, Any>(
             "name" to currentName,
@@ -105,7 +117,16 @@ object AniyomiSourceMethods {
         val currentName = safe({ name }, "")
         val parsed = parseEpisodeInfoFromName(currentName)
         val seasonNum = parsed.second
-        val chNum = if (parsed.first >= 0f) parsed.first else safe({ chapter_number }, -1f)
+        val originalChNum = safe({ chapter_number }, -1f)
+        val chNum = if (originalChNum != -1f) {
+            originalChNum
+        } else if (parsed.first >= 0f) {
+            parsed.first
+        } else if (currentName.contains("oneshot", ignoreCase = true)) {
+            1f
+        } else {
+            -1f
+        }
 
         val map = mutableMapOf<String, Any>(
             "name" to currentName,
@@ -187,7 +208,7 @@ object AniyomiSourceMethods {
         }
     }
 
-    suspend fun search(className: String, query: String, page: Int, isAnimeObj: Any?): String {
+    suspend fun search(className: String, query: String, page: Int, isAnimeObj: Any?, filtersJson: com.google.gson.JsonArray? = null): String {
         val anime = when (isAnimeObj) {
             is Boolean -> isAnimeObj
             is String -> isAnimeObj.toBoolean()
@@ -202,6 +223,9 @@ object AniyomiSourceMethods {
                         return "{\"list\": [], \"hasNextPage\": false}"
                     }
                 val filters = try { source.getFilterList() } catch (t: Throwable) { eu.kanade.tachiyomi.animesource.model.AnimeFilterList() }
+                if (filtersJson != null) {
+                    applyAnimeFilters(filters, filtersJson)
+                }
                 val result = source.getSearchAnime(page, query, filters)
                 gson.toJson(mapOf("list" to result.animes.map { it.toDetailsMap() }, "hasNextPage" to result.hasNextPage))
             } else {
@@ -211,6 +235,9 @@ object AniyomiSourceMethods {
                         return "{\"list\": [], \"hasNextPage\": false}"
                     }
                 val filters = try { source.getFilterList() } catch (t: Throwable) { eu.kanade.tachiyomi.source.model.FilterList() }
+                if (filtersJson != null) {
+                    applyMangaFilters(filters, filtersJson)
+                }
                 val result = source.getSearchManga(page, query, filters)
                 gson.toJson(mapOf("list" to result.mangas.map { it.toDetailsMap() }, "hasNextPage" to result.hasNextPage))
             }
@@ -218,6 +245,104 @@ object AniyomiSourceMethods {
             System.err.println("[ERROR] search failed for source '$className' (query '$query', page $page, isAnime: $anime)")
             e.printStackTrace()
             "{\"list\": [], \"hasNextPage\": false, \"error\": \"${e.message}\"}"
+        }
+    }
+
+    private fun applyAnimeFilters(filterList: eu.kanade.tachiyomi.animesource.model.AnimeFilterList, filtersJson: com.google.gson.JsonArray?) {
+        if (filtersJson == null) return
+        for (i in 0 until minOf(filterList.list.size, filtersJson.size())) {
+            val filter = filterList.list[i]
+            val data = filtersJson.get(i)?.asJsonObject ?: continue
+            val state = data.get("state") ?: continue
+            applyAnimeFilterState(filter, state)
+        }
+    }
+
+    private fun applyAnimeFilterState(filter: eu.kanade.tachiyomi.animesource.model.AnimeFilter<*>, state: com.google.gson.JsonElement) {
+        when (filter) {
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.CheckBox -> {
+                if (state.isJsonPrimitive && state.asJsonPrimitive.isBoolean) filter.state = state.asBoolean
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.TriState -> {
+                if (state.isJsonPrimitive && state.asJsonPrimitive.isNumber) filter.state = state.asInt
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Select<*> -> {
+                if (state.isJsonPrimitive && state.asJsonPrimitive.isNumber) filter.state = state.asInt
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Text -> {
+                if (state.isJsonPrimitive && state.asJsonPrimitive.isString) filter.state = state.asString
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Sort -> {
+                if (state.isJsonObject) {
+                    val obj = state.asJsonObject
+                    val index = obj.get("index")?.asInt ?: filter.state?.index ?: 0
+                    val ascending = obj.get("ascending")?.asBoolean ?: filter.state?.ascending ?: true
+                    filter.state = eu.kanade.tachiyomi.animesource.model.AnimeFilter.Sort.Selection(index, ascending)
+                }
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Group<*> -> {
+                if (state.isJsonArray) {
+                    val arr = state.asJsonArray
+                    val subFilters = filter.state
+                    for (j in 0 until minOf(subFilters.size, arr.size())) {
+                        val subFilter = subFilters[j] as? eu.kanade.tachiyomi.animesource.model.AnimeFilter<*>
+                        val subState = arr.get(j)?.asJsonObject?.get("state")
+                        if (subFilter != null && subState != null) {
+                            applyAnimeFilterState(subFilter, subState)
+                        }
+                    }
+                }
+            }
+            else -> {}
+        }
+    }
+
+    private fun applyMangaFilters(filterList: eu.kanade.tachiyomi.source.model.FilterList, filtersJson: com.google.gson.JsonArray?) {
+        if (filtersJson == null) return
+        for (i in 0 until minOf(filterList.list.size, filtersJson.size())) {
+            val filter = filterList.list[i]
+            val data = filtersJson.get(i)?.asJsonObject ?: continue
+            val state = data.get("state") ?: continue
+            applyMangaFilterState(filter, state)
+        }
+    }
+
+    private fun applyMangaFilterState(filter: eu.kanade.tachiyomi.source.model.Filter<*>, state: com.google.gson.JsonElement) {
+        when (filter) {
+            is eu.kanade.tachiyomi.source.model.Filter.CheckBox -> {
+                if (state.isJsonPrimitive && state.asJsonPrimitive.isBoolean) filter.state = state.asBoolean
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.TriState -> {
+                if (state.isJsonPrimitive && state.asJsonPrimitive.isNumber) filter.state = state.asInt
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Select<*> -> {
+                if (state.isJsonPrimitive && state.asJsonPrimitive.isNumber) filter.state = state.asInt
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Text -> {
+                if (state.isJsonPrimitive && state.asJsonPrimitive.isString) filter.state = state.asString
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Sort -> {
+                if (state.isJsonObject) {
+                    val obj = state.asJsonObject
+                    val index = obj.get("index")?.asInt ?: filter.state?.index ?: 0
+                    val ascending = obj.get("ascending")?.asBoolean ?: filter.state?.ascending ?: true
+                    filter.state = eu.kanade.tachiyomi.source.model.Filter.Sort.Selection(index, ascending)
+                }
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Group<*> -> {
+                if (state.isJsonArray) {
+                    val arr = state.asJsonArray
+                    val subFilters = filter.state
+                    for (j in 0 until minOf(subFilters.size, arr.size())) {
+                        val subFilter = subFilters[j] as? eu.kanade.tachiyomi.source.model.Filter<*>
+                        val subState = arr.get(j)?.asJsonObject?.get("state")
+                        if (subFilter != null && subState != null) {
+                            applyMangaFilterState(subFilter, subState)
+                        }
+                    }
+                }
+            }
+            else -> {}
         }
     }
 
@@ -338,7 +463,6 @@ object AniyomiSourceMethods {
     }
 
     suspend fun fetchPageList(className: String, url: String, name: String): String {
-        System.err.println("[INFO] fetchPageList called for source '$className' (url '$url', name '$name')")
         return try {
             val source = DesktopExtensionLoader.loadedMangaSources[className]
                 ?: run {
@@ -350,8 +474,35 @@ object AniyomiSourceMethods {
                 this.name = name
             }
             val pages = source.getPageList(chapter)
-            gson.toJson(pages.map { page ->
-                mapOf("url" to page.imageUrl, "headers" to emptyMap<String, String>())
+            return gson.toJson(pages.map { page ->
+                val imageUrl = try {
+                    if (source is HttpSource) {
+                        source.imageRequest(page).url.toString()
+                    } else {
+                        page.imageUrl ?: ""
+                    }
+                } catch (e: Exception) {
+                    System.err.println("Error getting imageRequest URL: ${e.message}")
+                    e.printStackTrace()
+                    page.imageUrl ?: ""
+                }
+                val headersMap = try {
+                    if (source is HttpSource) {
+                        val reqHeaders = source.imageRequest(page).headers
+                        val map = mutableMapOf<String, String>()
+                        for (i in 0 until reqHeaders.size) {
+                            map[reqHeaders.name(i)] = reqHeaders.value(i)
+                        }
+                        map
+                    } else {
+                        emptyMap()
+                    }
+                } catch (e: Exception) {
+                    System.err.println("Error getting imageRequest headers: ${e.message}")
+                    e.printStackTrace()
+                    emptyMap()
+                }
+                mapOf("url" to imageUrl, "headers" to headersMap)
             })
         } catch (e: Exception) {
             System.err.println("[ERROR] fetchPageList failed for source '$className' (url '$url')")
@@ -756,6 +907,8 @@ object AniyomiSourceMethods {
                                         addProperty("hasUpdate", false)
                                         addProperty("isObsolete", false)
                                         addProperty("isShared", false)
+                                        addProperty("supportsLatest", (instance as? eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)?.supportsLatest ?: false)
+                                        addProperty("supportsPopular", instance is eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)
                                     }
                                     jsonArray.add(extObj)
                                     DesktopExtensionLoader.loadedAnimeSources[instance.id.toString()] = instance
@@ -785,6 +938,8 @@ object AniyomiSourceMethods {
                                                 addProperty("hasUpdate", false)
                                                 addProperty("isObsolete", false)
                                                 addProperty("isShared", false)
+                                                addProperty("supportsLatest", (src as? eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)?.supportsLatest ?: false)
+                                                addProperty("supportsPopular", src is eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)
                                             }
                                             jsonArray.add(extObj)
                                             DesktopExtensionLoader.loadedAnimeSources[src.id.toString()] = src
@@ -815,6 +970,8 @@ object AniyomiSourceMethods {
                                         addProperty("itemType", 0)
                                         addProperty("hasUpdate", false)
                                         addProperty("isObsolete", false)
+                                        addProperty("supportsLatest", (instance as? eu.kanade.tachiyomi.source.CatalogueSource)?.supportsLatest ?: false)
+                                        addProperty("supportsPopular", instance is eu.kanade.tachiyomi.source.CatalogueSource)
                                     }
                                     jsonArray.add(extObj)
                                     DesktopExtensionLoader.loadedMangaSources[instance.id.toString()] = instance
@@ -843,6 +1000,8 @@ object AniyomiSourceMethods {
                                                 addProperty("itemType", 0)
                                                 addProperty("hasUpdate", false)
                                                 addProperty("isObsolete", false)
+                                                addProperty("supportsLatest", (src as? eu.kanade.tachiyomi.source.CatalogueSource)?.supportsLatest ?: false)
+                                                addProperty("supportsPopular", src is eu.kanade.tachiyomi.source.CatalogueSource)
                                             }
                                             jsonArray.add(extObj)
                                             DesktopExtensionLoader.loadedMangaSources[src.id.toString()] = src
@@ -871,6 +1030,123 @@ object AniyomiSourceMethods {
         }
         
         return gson.toJson(jsonArray)
+    }
+
+    fun stopHttpServer(sourceId: String, isAnime: Boolean) {
+        if (!isAnime) return
+        try {
+            val source = DesktopExtensionLoader.loadedAnimeSources[sourceId] as? eu.kanade.tachiyomi.animesource.online.AnimeHttpSource ?: return
+            val server = source.server ?: return
+            if (server.isRunning()) {
+                server.stop()
+                System.err.println("Successfully stopped HTTP server for source: $sourceId")
+            }
+        } catch (e: Exception) {
+            System.err.println("Error stopping HTTP server for $sourceId: ${e.message}")
+        }
+    }
+
+    fun getFilterList(className: String, isAnime: Boolean): String {
+        return try {
+            if (isAnime) {
+                val source = DesktopExtensionLoader.loadedAnimeSources[className] as? AnimeCatalogueSource
+                    ?: return "[]"
+                val filterList = try { source.getFilterList() } catch (e: Throwable) { return "[]" }
+                val serialized = filterList.list.map { serializeAnimeFilter(it) }
+                gson.toJson(serialized)
+            } else {
+                val source = DesktopExtensionLoader.loadedMangaSources[className] as? CatalogueSource
+                    ?: return "[]"
+                val filterList = try { source.getFilterList() } catch (e: Throwable) { return "[]" }
+                val serialized = filterList.list.map { serializeMangaFilter(it) }
+                gson.toJson(serialized)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            "[]"
+        }
+    }
+
+    private fun serializeAnimeFilter(filter: eu.kanade.tachiyomi.animesource.model.AnimeFilter<*>): Map<String, Any?> {
+        val type = when (filter) {
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Header -> "Header"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Separator -> "Separator"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.CheckBox -> "CheckBox"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.TriState -> "TriState"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Select<*> -> "Select"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Group<*> -> "Group"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Sort -> "Sort"
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Text -> "Text"
+            else -> "Unknown"
+        }
+
+        val state: Any? = when (filter) {
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Group<*> -> {
+                filter.state.map { serializeAnimeFilter(it as eu.kanade.tachiyomi.animesource.model.AnimeFilter<*>) }
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Sort -> {
+                mapOf("index" to filter.state?.index, "ascending" to filter.state?.ascending)
+            }
+            else -> filter.state
+        }
+
+        val values: List<String>? = when (filter) {
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Select<*> -> {
+                filter.values.map { it.toString() }
+            }
+            is eu.kanade.tachiyomi.animesource.model.AnimeFilter.Sort -> {
+                filter.values.toList()
+            }
+            else -> null
+        }
+
+        return mapOf(
+            "name" to filter.name,
+            "type" to type,
+            "state" to state,
+            "values" to values
+        )
+    }
+
+    private fun serializeMangaFilter(filter: eu.kanade.tachiyomi.source.model.Filter<*>): Map<String, Any?> {
+        val type = when (filter) {
+            is eu.kanade.tachiyomi.source.model.Filter.Header -> "Header"
+            is eu.kanade.tachiyomi.source.model.Filter.Separator -> "Separator"
+            is eu.kanade.tachiyomi.source.model.Filter.CheckBox -> "CheckBox"
+            is eu.kanade.tachiyomi.source.model.Filter.TriState -> "TriState"
+            is eu.kanade.tachiyomi.source.model.Filter.Select<*> -> "Select"
+            is eu.kanade.tachiyomi.source.model.Filter.Group<*> -> "Group"
+            is eu.kanade.tachiyomi.source.model.Filter.Sort -> "Sort"
+            is eu.kanade.tachiyomi.source.model.Filter.Text -> "Text"
+            else -> "Unknown"
+        }
+
+        val state: Any? = when (filter) {
+            is eu.kanade.tachiyomi.source.model.Filter.Group<*> -> {
+                filter.state.map { serializeMangaFilter(it as eu.kanade.tachiyomi.source.model.Filter<*>) }
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Sort -> {
+                mapOf("index" to filter.state?.index, "ascending" to filter.state?.ascending)
+            }
+            else -> filter.state
+        }
+
+        val values: List<String>? = when (filter) {
+            is eu.kanade.tachiyomi.source.model.Filter.Select<*> -> {
+                filter.values.map { it.toString() }
+            }
+            is eu.kanade.tachiyomi.source.model.Filter.Sort -> {
+                filter.values.toList()
+            }
+            else -> null
+        }
+
+        return mapOf(
+            "name" to filter.name,
+            "type" to type,
+            "state" to state,
+            "values" to values
+        )
     }
 
     fun unloadExtension(sourceId: String) {

@@ -176,7 +176,8 @@ fun main(args: Array<String>) = runBlocking {
                             val query = getSafeString("query")
                             val page = getSafeInt("page", 1)
                             val isAnime = getSafeBoolean("isAnime", true)
-                            AniyomiSourceMethods.search(sourceId, query, page, isAnime)
+                            val filters = methodArgs.getAsJsonArray("filters")
+                            AniyomiSourceMethods.search(sourceId, query, page, isAnime, filters)
                         }
                         "getDetail" -> {
                             val sourceId = getSafeString("sourceId")
@@ -201,10 +202,21 @@ fun main(args: Array<String>) = runBlocking {
                             val name = episode.get("name")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
                             AniyomiSourceMethods.fetchPageList(sourceId, url, name)
                         }
+                        "stopHttpServer" -> {
+                            val sourceId = getSafeString("sourceId")
+                            val isAnime = getSafeBoolean("isAnime", true)
+                            AniyomiSourceMethods.stopHttpServer(sourceId, isAnime)
+                            "null"
+                        }
                         "unloadExtension" -> {
                             val sourceId = getSafeString("sourceId")
                             AniyomiSourceMethods.unloadExtension(sourceId)
                             "null"
+                        }
+                        "getFilterList" -> {
+                            val sourceId = getSafeString("sourceId")
+                            val isAnime = getSafeBoolean("isAnime", true)
+                            AniyomiSourceMethods.getFilterList(sourceId, isAnime)
                         }
                         "aniyomiGetPreferences" -> {
                             val sourceId = getSafeString("sourceId")

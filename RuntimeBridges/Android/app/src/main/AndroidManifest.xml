@@ -13,6 +13,7 @@
         android:label="AnymeX Runtime Host"
         android:hardwareAccelerated="true"
         android:extractNativeLibs="false"
+        android:largeHeap="true"
         android:usesCleartextTraffic="true">
     </application>
 

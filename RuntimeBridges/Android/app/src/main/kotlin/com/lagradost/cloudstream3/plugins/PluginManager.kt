@@ -180,6 +180,20 @@ object PluginManager {
             pluginInstance.filename = filePath
 
             if (pluginInstance is Plugin) {
+                try {
+                    val assetManager = android.content.res.AssetManager::class.java.getDeclaredConstructor().newInstance()
+                    val addAssetPath = android.content.res.AssetManager::class.java.getMethod("addAssetPath", String::class.java)
+                    addAssetPath.invoke(assetManager, filePath)
+                    val res = android.content.res.Resources(
+                        assetManager,
+                        context.resources.displayMetrics,
+                        context.resources.configuration
+                    )
+                    pluginInstance.resources = res
+                } catch (e: Exception) {
+                    Log.e(PLUGIN_TAG, "Failed to load resources for plugin $filePath", e)
+                }
+
                 val loadContext = if (context is AppCompatActivity) {
                     context
                 } else {

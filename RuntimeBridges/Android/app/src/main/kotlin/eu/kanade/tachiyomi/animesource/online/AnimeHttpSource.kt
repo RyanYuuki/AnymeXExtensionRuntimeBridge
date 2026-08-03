@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.animesource.model.Hoster
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkHelper.Companion.defaultUserAgentProvider
@@ -30,6 +31,7 @@ import java.security.MessageDigest
  */
 @Suppress("unused")
 abstract class AnimeHttpSource : AnimeCatalogueSource {
+    open val server: HttpServer? = null
     /**
      * Network service.
      */
