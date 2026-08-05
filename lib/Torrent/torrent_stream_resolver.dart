@@ -20,19 +20,7 @@ class TorrentStreamResolver {
   static final Map<int, _TorrentSession> _sessions = {};
   static int? _currentActiveTorrentId;
 
-  static Timer? _inactivityTimer;
-  static const Duration _inactivityTimeout = Duration(minutes: 5);
   static const Duration _downloadNotifyInterval = Duration(seconds: 5);
-
-  static void resetInactivityTimer() {
-    _inactivityTimer?.cancel();
-    if (!_isInitialized) return;
-    _inactivityTimer = Timer(_inactivityTimeout, () async {
-      Logger.log(
-          '[TorrentResolver] 5 minutes of inactivity reached. Disposing engine automatically...');
-      await dispose();
-    });
-  }
 
   static bool get isInitialized => _isInitialized;
   static int? get currentTorrentId => _currentActiveTorrentId;
@@ -155,10 +143,7 @@ class TorrentStreamResolver {
   }
 
   static Future<bool> initialize() async {
-    if (_isInitialized) {
-      resetInactivityTimer();
-      return true;
-    }
+    if (_isInitialized) return true;
 
     if (Platform.isAndroid) {
       final loaded = await loadEngineLibrary();
@@ -180,7 +165,6 @@ class TorrentStreamResolver {
 
       _isInitialized = true;
       _lastEngineError = null;
-      resetInactivityTimer();
       Logger.log('[TorrentResolver] Engine ready — path: $downloadPath');
       return true;
     } catch (e) {
@@ -240,8 +224,6 @@ class TorrentStreamResolver {
             video.url,
             episode: episodeStr,
           );
-
-          resetInactivityTimer();
 
           final resolvedSubtitles = (video.subtitles ?? []).toList();
           for (final sub in resolved.subtitles) {
@@ -307,8 +289,6 @@ class TorrentStreamResolver {
             'Torrent engine not available: ${_lastEngineError ?? 'unknown initialization error'}');
       }
     }
-
-    resetInactivityTimer();
 
     final engine = LibtorrentFlutter.instance;
     final infoHash = extractInfoHash(url) ?? url;
@@ -520,7 +500,6 @@ class TorrentStreamResolver {
       );
 
       _currentActiveTorrentId = torrentId;
-      resetInactivityTimer();
 
       return ResolvedStream(
         streamUrl: streamInfo.url,
@@ -698,8 +677,6 @@ class TorrentStreamResolver {
   }
 
   static Future<void> dispose() async {
-    _inactivityTimer?.cancel();
-    _inactivityTimer = null;
     final activeTorrentIds = _sessions.keys.toList();
     for (final torrentId in activeTorrentIds) {
       _sessions.remove(torrentId);
