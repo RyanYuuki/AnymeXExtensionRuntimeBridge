@@ -577,22 +577,40 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         videoStreamJob = scope.launch {
             currentVideoStreamToken = sessionToken
             currentVideoStreamUrl = url
+            val active = java.util.concurrent.atomic.AtomicBoolean(true)
+            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
             try {
                 val cls = bridgeClass ?: throw IllegalStateException("Runtime Host not loaded")
                 val loader = cls.classLoader ?: throw IllegalStateException("No Host ClassLoader")
                 val function1Class = loader.loadClass("kotlin.jvm.functions.Function1")
                 val unitClass = loader.loadClass("kotlin.Unit")
                 val unitInstance = unitClass.getField("INSTANCE").get(null)
-                val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+                val pendingVideos = java.util.concurrent.ConcurrentLinkedQueue<Any?>()
+                val flushScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+
+                val flushRunnable = object : Runnable {
+                    override fun run() {
+                        flushScheduled.set(false)
+                        if (!active.get()) return
+                        while (pendingVideos.isNotEmpty()) {
+                            val item = pendingVideos.poll() ?: break
+                            try { events?.success(item) } catch (_: Exception) {}
+                        }
+                    }
+                }
 
                 val proxyCallback = Proxy.newProxyInstance(
                     loader,
                     arrayOf(function1Class),
                     object : InvocationHandler {
                         override fun invoke(proxy: Any?, method: Method?, args: Array<out Any?>?): Any? {
-                            if (method?.name == "invoke") {
+                            if (method?.name == "invoke" && active.get()) {
                                 val video = args?.get(0)
-                                mainHandler.post { events?.success(video) }
+                                pendingVideos.add(video)
+                                if (flushScheduled.compareAndSet(false, true)) {
+                                    mainHandler.post(flushRunnable)
+                                }
                                 return unitInstance
                             }
                             return null
@@ -601,10 +619,20 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 )
 
                 call("csGetVideoListStream", ctx, apiName, url, proxyCallback, parameters)
-                mainHandler.post { events?.endOfStream() }
+
+                active.set(false)
+                mainHandler.post {
+                    while (pendingVideos.isNotEmpty()) {
+                        val item = pendingVideos.poll() ?: break
+                        try { events?.success(item) } catch (_: Exception) {}
+                    }
+                    events?.endOfStream()
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
+                active.set(false)
                 throw e
             } catch (e: Throwable) {
+                active.set(false)
                 sendError(result = object : MethodResult {
                     override fun success(res: Any?) {}
                     override fun error(code: String, msg: String?, details: Any?) {
