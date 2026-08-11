@@ -5,14 +5,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="$SCRIPT_DIR/output"
 
 usage() {
-    echo "Usage: $0 [android|desktop|both|clean-android|clean-desktop|clean-both]"
+    echo "Usage: $0 [android|desktop|wasm|all|clean-android|clean-desktop|clean-all]"
     echo
     echo "  android        Build the Android runtime host APK and push via ADB"
     echo "  desktop        Build the Desktop bridge JAR and copy to ~/Documents/AnymeX/Tools"
-    echo "  both           Build android and desktop"
+    echo "  wasm           Build the iOS WASM runtime host (anymex_ios_runtime.wasm)"
+    echo "  all            Build Android, Desktop, and iOS WASM"
     echo "  clean-android  Clean + build Android"
     echo "  clean-desktop  Clean + build Desktop"
-    echo "  clean-both     Clean + build Android and Desktop"
+    echo "  clean-all      Clean + build all targets"
     echo
     echo "If no argument is given you will be prompted to choose."
 }
@@ -63,6 +64,14 @@ build_desktop() {
     fi
 }
 
+build_wasm() {
+    echo
+    echo "======================================="
+    echo " Building iOS WASM Runtime"
+    echo "======================================="
+    bash "$SCRIPT_DIR/build_wasm.sh"
+}
+
 TARGET="${1:-}"
 
 if [[ -z "$TARGET" ]]; then
@@ -72,19 +81,21 @@ if [[ -z "$TARGET" ]]; then
     echo
     echo "  1) Android        — build APK + ADB push"
     echo "  2) Desktop        — build JAR + copy"
-    echo "  3) Both"
-    echo "  4) Clean Android  — clean + build APK + ADB push"
-    echo "  5) Clean Desktop  — clean + build JAR + copy"
-    echo "  6) Clean Both     — clean + build Android and Desktop"
+    echo "  3) iOS WASM       — build anymex_ios_runtime.wasm"
+    echo "  4) All Targets    — build Android, Desktop & iOS WASM"
+    echo "  5) Clean Android  — clean + build APK"
+    echo "  6) Clean Desktop  — clean + build JAR"
+    echo "  7) Clean All      — clean + build all"
     echo
-    read -rp "Choose [1-6]: " CHOICE
+    read -rp "Choose [1-7]: " CHOICE
     case "$CHOICE" in
         1) TARGET="android"       ;;
         2) TARGET="desktop"       ;;
-        3) TARGET="both"          ;;
-        4) TARGET="clean-android" ;;
-        5) TARGET="clean-desktop" ;;
-        6) TARGET="clean-both"    ;;
+        3) TARGET="wasm"          ;;
+        4) TARGET="all"           ;;
+        5) TARGET="clean-android" ;;
+        6) TARGET="clean-desktop" ;;
+        7) TARGET="clean-all"     ;;
         *) echo "❌ Invalid choice: '$CHOICE'"; usage; exit 1 ;;
     esac
 fi
@@ -96,9 +107,13 @@ case "$TARGET" in
     desktop)
         build_desktop
         ;;
-    both)
+    wasm)
+        build_wasm
+        ;;
+    all|both)
         build_android
         build_desktop
+        build_wasm
         ;;
     clean-android)
         clean_android
@@ -108,11 +123,12 @@ case "$TARGET" in
         clean_desktop
         build_desktop
         ;;
-    clean-both)
+    clean-all|clean-both)
         clean_android
         clean_desktop
         build_android
         build_desktop
+        build_wasm
         ;;
     --help|-h|help)
         usage
