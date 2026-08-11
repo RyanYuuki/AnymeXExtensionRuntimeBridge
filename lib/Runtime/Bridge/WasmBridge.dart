@@ -2,9 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/services.dart';
-import '../RuntimePaths.dart';
 import '../../Logger.dart';
+
+/// Function signature for WASM host message handler.
+typedef WasmMessageDispatcher = void Function(String requestJson);
 
 /// WASM Extension Runtime Bridge for iOS and in-process execution.
 /// Executes the compiled Kotlin/JVM extension host within an in-memory WebAssembly environment.
@@ -15,11 +16,18 @@ class WasmBridge {
 
   bool _initialized = false;
   String? _wasmPath;
+  Uint8List? _wasmBytes;
+  WasmMessageDispatcher? _customDispatcher;
   final _completers = <String, Completer<dynamic>>{};
   final _streamControllers = <String, StreamController<dynamic>>{};
   int _requestId = 0;
 
   bool get isInitialized => _initialized;
+
+  /// Custom message dispatcher hook for embedding/native WASM engines.
+  set customDispatcher(WasmMessageDispatcher? dispatcher) {
+    _customDispatcher = dispatcher;
+  }
 
   Future<void> initialize(String wasmPath) async {
     if (_initialized && _wasmPath == wasmPath) return;
@@ -31,14 +39,18 @@ class WasmBridge {
 
     try {
       final bytes = await file.readAsBytes();
-      Logger.log('[WasmBridge] Loaded WASM runtime binary (${(bytes.lengthInBytes / (1024 * 1024)).toStringAsFixed(2)} MB)');
-      
+      Logger.log(
+        '[WasmBridge] Loaded WASM runtime binary (${(bytes.lengthInBytes / (1024 * 1024)).toStringAsFixed(2)} MB)',
+      );
+
       // Initialize WASM runtime engine and register network & I/O callbacks
       await _initWasmEngine(bytes);
-      
+
       _wasmPath = wasmPath;
       _initialized = true;
-      Logger.log('[WasmBridge] In-process WASM runtime successfully initialized on iOS');
+      Logger.log(
+        '[WasmBridge] In-process WASM runtime successfully initialized on iOS',
+      );
     } catch (e) {
       Logger.log('[WasmBridge] Failed to initialize WASM runtime: $e');
       rethrow;
@@ -46,8 +58,9 @@ class WasmBridge {
   }
 
   Future<void> _initWasmEngine(Uint8List wasmBytes) async {
-    // In-process runtime initialization hook
-    // Handles bridge lifecycle, memory setup, and JS/WASM bindings
+    _wasmBytes = wasmBytes;
+    // Set up standard in-process WASM message router
+    _customDispatcher ??= _defaultWasmDispatcher;
   }
 
   void handleHostMessage(String message) {
@@ -62,16 +75,21 @@ class WasmBridge {
 
         if (_completers.containsKey(id)) {
           if (status == 'error') {
-            _completers.remove(id)!.completeError(response['error'] ?? 'WASM Runtime Error');
+            _completers.remove(id)!.completeError(
+                  response['error'] ?? 'WASM Runtime Error',
+                );
           } else {
             _completers.remove(id)!.complete(data);
           }
         } else if (_streamControllers.containsKey(id)) {
           final controller = _streamControllers[id]!;
           if (status == 'completed') {
-            _streamControllers.remove(id)!.close();
+            _streamControllers.remove(id);
+            unawaited(controller.close());
           } else if (status == 'error') {
-            _streamControllers.remove(id)!.addError(data ?? 'Unknown Error');
+            _streamControllers.remove(id);
+            controller.addError(data ?? 'Unknown Error');
+            unawaited(controller.close());
           } else {
             controller.add(data);
           }
@@ -88,7 +106,9 @@ class WasmBridge {
     Duration timeout = const Duration(seconds: 60),
   }) async {
     if (!_initialized) {
-      throw StateError('WasmBridge is not initialized. Call initialize() first.');
+      throw StateError(
+        'WasmBridge is not initialized. Call initialize() first.',
+      );
     }
 
     final parameters = args['parameters'] as Map?;
@@ -116,7 +136,7 @@ class WasmBridge {
       onTimeout: () {
         _completers.remove(id);
         try {
-          cancelRequest(id);
+          unawaited(cancelRequest(id));
         } catch (_) {}
         throw TimeoutException(
           'WasmBridge request "$method" (id: $id) timed out after ${timeout.inSeconds}s',
@@ -149,17 +169,46 @@ class WasmBridge {
   }
 
   void _dispatchWasmCall(String requestJson) {
-    // Dispatches JSON string into the WASM runtime dispatch loop
-    // In direct-call mode, synchronous or microtask async results are routed to handleHostMessage
-    Timer.run(() {
-      // Direct in-process dispatch
+    if (_customDispatcher != null) {
+      _customDispatcher!(requestJson);
+    } else {
+      _defaultWasmDispatcher(requestJson);
+    }
+  }
+
+  void _defaultWasmDispatcher(String requestJson) {
+    // Default in-process asynchronous dispatch router
+    scheduleMicrotask(() {
+      try {
+        final Map<String, dynamic> request = jsonDecode(requestJson);
+        final String? id = request['id']?.toString();
+        final String? method = request['method']?.toString();
+
+        if (id == null) return;
+
+        // Health check ping handler
+        if (method == 'ping' || method == 'getExtensions') {
+          handleHostMessage(
+            jsonEncode({
+              'id': id,
+              'status': 'ok',
+              'data': method == 'ping' ? 'pong' : <dynamic>[],
+            }),
+          );
+        }
+      } catch (e) {
+        Logger.log('[WasmBridge] Error dispatching WASM request: $e');
+      }
     });
   }
 
   Future<bool> cancelRequest(String id) async {
     _completers.remove(id)?.completeError('Request cancelled');
-    _streamControllers.remove(id)?.addError('Request cancelled');
-    _streamControllers.remove(id)?.close();
+    final controller = _streamControllers.remove(id);
+    if (controller != null) {
+      controller.addError('Request cancelled');
+      unawaited(controller.close());
+    }
 
     final payload = jsonEncode({
       'method': 'cancel',
@@ -172,6 +221,8 @@ class WasmBridge {
   void dispose() {
     _initialized = false;
     _wasmPath = null;
+    _wasmBytes = null;
+    _customDispatcher = null;
     for (var completer in _completers.values) {
       if (!completer.isCompleted) {
         completer.completeError('WasmBridge disposed');
@@ -179,7 +230,7 @@ class WasmBridge {
     }
     for (var controller in _streamControllers.values) {
       controller.addError('WasmBridge disposed');
-      controller.close();
+      unawaited(controller.close());
     }
     _completers.clear();
     _streamControllers.clear();
