@@ -50,10 +50,10 @@ class RuntimePaths {
   }
 
   Future<String> get bridgePath async {
-    final dir = await toolsDir;
     if (Platform.isIOS) {
-      return p.join(dir.path, 'anymex_ios_runtime.wasm');
+      return wasmRuntimePath;
     }
+    final dir = await toolsDir;
     final fileName = Platform.isAndroid
         ? 'anymex_runtime_host.apk'
         : 'anymex_desktop_runtime.jar';
