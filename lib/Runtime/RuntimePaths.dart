@@ -44,8 +44,16 @@ class RuntimePaths {
     return dir;
   }
 
+  Future<String> get wasmRuntimePath async {
+    final dir = await toolsDir;
+    return p.join(dir.path, 'anymex_ios_runtime.wasm');
+  }
+
   Future<String> get bridgePath async {
     final dir = await toolsDir;
+    if (Platform.isIOS) {
+      return p.join(dir.path, 'anymex_ios_runtime.wasm');
+    }
     final fileName = Platform.isAndroid
         ? 'anymex_runtime_host.apk'
         : 'anymex_desktop_runtime.jar';
@@ -64,7 +72,7 @@ class RuntimePaths {
   }
 
   Future<String?> get jvmLibPath async {
-    if (Platform.isAndroid) return null;
+    if (Platform.isAndroid || Platform.isIOS) return null;
 
     final jreRoot = await jreDir;
     if (!await jreRoot.exists()) return null;
@@ -94,7 +102,7 @@ class RuntimePaths {
   }
 
   Future<String?> get javaExecutablePath async {
-    if (Platform.isAndroid) return null;
+    if (Platform.isAndroid || Platform.isIOS) return null;
 
     final jreRoot = await jreDir;
     if (!await jreRoot.exists()) return null;
