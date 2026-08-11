@@ -15,7 +15,7 @@ class AnymeXRuntimeBridge {
   static final Map<String, String> cookiesMap = {};
   static final Map<String, String> userAgentMap = {};
 
-  static bool get isSupportedPlatform => !Platform.isIOS;
+  static bool get isSupportedPlatform => true;
 
   static String? _cachedBridgePath;
   static String? _cachedToolsDirPath;
@@ -64,9 +64,9 @@ class AnymeXRuntimeBridge {
     _hasLoadedMetadata = true;
   }
 
-  /// Setup the AnymeX Runtime Bridge (Android APK or Desktop JRE/JAR).
+  /// Setup the AnymeX Runtime Bridge (Android APK, iOS WASM, or Desktop JRE/JAR).
   /// This handles downloading, tracking progress, and initialization.
-  /// Set [force] to true to re-download the Bridge JAR/APK (useful for updates).
+  /// Set [force] to true to re-download the Bridge JAR/APK/WASM (useful for updates).
   /// Note: The JRE is only downloaded if missing, regardless of [force].
   static Future<void> setupRuntime(
       {String? customDownloadUrl,
@@ -117,7 +117,9 @@ class AnymeXRuntimeBridge {
     final bridgeFile = File(bridgePath);
     bool exists = await bridgeFile.exists();
 
-    if (!Platform.isAndroid) {
+    if (Platform.isIOS) {
+      // On iOS, the WASM runtime file is self-contained without a JRE
+    } else if (!Platform.isAndroid) {
       final jreDir = await paths.jreDir;
       exists = exists && await jreDir.exists();
     }
@@ -125,6 +127,9 @@ class AnymeXRuntimeBridge {
     if (exists) {
       if (Platform.isAndroid) {
         await loadAnymeXRuntimeHost(bridgePath);
+      } else if (Platform.isIOS) {
+        await BridgeDispatcher().initialize(bridgePath);
+        controller.setReady(true);
       } else {
         controller.setReady(true);
       }
@@ -348,7 +353,7 @@ class AnymeXRuntimeBridge {
     final bridgeFile = File(_cachedBridgePath!);
     if (!bridgeFile.existsSync()) return false;
 
-    if (!Platform.isAndroid && _cachedJreDirPath != null) {
+    if (!Platform.isAndroid && !Platform.isIOS && _cachedJreDirPath != null) {
       final jreDir = Directory(_cachedJreDirPath!);
       if (!jreDir.existsSync()) return false;
     }
