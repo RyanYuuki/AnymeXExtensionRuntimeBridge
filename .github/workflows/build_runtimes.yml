@@ -1,0 +1,118 @@
+name: Build and Release Extension Runtime Hosts
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - master
+    paths:
+      - 'RuntimeBridges/**'
+      - 'build.sh'
+      - 'build_desktop.sh'
+      - 'build_wasm.sh'
+      - '.github/workflows/build_runtimes.yml'
+  workflow_dispatch:
+
+jobs:
+  build_android:
+    name: Build Android Runtime APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Grant execute permission for gradlew
+        run: |
+          chmod +x RuntimeBridges/Android/gradlew
+          chmod +x RuntimeBridges/Android/build.sh
+          chmod +x build.sh
+
+      - name: Build Android Runtime Host APK
+        run: bash build.sh android
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: anymex_runtime_host.apk
+          path: output/anymex_runtime_host.apk
+
+  build_desktop_and_wasm:
+    name: Build Desktop JAR & iOS WASM Runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Grant execute permission for scripts
+        run: |
+          chmod +x RuntimeBridges/Desktop/gradlew
+          chmod +x build_desktop.sh
+          chmod +x build_wasm.sh
+          chmod +x build.sh
+
+      - name: Build Desktop JAR
+        run: bash build.sh desktop
+
+      - name: Build iOS WASM Runtime
+        run: bash build.sh wasm
+
+      - name: Upload Desktop JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: anymex_desktop_runtime.jar
+          path: output/anymex_desktop_runtime.jar
+
+      - name: Upload iOS WASM
+        uses: actions/upload-artifact@v4
+        with:
+          name: anymex_ios_runtime.wasm
+          path: output/anymex_ios_runtime.wasm
+
+  publish_release:
+    name: Publish Release Assets
+    needs: [build_android, build_desktop_and_wasm]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: anymex_runtime_host.apk
+          path: release_assets/
+
+      - name: Download Desktop JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: anymex_desktop_runtime.jar
+          path: release_assets/
+
+      - name: Download iOS WASM
+        uses: actions/download-artifact@v4
+        with:
+          name: anymex_ios_runtime.wasm
+          path: release_assets/
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release_assets/anymex_runtime_host.apk
+            release_assets/anymex_desktop_runtime.jar
+            release_assets/anymex_ios_runtime.wasm
+          draft: false
+          prerelease: false
+          generate_release_notes: true
