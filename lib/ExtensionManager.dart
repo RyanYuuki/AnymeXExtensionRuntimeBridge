@@ -15,7 +15,7 @@ import 'Settings/KvStore.dart';
 
 class ExtensionManager extends GetxController {
   final managers = <Extension>[].obs;
-  final bridgeType = BridgeType.sidecar.obs;
+  final bridgeType = (Platform.isIOS ? BridgeType.wasm : BridgeType.sidecar).obs;
 
 
   void setBridgeType(BridgeType type) {
@@ -66,7 +66,8 @@ class ExtensionManager extends GetxController {
             KotatsuExtensions(),
           ] else if (Platform.isWindows ||
               Platform.isLinux ||
-              Platform.isMacOS) ...[
+              Platform.isMacOS ||
+              Platform.isIOS) ...[
             DesktopAniyomiExtensions(),
             DesktopCloudStreamExtensions(),
             DesktopKotatsuExtensions(),
