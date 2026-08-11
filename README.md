@@ -1,31 +1,33 @@
 # AnymeX Extension Runtime Bridge
 
-A powerful Flutter plugin built around a **unified, runtime-agnostic API** for loading and executing **Aniyomi**, **CloudStream**, **Mangayomi**, and **Sora** extension sources through a single consistent interface.
+A powerful Flutter plugin built around a **unified, runtime-agnostic API** for loading and executing **Aniyomi**, **CloudStream**, **Kotatsu**, **Mangayomi**, and **Sora** extension sources through a single consistent interface across **Android**, **iOS**, **Windows**, **macOS**, and **Linux**.
 
 ---
 
 ## 🏗️ Architecture
 
-The bridge allows your app to stay small while offloading heavy execution logic to a dedicated runtime.
+The bridge allows your app to stay small while offloading heavy execution logic to a dedicated runtime host per platform.
 
 ```
-┌─────────────────────────────────────────────┐
-│         Your Flutter App                    │
-│                                             │
-│  AnymeXExtensionBridge   (Dart plugin)      │
-│  ├─ Mangayomi  ──────────► works natively   │
-│  ├─ Sora       ──────────► works natively   │
-│  ├─ Aniyomi    ──► needs AnymeXRuntimeBridge│
-│  └─ CloudStream──► needs AnymeXRuntimeBridge│
-│                                             │
-│  AnymeXRuntimeBridge     (Runtime Host)     │
-│  ├─ Android: Bridge APK                     │
-│  └─ Desktop: JRE + Bridge JAR               │
-└─────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│                  Your Flutter App                      │
+│                                                        │
+│  AnymeXExtensionBridge   (Dart plugin)                 │
+│  ├─ Mangayomi  ──────────► works natively              │
+│  ├─ Sora       ──────────► works natively              │
+│  ├─ Aniyomi    ──► needs AnymeXRuntimeBridge           │
+│  ├─ CloudStream──► needs AnymeXRuntimeBridge           │
+│  └─ Kotatsu    ──► needs AnymeXRuntimeBridge           │
+│                                                        │
+│  AnymeXRuntimeBridge     (Runtime Host)                │
+│  ├─ Android: Bridge APK       (DexClassLoader)         │
+│  ├─ Desktop: JRE + Bridge JAR (Subprocess IPC / JNI)   │
+│  └─ iOS:     Bridge WASM      (In-Process WebAssembly) │
+└────────────────────────────────────────────────────────┘
 ```
 
 > **IMPORTANT:** Aniyomi and CloudStream will NOT work without loading the Runtime Bridge first.
-> Separation is intentional — it avoids bundling heavy native dependencies (like the JVM or JRE) directly into your app.
+> Separation is intentional — it avoids bundling heavy native dependencies (like the JVM, JRE, or Dex runtimes) directly into your app binary.
 
 ---
 
@@ -45,8 +47,8 @@ await AnymeXExtensionBridge.init(
 ### 2. Prepare the Runtime
 You have two ways to handle the runtime bridge:
 
-- **`checkAndInitialize()`**: Checks if the bridge/JRE is already downloaded and initializes it if found. Use this on every app start for persistence.
-- **`setupRuntime({force: false})`**: Downloads and installs the bridge. Set `force: true` to trigger an update of the Bridge JAR.
+- **`checkAndInitialize()`**: Checks if the bridge runtime is already downloaded and initializes it if found. Use this on every app start for persistence.
+- **`setupRuntime({force: false})`**: Downloads and installs the bridge. Set `force: true` to trigger a re-download/update of the Bridge host (APK on Android, JAR on Desktop, WASM on iOS).
 
 ```dart
 // Auto-detect existing files
@@ -65,6 +67,20 @@ await extManager.onRuntimeBridgeInitialization();
 
 ---
 
+## 🛠️ Building Runtime Hosts
+
+To compile the runtime binaries for releases:
+
+```bash
+./build.sh [android|desktop|wasm|all]
+```
+
+- **Android**: `./build.sh android` $\rightarrow$ `anymex_runtime_host.apk`
+- **Desktop**: `./build.sh desktop` $\rightarrow$ `anymex_desktop_runtime.jar`
+- **iOS WASM**: `./build.sh wasm` $\rightarrow$ `anymex_ios_runtime.wasm`
+
+---
+
 ## 📚 API Reference
 
 ### `AnymeXExtensionBridge`
@@ -78,7 +94,7 @@ await extManager.onRuntimeBridgeInitialization();
 ### `AnymeXRuntimeBridge`
 | Method | Description |
 |--------|-------------|
-| `setupRuntime({force, customUrl})` | Downloads/Updates the bridge host |
+| `setupRuntime({force, customUrl})` | Downloads/Updates the bridge host (APK/JAR/WASM) |
 | `checkAndInitialize()` | Auto-detects existing files on startup |
 | `isLoaded()` | Returns true if the bridge is currently active |
 | `controller` | GetX controller for progress/status tracking |
@@ -97,7 +113,7 @@ await extManager.onRuntimeBridgeInitialization();
 | `getAllRepos(type)` | Get all repos across all backends |
 | `refreshExtensions(...)` | Re-fetch installed and/or available extensions |
 | `updateAll()` | Update all sources that have an update available |
-| `onRuntimeBridgeInitialization()` | Register Aniyomi+CloudStream after bridge is ready |
+| `onRuntimeBridgeInitialization()` | Register Aniyomi+CloudStream+Kotatsu after bridge is ready |
 
 ### `SourceMethods` (Unified Interface)
 | Method | Description |
@@ -131,8 +147,9 @@ await extManager.onRuntimeBridgeInitialization();
 ### Manager IDs
 | `managerId` | Backend | Platforms |
 |-------------|---------|-----------|
-| `aniyomi` | Aniyomi extensions | Android, Win, Mac, Linux |
-| `cloudstream` | CloudStream plugins | Android only |
+| `aniyomi` | Aniyomi extensions | Android, iOS, Windows, macOS, Linux |
+| `cloudstream` | CloudStream plugins | Android, iOS, Windows, macOS, Linux |
+| `kotatsu` | Kotatsu extensions | Android, iOS, Windows, macOS, Linux |
 | `mangayomi` | Mangayomi JS extensions | All |
 | `sora` | Sora extensions | All |
 
