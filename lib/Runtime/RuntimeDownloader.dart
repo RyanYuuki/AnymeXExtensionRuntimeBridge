@@ -18,6 +18,8 @@ class RuntimeDownloader {
       "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/latest/download/anymex_runtime_host.apk";
   static const String desktopJarUrl =
       "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/latest/download/anymex_desktop_runtime.jar";
+  static const String iosWasmUrl =
+      "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/latest/download/anymex_ios_runtime.wasm";
   static const String dex2jarUrl =
       "https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip";
 
@@ -74,7 +76,7 @@ class RuntimeDownloader {
       final toolsDir = await _paths.toolsDir;
       final dex2jarPath = await _paths.dex2jarPath;
 
-      final bool isDesktop = !Platform.isAndroid;
+      final bool isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
       bool needsBridge =
           (localApkPath == null) && (force || !await bridgeFile.exists());
@@ -87,8 +89,8 @@ class RuntimeDownloader {
 
       if (needsBridge) {
         currentFileIndex++;
-        final downloadUrl = customUrl ?? (Platform.isAndroid ? androidApkUrl : desktopJarUrl);
-        final label = Platform.isAndroid ? "Runtime APK" : "Bridge JAR";
+        final downloadUrl = customUrl ?? (Platform.isAndroid ? androidApkUrl : (Platform.isIOS ? iosWasmUrl : desktopJarUrl));
+        final label = Platform.isAndroid ? "Runtime APK" : (Platform.isIOS ? "Runtime WASM" : "Bridge JAR");
         final stepPrefix = totalFiles > 1 ? "($currentFileIndex/$totalFiles) " : "";
         await _downloadFile(downloadUrl, bridgeFile.path, "$stepPrefix$label");
       }
