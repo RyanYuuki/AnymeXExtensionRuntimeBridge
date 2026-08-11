@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:get/get.dart';
 import 'JniBridge.dart';
 import 'SidecarBridge.dart';
+import 'WasmBridge.dart';
 import '../../ExtensionManager.dart';
 
-enum BridgeType { jni, sidecar }
+enum BridgeType { jni, sidecar, wasm }
 
 class BridgeDispatcher {
   static final BridgeDispatcher _instance = BridgeDispatcher._internal();
@@ -11,6 +13,9 @@ class BridgeDispatcher {
   BridgeDispatcher._internal();
 
   BridgeType get _mode {
+    if (Platform.isIOS) {
+      return BridgeType.wasm;
+    }
     if (Get.isRegistered<ExtensionManager>()) {
       return Get.find<ExtensionManager>().bridgeType.value;
     }
@@ -26,11 +31,13 @@ class BridgeDispatcher {
 
   BridgeType get mode => _mode;
 
-  Future<void> initialize(String bridgeJarPath) async {
-    if (_mode == BridgeType.jni) {
-      await JniBridge().initialize(bridgeJarPath);
+  Future<void> initialize(String bridgeRuntimePath) async {
+    if (_mode == BridgeType.wasm) {
+      await WasmBridge().initialize(bridgeRuntimePath);
+    } else if (_mode == BridgeType.jni) {
+      await JniBridge().initialize(bridgeRuntimePath);
     } else {
-      await SidecarBridge().initialize(bridgeJarPath);
+      await SidecarBridge().initialize(bridgeRuntimePath);
     }
   }
 
@@ -39,7 +46,9 @@ class BridgeDispatcher {
     Map<String, dynamic> args, {
     Duration timeout = const Duration(seconds: 60),
   }) async {
-    if (_mode == BridgeType.jni) {
+    if (_mode == BridgeType.wasm) {
+      return await WasmBridge().invokeMethod(method, args, timeout: timeout);
+    } else if (_mode == BridgeType.jni) {
       return await JniBridge().invokeMethod(method, args);
     } else {
       return await SidecarBridge().invokeMethod(method, args, timeout: timeout);
@@ -47,7 +56,9 @@ class BridgeDispatcher {
   }
 
   Stream<dynamic> invokeStreamMethod(String method, Map<String, dynamic> args) {
-    if (_mode == BridgeType.jni) {
+    if (_mode == BridgeType.wasm) {
+      return WasmBridge().invokeStreamMethod(method, args);
+    } else if (_mode == BridgeType.jni) {
       return const Stream.empty();
     } else {
       return SidecarBridge().invokeStreamMethod(method, args);
@@ -55,7 +66,9 @@ class BridgeDispatcher {
   }
 
   Future<bool> cancelRequest(String id) async {
-    if (_mode == BridgeType.jni) {
+    if (_mode == BridgeType.wasm) {
+      return WasmBridge().cancelRequest(id);
+    } else if (_mode == BridgeType.jni) {
       return JniBridge().cancelRequest(id);
     } else {
       return SidecarBridge().cancelRequest(id);
@@ -63,7 +76,9 @@ class BridgeDispatcher {
   }
 
   void dispose() {
-    if (_mode == BridgeType.jni) {
+    if (_mode == BridgeType.wasm) {
+      WasmBridge().dispose();
+    } else if (_mode == BridgeType.jni) {
       JniBridge().dispose();
     } else {
       SidecarBridge().dispose();
