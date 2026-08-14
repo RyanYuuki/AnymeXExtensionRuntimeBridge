@@ -315,13 +315,8 @@ class ServerKotatsuBridge extends DesktopKotatsuExtensions {
   Future<void> fetchInstalledMangaExtensions() async {
     try {
       // Ensure server has the Kotatsu JAR downloaded.
-      // Repos are in KvStore under '$id${ItemType.manga.name}Repos'.
-      final key = '${'kotatsu-desktop'}${ItemType.manga.name}Repos';
-      final encoded = getVal<List<String>>(key);
-      if (encoded != null && encoded.isNotEmpty) {
-        final repos = encoded
-            .map((e) => Repo.fromJson(jsonDecode(e)))
-            .toList();
+      final repos = loadRepos(ItemType.manga);
+      if (repos.isNotEmpty) {
         try {
           await ServerBridge()
               .invokeMethod('ensureKotatsuJar', {'url': repos.first.url});
