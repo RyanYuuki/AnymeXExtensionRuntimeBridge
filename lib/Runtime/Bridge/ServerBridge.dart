@@ -54,10 +54,10 @@ class ServerBridge {
     _client = SSHClient(
       socket,
       username: username,
-      password: password,
     );
+    await _client!.authPassword(username, password);
     _initialized = true;
-    Logger.log('[ServerBridge] Connected to $host:$port as $username');
+    Logger.log('[ServerBridge] Connected to ${_host!}:$_port as $username');
   }
 
   /// Send a method call through SSH exec and return the result.
@@ -123,8 +123,8 @@ class ServerBridge {
   Stream<dynamic> invokeStreamMethod(
       String method, Map<String, dynamic> args) {
     // Stream controller that does a single invoke and emits the result.
-    StreamController<dynamic> controller;
-    controller = StreamController<dynamic>(onListen: () async {
+    late final StreamController<dynamic> controller =
+        StreamController<dynamic>(onListen: () async {
       try {
         final result = await invokeMethod(method, args);
         if (result is List) {
