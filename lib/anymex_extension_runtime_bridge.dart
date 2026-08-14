@@ -20,6 +20,7 @@ export './Services/CloudStreamDesktop/DesktopCloudStreamExtensions.dart';
 export './Services/CloudStreamDesktop/DesktopCloudStreamSourceMethods.dart';
 export './Runtime/Bridge/JniBridge.dart';
 export './Runtime/Bridge/SidecarBridge.dart';
+export './Runtime/Bridge/ServerBridge.dart';
 export './Runtime/Bridge/BridgeDispatcher.dart';
 export './Runtime/DesktopExtensionBase.dart';
 export './Runtime/RuntimeController.dart';

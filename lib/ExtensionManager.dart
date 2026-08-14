@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:get/get.dart';
 
+import 'Logger.dart';
+import 'Runtime/Bridge/BridgeDispatcher.dart';
+import 'Runtime/Bridge/ServerBridge.dart';
 import 'Services/Aniyomi/AniyomiExtensions.dart';
 import 'Services/Aniyomi/Models/Source.dart';
 import 'Services/CloudStream/CloudStreamExtensions.dart';
@@ -50,6 +53,68 @@ class ExtensionManager extends GetxController {
     ]);
 
     await onRuntimeBridgeInitialization();
+  }
+
+  /// Connect to a remote server and register the server-bridge extension
+  /// manager. This enables iOS (and other platforms) to use the server's
+  /// JAR sidecar instead of a local runtime.
+  ///
+  /// [host] / [port] — SSH server address.
+  /// [username] / [password] — credentials for SSH auth.
+  /// [httpPort] — HTTP port for registration/health (default 8082).
+  Future<void> initServerBridge({
+    required String host,
+    int port = 3022,
+    int httpPort = 8082,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      await ServerBridge().initialize(
+        host: host,
+        port: port,
+        username: username,
+        password: password,
+      );
+
+      setBridgeType(BridgeType.server);
+
+      // Verify the server is healthy and JAR is ready.
+      final health = await ServerBridge().invokeMethod('health', {});
+      Logger.log('[ExtensionManager] Server health: $health');
+
+      // Register server-bridge extension manager (replaces desktop managers).
+      await _registerAndInitializeManagers(
+        [ServerBridgeExtensions()],
+        force: true,
+      );
+
+      Logger.log('[ExtensionManager] Server bridge initialized successfully');
+    } catch (e) {
+      Logger.log('[ExtensionManager] Failed to init server bridge: $e');
+      rethrow;
+    }
+  }
+
+  /// Disconnect from the server bridge and restore default state.
+  Future<void> disconnectServerBridge() async {
+    // Remove server-bridge manager if registered.
+    final serverManager = findById('server-bridge');
+    if (serverManager != null) {
+      managers.remove(serverManager);
+      _refreshAllAggregatedLists();
+    }
+
+    ServerBridge().dispose();
+
+    // Restore to sidecar (default for non-Android, non-server).
+    if (Platform.isAndroid) {
+      setBridgeType(BridgeType.jni);
+    } else {
+      setBridgeType(BridgeType.sidecar);
+    }
+
+    Logger.log('[ExtensionManager] Server bridge disconnected');
   }
 
   Future<void> onRuntimeBridgeInitialization({
@@ -354,6 +419,12 @@ extension SourceExecution on Source {
 
 Extension getSourceManager(Source source) {
   final em = Get.find<ExtensionManager>();
+
+  // If source has a managerId, use it directly (handles server-bridge sources).
+  if (source.managerId != null && source.managerId!.isNotEmpty) {
+    final manager = em.findById(source.managerId!);
+    if (manager != null) return manager;
+  }
 
   if (source is ASource) {
     return em.findById('aniyomi') ?? em.findById('aniyomi-desktop')!;
