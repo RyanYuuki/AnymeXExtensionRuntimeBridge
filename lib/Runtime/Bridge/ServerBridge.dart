@@ -457,17 +457,17 @@ class ServerBridgeExtensions extends Extension {
   @override
   Future<void> addRepo(String repoUrl, ItemType type) async {
     try {
+      // Don't send type — server auto-detects from URL format.
+      // Sending ItemType.name ('anime'/'manga') would break detection
+      // because server expects 'aniyomi'/'cloudstream'/'kotatsu'.
       await ServerBridge().invokeMethod('addRepo', {
         'url': repoUrl,
-        'type': type.name,
       });
 
-      // Re-fetch available extensions after adding repo.
-      if (type == ItemType.anime) {
-        await fetchAnimeExtensions();
-      } else if (type == ItemType.manga) {
-        await fetchMangaExtensions();
-      }
+      // Re-fetch ALL available extensions for both types since we
+      // don't know what the repo contains until server parses it.
+      await fetchAnimeExtensions();
+      await fetchMangaExtensions();
 
       await _fetchRepos();
     } catch (e) {
@@ -485,12 +485,9 @@ class ServerBridgeExtensions extends Extension {
 
       await _fetchRepos();
 
-      // Re-fetch available since removing a repo may affect the list.
-      if (type == ItemType.anime) {
-        await fetchAnimeExtensions();
-      } else if (type == ItemType.manga) {
-        await fetchMangaExtensions();
-      }
+      // Re-fetch both types since repo may have contained either.
+      await fetchAnimeExtensions();
+      await fetchMangaExtensions();
     } catch (e) {
       Logger.log('[ServerBridge] Failed to remove repo $repoUrl: $e');
       rethrow;
