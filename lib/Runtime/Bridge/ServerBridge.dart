@@ -23,6 +23,10 @@ import '../../Services/KotatsuDesktop/DesktopKotatsuSourceMethods.dart';
 /// All method calls (JAR proxy + management) go through SSH exec.
 /// The server forwards unknown methods to its local JAR sidecar.
 class ServerBridge {
+  static const defaultHost = 'anymex.duckdns.org';
+  static const defaultPort = 3022;
+  static const defaultHttpPort = 8082;
+
   static final ServerBridge _instance = ServerBridge._internal();
   factory ServerBridge() => _instance;
   ServerBridge._internal();
@@ -30,22 +34,23 @@ class ServerBridge {
   SSHClient? _client;
   bool _initialized = false;
   String? _host;
-  int _port = 3022;
+  int _port = defaultPort;
   int _requestId = 0;
 
   /// Connect to the server via SSH and authenticate.
+  /// [host] and [port] default to the production server.
   Future<void> initialize({
-    required String host,
-    int port = 3022,
+    String? host,
+    int? port,
     required String username,
     required String password,
   }) async {
     if (_initialized) return;
 
-    _host = host;
-    _port = port;
+    _host = host ?? defaultHost;
+    _port = port ?? defaultPort;
 
-    final socket = await SSHSocket.connect(host, port);
+    final socket = await SSHSocket.connect(_host!, _port);
     _client = SSHClient(
       socket,
       username: username,
@@ -163,14 +168,19 @@ class ServerBridge {
 /// HTTP endpoint (port 8082). Login is implicit via SSH connect.
 class ServerAuth {
   /// Register a new user account on the server.
+  /// [host] and [httpPort] default to the production server.
   static Future<Map<String, dynamic>> register({
-    required String host,
-    int httpPort = 8082,
+    String? host,
+    int? httpPort,
     required String username,
     required String password,
   }) async {
-    final uri =
-        Uri(scheme: 'http', host: host, port: httpPort, path: '/register');
+    final uri = Uri(
+      scheme: 'http',
+      host: host ?? ServerBridge.defaultHost,
+      port: httpPort ?? ServerBridge.defaultHttpPort,
+      path: '/register',
+    );
     final res = await http.post(
       uri,
       headers: {'Content-Type': 'application/json'},
@@ -180,12 +190,17 @@ class ServerAuth {
   }
 
   /// Check server health and JAR readiness.
+  /// [host] and [httpPort] default to the production server.
   static Future<Map<String, dynamic>> health({
-    required String host,
-    int httpPort = 8082,
+    String? host,
+    int? httpPort,
   }) async {
-    final uri =
-        Uri(scheme: 'http', host: host, port: httpPort, path: '/health');
+    final uri = Uri(
+      scheme: 'http',
+      host: host ?? ServerBridge.defaultHost,
+      port: httpPort ?? ServerBridge.defaultHttpPort,
+      path: '/health',
+    );
     final res = await http.get(uri);
     return jsonDecode(res.body) as Map<String, dynamic>;
   }

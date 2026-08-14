@@ -55,17 +55,15 @@ class ExtensionManager extends GetxController {
     await onRuntimeBridgeInitialization();
   }
 
-  /// Connect to a remote server and register the server-bridge extension
-  /// manager. This enables iOS (and other platforms) to use the server's
-  /// JAR sidecar instead of a local runtime.
+  /// Connect to the remote server and register the server-bridge extension
+  /// manager. Host/port default to the production server — user only needs
+  /// to provide credentials.
   ///
-  /// [host] / [port] — SSH server address.
+  /// [host] / [port] — SSH server address (optional, defaults to production).
   /// [username] / [password] — credentials for SSH auth.
-  /// [httpPort] — HTTP port for registration/health (default 8082).
   Future<void> initServerBridge({
-    required String host,
-    int port = 3022,
-    int httpPort = 8082,
+    String? host,
+    int? port,
     required String username,
     required String password,
   }) async {
