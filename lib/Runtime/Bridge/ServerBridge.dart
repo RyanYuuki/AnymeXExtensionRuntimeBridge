@@ -202,15 +202,24 @@ class ServerAuth {
 /// operations (list, install, repos). Runtime calls (getPopular, search,
 /// etc.) are forwarded through SSH to the server's JAR sidecar automatically
 /// because all SourceMethods call BridgeDispatcher().invokeMethod().
+/// Each instance represents one of the 3 desktop manager types (aniyomi-desktop,
+/// cloudstream-desktop, kotatsu-desktop). The [kind] filter ensures each instance
+/// only handles its own source type.
 class ServerBridgeExtensions extends Extension {
+  final String _managerId;
+  final String _managerName;
+  final String kind; // 'aniyomi', 'cloudstream', 'kotatsu'
+
   /// Maps source ID → server DB extension ID (for install operations).
   final _serverExtIdMap = <String, String>{};
 
-  @override
-  String get id => 'server-bridge';
+  ServerBridgeExtensions(this._managerId, this._managerName, this.kind);
 
   @override
-  String get name => 'Server Bridge';
+  String get id => _managerId;
+
+  @override
+  String get name => _managerName;
 
   @override
   bool get supportsNovel => false;
@@ -219,10 +228,15 @@ class ServerBridgeExtensions extends Extension {
   bool get requiresPlugin => false;
 
   @override
+  bool get supportsAnime =>
+      kind == 'aniyomi' || kind == 'cloudstream';
+
+  @override
+  bool get supportsManga =>
+      kind == 'aniyomi' || kind == 'kotatsu';
+
+  @override
   SourceMethods createSourceMethods(Source source) {
-    // All SourceMethods call BridgeDispatcher().invokeMethod() which
-    // routes through ServerBridge when bridge type is 'server'.
-    // Just need to pick the right SourceMethods class per source type.
     if (source is CloudStreamSource) {
       return DesktopCloudStreamSourceMethods(source);
     }
@@ -298,6 +312,9 @@ class ServerBridgeExtensions extends Extension {
       final map = e as Map<String, dynamic>;
       final serverType = (map['type'] as String?)?.toLowerCase() ?? '';
 
+      // Only handle sources matching this instance's kind.
+      if (_serverTypeToKind(serverType) != kind) continue;
+
       // Map server type to ItemType and check if it matches the filter.
       final itemType = _serverTypeToItemType(serverType);
       if (itemType != filterType) continue;
@@ -356,6 +373,9 @@ class ServerBridgeExtensions extends Extension {
     for (final e in result) {
       final map = e as Map<String, dynamic>;
       final serverType = (map['type'] as String?)?.toLowerCase() ?? '';
+
+      // Only handle sources matching this instance's kind.
+      if (_serverTypeToKind(serverType) != kind) continue;
 
       final itemType = _serverTypeToItemType(serverType);
       if (itemType != filterType) continue;
@@ -586,7 +606,7 @@ class ServerBridgeExtensions extends Extension {
       itemType: _serverTypeToItemType(serverType),
       iconUrl: map['icon_url'] as String?,
     );
-    source.managerId = id;
+    source.managerId = 'aniyomi-desktop';
 
     _storeServerExtId(serverDbId, sourceId, source.pkgName, source.name);
 
@@ -608,7 +628,7 @@ class ServerBridgeExtensions extends Extension {
       iconUrl: map['icon_url'] as String?,
       internalName: map['pkg'] as String?,
     );
-    source.managerId = id;
+    source.managerId = 'cloudstream-desktop';
 
     _storeServerExtId(serverDbId, sourceId, null, source.name);
 
@@ -642,7 +662,7 @@ class ServerBridgeExtensions extends Extension {
       pkgName: map['pkg'] as String?,
       jarName: extra?['jarName'] as String?,
     );
-    source.managerId = id;
+    source.managerId = 'kotatsu-desktop';
 
     _storeServerExtId(serverDbId, sourceId, source.pkgName, source.name);
 

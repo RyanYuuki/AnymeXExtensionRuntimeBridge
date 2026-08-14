@@ -81,9 +81,13 @@ class ExtensionManager extends GetxController {
       final health = await ServerBridge().invokeMethod('health', {});
       Logger.log('[ExtensionManager] Server health: $health');
 
-      // Register server-bridge extension manager (replaces desktop managers).
+      // Register 3 server-bridge managers matching the 3 desktop IDs.
       await _registerAndInitializeManagers(
-        [ServerBridgeExtensions()],
+        [
+          ServerBridgeExtensions('aniyomi-desktop', 'Aniyomi (Desktop)', 'aniyomi'),
+          ServerBridgeExtensions('cloudstream-desktop', 'CloudStream (Desktop)', 'cloudstream'),
+          ServerBridgeExtensions('kotatsu-desktop', 'Kotatsu (Desktop)', 'kotatsu'),
+        ],
         force: true,
       );
 
@@ -96,12 +100,12 @@ class ExtensionManager extends GetxController {
 
   /// Disconnect from the server bridge and restore default state.
   Future<void> disconnectServerBridge() async {
-    // Remove server-bridge manager if registered.
-    final serverManager = findById('server-bridge');
-    if (serverManager != null) {
-      managers.remove(serverManager);
-      _refreshAllAggregatedLists();
+    // Remove all 3 server-bridge managers if registered.
+    for (final mid in ['aniyomi-desktop', 'cloudstream-desktop', 'kotatsu-desktop']) {
+      final m = findById(mid);
+      if (m is ServerBridgeExtensions) managers.remove(m);
     }
+    _refreshAllAggregatedLists();
 
     ServerBridge().dispose();
 
@@ -153,7 +157,7 @@ class ExtensionManager extends GetxController {
 
     for (final manager in newManagers) {
       final existingManager = managers
-          .firstWhereOrNull((m) => m.runtimeType == manager.runtimeType);
+          .firstWhereOrNull((m) => m.id == manager.id);
 
       if (existingManager != null && !force) continue;
 
