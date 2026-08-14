@@ -50,12 +50,14 @@ class ServerBridge {
     _host = host ?? defaultHost;
     _port = port ?? defaultPort;
 
+    final pwd = password;
     final socket = await SSHSocket.connect(_host!, _port);
     _client = SSHClient(
       socket,
       username: username,
+      onPasswordRequest: () => pwd,
     );
-    await _client!.authPassword(username, password);
+    await _client!.authenticated;
     _initialized = true;
     Logger.log('[ServerBridge] Connected to ${_host!}:$_port as $username');
   }
@@ -121,26 +123,14 @@ class ServerBridge {
   /// SSH exec is one-shot — streaming not natively supported.
   /// Falls back to a single invokeMethod call.
   Stream<dynamic> invokeStreamMethod(
-      String method, Map<String, dynamic> args) {
-    // Stream controller that does a single invoke and emits the result.
-    late final StreamController<dynamic> controller =
-        StreamController<dynamic>(onListen: () async {
-      try {
-        final result = await invokeMethod(method, args);
-        if (result is List) {
-          for (final item in result) {
-            controller.add(item);
-          }
-        } else {
-          controller.add(result);
-        }
-      } catch (e) {
-        controller.addError(e);
-      } finally {
-        await controller.close();
-      }
-    });
-    return controller.stream;
+      String method, Map<String, dynamic> args) async* {
+    // SSH exec is one-shot — flatten list results into individual stream events.
+    final result = await invokeMethod(method, args);
+    if (result is List) {
+      yield* Stream.fromIterable(result);
+    } else {
+      yield result;
+    }
   }
 
   void dispose() {
