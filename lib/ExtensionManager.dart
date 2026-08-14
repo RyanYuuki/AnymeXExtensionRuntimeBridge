@@ -84,9 +84,9 @@ class ExtensionManager extends GetxController {
       // Register 3 server-bridge managers matching the 3 desktop IDs.
       await _registerAndInitializeManagers(
         [
-          ServerBridgeExtensions('aniyomi-desktop', 'Aniyomi (Desktop)', 'aniyomi'),
-          ServerBridgeExtensions('cloudstream-desktop', 'CloudStream (Desktop)', 'cloudstream'),
-          ServerBridgeExtensions('kotatsu-desktop', 'Kotatsu (Desktop)', 'kotatsu'),
+          ServerAniyomiBridge(),
+          ServerCloudStreamBridge(),
+          ServerKotatsuBridge(),
         ],
         force: true,
       );
@@ -102,8 +102,9 @@ class ExtensionManager extends GetxController {
   Future<void> disconnectServerBridge() async {
     // Remove all 3 server-bridge managers if registered.
     for (final mid in ['aniyomi-desktop', 'cloudstream-desktop', 'kotatsu-desktop']) {
-      final m = findById(mid);
-      if (m is ServerBridgeExtensions) managers.remove(m);
+      managers.removeWhere((m) =>
+          m.id == mid && m.runtimeType.toString().startsWith('Server'));
+
     }
     _refreshAllAggregatedLists();
 
