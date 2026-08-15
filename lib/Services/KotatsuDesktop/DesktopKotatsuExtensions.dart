@@ -31,7 +31,7 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
     return getExtensionsPath('Kotatsu');
   }
 
-  List<Repo> _loadRepos(ItemType type) {
+  List<Repo> loadRepos(ItemType type) {
     final key = '$id${type.name}Repos';
     final encoded = getVal<List<String>>(key);
     if (encoded == null || encoded.isEmpty) return const [];
@@ -41,7 +41,7 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
         .toList(growable: false);
   }
 
-  void _saveRepos(List<Repo> repos, ItemType type) {
+  void saveRepos(List<Repo> repos, ItemType type) {
     final key = '$id${type.name}Repos';
     setVal(
       key,
@@ -57,7 +57,7 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
         throw Exception("Invalid repo URL");
       }
 
-      final repos = _loadRepos(type);
+      final repos = loadRepos(type);
       if (repos.any((r) => r.url == repoUrl)) return;
 
       final extPath = await _getExtensionsPath();
@@ -86,7 +86,7 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
 
       final repo = Repo(url: repoUrl, managerId: id);
       final updatedRepos = List<Repo>.from(repos)..add(repo);
-      _saveRepos(updatedRepos, type);
+      saveRepos(updatedRepos, type);
 
       await fetchInstalledMangaExtensions();
       await fetchMangaExtensions();
@@ -99,10 +99,10 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
   @override
   Future<void> removeRepo(String repoUrl, ItemType type) async {
     try {
-      final repos = _loadRepos(type)
+      final repos = loadRepos(type)
           .where((r) => r.url != repoUrl)
           .toList(growable: false);
-      _saveRepos(repos, type);
+      saveRepos(repos, type);
 
       final extPath = await _getExtensionsPath();
       final jarFile = File(p.join(extPath, 'plugin.jar'));
@@ -145,7 +145,7 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
   @override
   Future<void> fetchInstalledMangaExtensions() async {
     try {
-      final repos = _loadRepos(ItemType.manga);
+      final repos = loadRepos(ItemType.manga);
       getReposRx(ItemType.manga).value = repos;
 
       if (repos.isEmpty) {
@@ -219,7 +219,7 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
   @override
   Future<void> fetchMangaExtensions() async {
     try {
-      final repos = _loadRepos(ItemType.manga);
+      final repos = loadRepos(ItemType.manga);
       getReposRx(ItemType.manga).value = repos;
 
       if (repos.isEmpty) {

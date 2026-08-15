@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:get/get.dart';
 
+import 'Logger.dart';
+import 'Runtime/Bridge/BridgeDispatcher.dart';
+import 'Runtime/Bridge/ServerBridge.dart';
 import 'Services/Aniyomi/AniyomiExtensions.dart';
 import 'Services/Aniyomi/Models/Source.dart';
 import 'Services/CloudStream/CloudStreamExtensions.dart';
@@ -52,6 +55,71 @@ class ExtensionManager extends GetxController {
     await onRuntimeBridgeInitialization();
   }
 
+  /// Connect to the remote server and register the server-bridge extension
+  /// manager. Host/port default to the production server — user only needs
+  /// to provide credentials.
+  ///
+  /// [host] / [port] — SSH server address (optional, defaults to production).
+  /// [username] / [password] — credentials for SSH auth.
+  Future<void> initServerBridge({
+    String? host,
+    int? port,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      await ServerBridge().initialize(
+        host: host,
+        port: port,
+        username: username,
+        password: password,
+      );
+
+      setBridgeType(BridgeType.server);
+
+      // Verify the server is healthy and JAR is ready.
+      final health = await ServerBridge().invokeMethod('health', {});
+      Logger.log('[ExtensionManager] Server health: $health');
+
+      // Register 3 server-bridge managers matching the 3 desktop IDs.
+      await _registerAndInitializeManagers(
+        [
+          ServerAniyomiBridge(),
+          ServerCloudStreamBridge(),
+          ServerKotatsuBridge(),
+        ],
+        force: true,
+      );
+
+      Logger.log('[ExtensionManager] Server bridge initialized successfully');
+    } catch (e) {
+      Logger.log('[ExtensionManager] Failed to init server bridge: $e');
+      rethrow;
+    }
+  }
+
+  /// Disconnect from the server bridge and restore default state.
+  Future<void> disconnectServerBridge() async {
+    // Remove all 3 server-bridge managers if registered.
+    for (final mid in ['aniyomi-desktop', 'cloudstream-desktop', 'kotatsu-desktop']) {
+      managers.removeWhere((m) =>
+          m.id == mid && m.runtimeType.toString().startsWith('Server'));
+
+    }
+    _refreshAllAggregatedLists();
+
+    ServerBridge().dispose();
+
+    // Restore to sidecar (default for non-Android, non-server).
+    if (Platform.isAndroid) {
+      setBridgeType(BridgeType.jni);
+    } else {
+      setBridgeType(BridgeType.sidecar);
+    }
+
+    Logger.log('[ExtensionManager] Server bridge disconnected');
+  }
+
   Future<void> onRuntimeBridgeInitialization({
     bool force = false,
     Function(String managerId)? onManagerInitializing,
@@ -90,7 +158,7 @@ class ExtensionManager extends GetxController {
 
     for (final manager in newManagers) {
       final existingManager = managers
-          .firstWhereOrNull((m) => m.runtimeType == manager.runtimeType);
+          .firstWhereOrNull((m) => m.id == manager.id);
 
       if (existingManager != null && !force) continue;
 
@@ -354,6 +422,12 @@ extension SourceExecution on Source {
 
 Extension getSourceManager(Source source) {
   final em = Get.find<ExtensionManager>();
+
+  // If source has a managerId, use it directly (handles server-bridge sources).
+  if (source.managerId != null && source.managerId!.isNotEmpty) {
+    final manager = em.findById(source.managerId!);
+    if (manager != null) return manager;
+  }
 
   if (source is ASource) {
     return em.findById('aniyomi') ?? em.findById('aniyomi-desktop')!;
