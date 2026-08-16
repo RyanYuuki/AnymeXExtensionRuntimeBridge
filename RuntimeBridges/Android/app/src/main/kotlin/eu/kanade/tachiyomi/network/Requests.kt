@@ -13,9 +13,22 @@ private val DEFAULT_CACHE_CONTROL = CacheControl.Builder().maxAge(10, MINUTES).b
 private val DEFAULT_HEADERS = Headers.Builder().build()
 private val DEFAULT_BODY: RequestBody = FormBody.Builder().build()
 
+/** Matches a URI scheme prefix, for example `http:`, `https:` or `intent:`. */
+private val SCHEME_PREFIX = Regex("^[a-zA-Z][a-zA-Z0-9+.\\-]*:")
+
+/**
+ * Prefix a scheme onto a bare host or a protocol-relative URL.
+ *
+ * Only strings with NO scheme at all are prefixed. A string that already carries one is passed
+ * through untouched so OkHttp can apply the WHATWG normalisation a browser would — sources
+ * routinely scrape URLs that are scheme-ful but not spelled `http://` or `https://` exactly:
+ * JSON-escaped (`https:\/\/host\/path`), upper-cased (`HTTPS://host`), or single-slashed
+ * (`https:/host`). Prefixing those produced `https://https:\/\/host…`, whose authority parses as
+ * `https`, so the request died with `UnknownHostException: https` instead of loading.
+ */
 fun String.normalizeUrl(): String {
     if (isBlank()) return this
-    if (startsWith("http://") || startsWith("https://")) return this
+    if (SCHEME_PREFIX.containsMatchIn(this)) return this
     if (startsWith("//")) return "https:$this"
     return "https://$this"
 }
