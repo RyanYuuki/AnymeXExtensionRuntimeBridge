@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.network
 
 import android.content.Context
+import android.util.Log
 import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.network.interceptor.IgnoreGzipInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
@@ -55,6 +56,17 @@ class NetworkHelper(
                 ),
             )
             .addInterceptor(UncaughtExceptionInterceptor())
+            .addInterceptor(object : Interceptor {
+                override fun intercept(chain: Interceptor.Chain): Response {
+                    val request = chain.request()
+                    try {
+                        return chain.proceed(request)
+                    } catch (e: Exception) {
+                        Log.e("AnymeXNetwork", "[ERROR] Request failed for ${request.url}: ${e.message}", e)
+                        throw e
+                    }
+                }
+            })
             .addInterceptor(CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider))
             .addInterceptor(BrotliInterceptor)
             .addInterceptor(IgnoreGzipInterceptor())

@@ -38,9 +38,11 @@ class PbDecoder {
 
       final resBytes = extMap[3]?.first as List<int>?;
       String apkUrl = '';
+      String iconUrl = '';
       if (resBytes != null) {
         final resMap = _parseMessage(resBytes, 0, resBytes.length);
         apkUrl = _getString(resMap[1]);
+        iconUrl = _getString(resMap[2]);
       }
 
       final versionCode = _getInt(extMap[5]);
@@ -69,6 +71,8 @@ class PbDecoder {
         'name': name,
         'pkg': packageName,
         'apk': apkUrl.contains('/') ? apkUrl.split('/').last : apkUrl,
+        'apkUrl': apkUrl,
+        'iconUrl': iconUrl,
         'lang': sourcesList.isNotEmpty ? sourcesList.first['lang'] : 'en',
         'code': versionCode,
         'version': versionName,

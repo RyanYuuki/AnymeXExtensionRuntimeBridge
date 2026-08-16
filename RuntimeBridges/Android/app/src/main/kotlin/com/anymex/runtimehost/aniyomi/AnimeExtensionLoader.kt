@@ -63,20 +63,20 @@ internal object AnimeExtensionLoader {
             if (!path.isNullOrBlank()) {
                 val externalDir = File(path, "exts")
                 if (externalDir.exists() && externalDir.absolutePath != privateDir.absolutePath) {
-                    privateDir.listFiles()?.forEach { it.delete() }
-                    externalDir.listFiles()?.asSequence()?.filter { it.isFile && it.extension == "apk" }?.forEach { src ->
+                    val externalApks = externalDir.listFiles()?.filter { it.isFile && it.extension == "apk" } ?: emptyList()
+                    val externalNames = externalApks.map { it.name }.toSet()
+                    privateDir.listFiles()?.forEach { if (it.name !in externalNames) it.delete() }
+                    for (src in externalApks) {
                         val dst = File(privateDir, src.name)
+                        if (dst.exists() && dst.length() == src.length()) continue
                         val tmp = File(privateDir, "${src.name}.tmp")
-
                         tmp.outputStream().use { out ->
                             src.inputStream().use { it.copyTo(out) }
                         }
-
                         if (!tmp.renameTo(dst)) {
                             tmp.delete()
                             throw IOException("Failed to finalize ${dst.name}")
                         }
-
                         dst.setReadOnly()
                     }
                 }
@@ -94,9 +94,16 @@ internal object AnimeExtensionLoader {
             }
 
 
-            val extensions = extPkgs.map { loadExtension(context, it) }
-                .filterIsInstance<AnimeLoadResult.Success>()
-                .map { it.extension }
+            val originalPriority = Thread.currentThread().priority
+            Thread.currentThread().priority = Thread.MIN_PRIORITY
+            val extensions = try {
+                extPkgs.mapNotNull { extPkg ->
+                    val loaded = loadExtension(context, extPkg)
+                    (loaded as? AnimeLoadResult.Success)?.extension
+                }
+            } finally {
+                Thread.currentThread().priority = originalPriority
+            }
 
             return extensions
         } catch (e: Exception) {

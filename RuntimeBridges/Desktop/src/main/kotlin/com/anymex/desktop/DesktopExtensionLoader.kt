@@ -71,6 +71,11 @@ fun main(args: Array<String>) = runBlocking {
         }
     } catch (_: Exception) {}
     System.err.println("All stdout has been redirected to stderr for IPC safety.")
+    try {
+        com.anymex.desktop.MangaImageProxy.start()
+    } catch (e: Exception) {
+        System.err.println("Failed to start MangaImageProxy: ${e.message}")
+    }
 
     while (true) {
         val line = try { reader.readLine() } catch (e: Exception) { null } ?: break

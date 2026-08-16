@@ -54,6 +54,9 @@ class ASource extends Source {
 
   String? get apkUrl {
     if (apkName == null || apkName!.isEmpty) return null;
+    if (apkName!.startsWith('http://') || apkName!.startsWith('https://')) {
+      return apkName;
+    }
 
     if (repo != null && repo!.startsWith('http')) {
       final baseRepoUrl = repo!

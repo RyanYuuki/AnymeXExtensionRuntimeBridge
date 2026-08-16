@@ -26,6 +26,8 @@ interface SManga : Serializable {
 
     var initialized: Boolean
 
+    var memo: kotlinx.serialization.json.JsonObject?
+
     fun getGenres(): List<String>? {
         if (genre.isNullOrBlank()) return null
         return genre?.split(", ")?.map { it.trim() }?.filterNot { it.isBlank() }?.distinct()
@@ -42,6 +44,7 @@ interface SManga : Serializable {
         it.thumbnail_url = thumbnail_url
         it.update_strategy = update_strategy
         it.initialized = initialized
+        it.memo = memo
     }
 
     companion object {

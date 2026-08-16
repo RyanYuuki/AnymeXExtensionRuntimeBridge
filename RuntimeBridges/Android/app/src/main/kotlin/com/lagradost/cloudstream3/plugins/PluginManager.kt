@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.plugins
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.withContext
@@ -264,6 +265,15 @@ object PluginManager {
 class AppCompatActivityWrapper(base: Context) : AppCompatActivity() {
     init {
         attachBaseContext(base)
+    }
+
+    override fun getSupportFragmentManager(): androidx.fragment.app.FragmentManager {
+        val hostActivity = (baseContext as? androidx.fragment.app.FragmentActivity)
+            ?: (baseContext as? ContextWrapper)?.baseContext as? androidx.fragment.app.FragmentActivity
+        if (hostActivity != null) {
+            return hostActivity.supportFragmentManager
+        }
+        return super.getSupportFragmentManager()
     }
 
     override fun getApplicationContext(): Context {

@@ -84,11 +84,13 @@ object RuntimeBridge {
 
         Log.i(TAG, "Initializing Runtime Host - Version: 1.0.6")
 
-        val initialActivity = resolveAppCompatActivity(context)
-        if (initialActivity != null) {
-            lastKnownActivity = WeakReference(initialActivity)
-            com.lagradost.cloudstream3.MainActivity.activity = initialActivity
-            com.lagradost.cloudstream3.MainActivity.context = initialActivity
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            val initialActivity = resolveAppCompatActivity(context)
+            if (initialActivity != null) {
+                lastKnownActivity = WeakReference(initialActivity)
+                com.lagradost.cloudstream3.MainActivity.activity = initialActivity
+                com.lagradost.cloudstream3.MainActivity.context = initialActivity
+            }
         }
 
         try {
@@ -167,6 +169,11 @@ object RuntimeBridge {
                 cacheDir.deleteRecursively()
             }
         } catch (_: Exception) {}
+        try {
+            MangaImageProxy.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start MangaImageProxy: ${e.message}")
+        }
         initialized = true
     }
 
@@ -184,6 +191,12 @@ object RuntimeBridge {
             initialized = false
             activeRequests.values.forEach { it.cancel() }
             activeRequests.clear()
+
+            try {
+                MangaImageProxy.stop()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping MangaImageProxy: ${e.message}")
+            }
 
             csPathRegistry.clear()
             csMetadataRegistry.clear()
@@ -354,11 +367,21 @@ object RuntimeBridge {
         val m = media(context, sourceId, isAnime)
         return if (isAnime) {
             val source = (m as? com.anymex.runtimehost.aniyomi.AnimeSourceMethods)?.source ?: return emptyList()
-            val filterList = try { source.getFilterList() } catch (e: Throwable) { return emptyList() }
+            val filterList = try {
+                source.getFilterList()
+            } catch (e: Throwable) {
+                Log.e("RuntimeBridge", "Error in getFilterList (Anime) for source $sourceId: ${e.message}", e)
+                return emptyList()
+            }
             filterList.list.map { serializeAnimeFilter(it) }
         } else {
             val source = (m as? com.anymex.runtimehost.aniyomi.MangaSourceMethods)?.source ?: return emptyList()
-            val filterList = try { source.getFilterList() } catch (e: Throwable) { return emptyList() }
+            val filterList = try {
+                source.getFilterList()
+            } catch (e: Throwable) {
+                Log.e("RuntimeBridge", "Error in getFilterList (Manga) for source $sourceId: ${e.message}", e)
+                return emptyList()
+            }
             filterList.list.map { serializeMangaFilter(it) }
         }
     }
@@ -625,6 +648,27 @@ object RuntimeBridge {
             val pages = m.getPageList(chapter)
             val httpSource = m.getHttpSource() as? HttpSource
             
+            val overridesClient = try {
+                val networkHelper = uy.kohesive.injekt.Injekt.get<eu.kanade.tachiyomi.network.NetworkHelper>()
+                httpSource?.client !== networkHelper.client
+            } catch (e: Exception) {
+                false
+            }
+
+            val hasCustomGetImage = if (httpSource != null) {
+                try {
+                    val method = httpSource.javaClass.getMethod("getImage", eu.kanade.tachiyomi.source.model.Page::class.java, kotlin.coroutines.Continuation::class.java)
+                    method.declaringClass != HttpSource::class.java
+                } catch (e: Exception) {
+                    false
+                }
+            } else {
+                false
+            }
+
+            val useProxy = hasCustomGetImage || overridesClient
+            Log.i("RuntimeBridge", "Source '${sourceId}': hasCustomGetImage=$hasCustomGetImage, overridesClient=$overridesClient -> useProxy=$useProxy")
+
             pages.map { page ->
                 val imageUrl = try {
                     if (httpSource != null) {
@@ -636,22 +680,33 @@ object RuntimeBridge {
                     Log.e("RuntimeBridge", "Error getting imageRequest URL: ${e.message}", e)
                     page.imageUrl ?: ""
                 }
-                val headersMap = try {
-                    if (httpSource != null) {
-                        val reqHeaders = httpSource.imageRequest(page).headers
-                        val map = mutableMapOf<String, String>()
-                        for (i in 0 until reqHeaders.size) {
-                            map[reqHeaders.name(i)] = reqHeaders.value(i)
-                        }
-                        map
+                
+                if (useProxy && MangaImageProxy.port > 0) {
+                    val proxyPort = MangaImageProxy.port
+                    val proxyUrl = if (imageUrl.isNotEmpty() || page.url.isNotEmpty()) {
+                        "http://127.0.0.1:$proxyPort/image?sourceId=${java.net.URLEncoder.encode(sourceId, "UTF-8")}&imageUrl=${java.net.URLEncoder.encode(imageUrl, "UTF-8")}&pageUrl=${java.net.URLEncoder.encode(page.url ?: "", "UTF-8")}&pageNumber=${page.index}"
                     } else {
+                        imageUrl
+                    }
+                    mapOf("url" to proxyUrl, "headers" to emptyMap<String, String>())
+                } else {
+                    val headersMap = try {
+                        if (httpSource != null) {
+                            val reqHeaders = httpSource.imageRequest(page).headers
+                            val map = mutableMapOf<String, String>()
+                            for (i in 0 until reqHeaders.size) {
+                                map[reqHeaders.name(i)] = reqHeaders.value(i)
+                            }
+                            map
+                        } else {
+                            emptyMap()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("RuntimeBridge", "Error getting imageRequest headers: ${e.message}", e)
                         emptyMap()
                     }
-                } catch (e: Exception) {
-                    Log.e("RuntimeBridge", "Error getting imageRequest headers: ${e.message}", e)
-                    emptyMap()
+                    mapOf("url" to imageUrl, "headers" to headersMap)
                 }
-                mapOf("url" to imageUrl, "headers" to headersMap)
             }
         }
         if (token != null) activeRequests[token] = job
@@ -944,12 +999,7 @@ object RuntimeBridge {
         val plugin = pluginInstance as? com.lagradost.cloudstream3.plugins.Plugin ?: return false
         val openSettingsFn = plugin.openSettings ?: return false
 
-        val appCompatActivity = resolveAppCompatActivity(context)
-        if (appCompatActivity == null) {
-            Log.e(TAG, "csOpenSettings: could not find AppCompatActivity for $pluginName. " +
-                "Ensure MainActivity extends AppCompatActivity.")
-            return false
-        }
+        val appCompatActivity = resolveAppCompatActivity(context) ?: AppCompatActivityWrapper(context)
 
         com.lagradost.cloudstream3.MainActivity.activity = appCompatActivity
         com.lagradost.cloudstream3.MainActivity.context = appCompatActivity

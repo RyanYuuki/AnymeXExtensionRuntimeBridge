@@ -474,6 +474,28 @@ object AniyomiSourceMethods {
                 this.name = name
             }
             val pages = source.getPageList(chapter)
+            val httpSource = source as? HttpSource
+            val overridesClient = try {
+                val networkHelper = uy.kohesive.injekt.Injekt.get<eu.kanade.tachiyomi.network.NetworkHelper>()
+                httpSource?.client !== networkHelper.client
+            } catch (e: Exception) {
+                false
+            }
+
+            val hasCustomGetImage = if (source is HttpSource) {
+                try {
+                    val method = source.javaClass.getMethod("getImage", eu.kanade.tachiyomi.source.model.Page::class.java, kotlin.coroutines.Continuation::class.java)
+                    method.declaringClass != HttpSource::class.java
+                } catch (e: Exception) {
+                    false
+                }
+            } else {
+                false
+            }
+
+            val useProxy = hasCustomGetImage || overridesClient
+            System.err.println("Source '${className}': hasCustomGetImage=$hasCustomGetImage, overridesClient=$overridesClient -> useProxy=$useProxy")
+
             return gson.toJson(pages.map { page ->
                 val imageUrl = try {
                     if (source is HttpSource) {
@@ -486,23 +508,34 @@ object AniyomiSourceMethods {
                     e.printStackTrace()
                     page.imageUrl ?: ""
                 }
-                val headersMap = try {
-                    if (source is HttpSource) {
-                        val reqHeaders = source.imageRequest(page).headers
-                        val map = mutableMapOf<String, String>()
-                        for (i in 0 until reqHeaders.size) {
-                            map[reqHeaders.name(i)] = reqHeaders.value(i)
-                        }
-                        map
+                
+                if (useProxy && MangaImageProxy.port > 0) {
+                    val proxyPort = MangaImageProxy.port
+                    val proxyUrl = if (imageUrl.isNotEmpty() || page.url.isNotEmpty()) {
+                        "http://127.0.0.1:$proxyPort/image?sourceId=${java.net.URLEncoder.encode(className, "UTF-8")}&imageUrl=${java.net.URLEncoder.encode(imageUrl, "UTF-8")}&pageUrl=${java.net.URLEncoder.encode(page.url ?: "", "UTF-8")}&pageNumber=${page.index}"
                     } else {
+                        imageUrl
+                    }
+                    mapOf("url" to proxyUrl, "headers" to emptyMap<String, String>())
+                } else {
+                    val headersMap = try {
+                        if (source is HttpSource) {
+                            val reqHeaders = source.imageRequest(page).headers
+                            val map = mutableMapOf<String, String>()
+                            for (i in 0 until reqHeaders.size) {
+                                map[reqHeaders.name(i)] = reqHeaders.value(i)
+                            }
+                            map
+                        } else {
+                            emptyMap()
+                        }
+                    } catch (e: Exception) {
+                        System.err.println("Error getting imageRequest headers: ${e.message}")
+                        e.printStackTrace()
                         emptyMap()
                     }
-                } catch (e: Exception) {
-                    System.err.println("Error getting imageRequest headers: ${e.message}")
-                    e.printStackTrace()
-                    emptyMap()
+                    mapOf("url" to imageUrl, "headers" to headersMap)
                 }
-                mapOf("url" to imageUrl, "headers" to headersMap)
             })
         } catch (e: Exception) {
             System.err.println("[ERROR] fetchPageList failed for source '$className' (url '$url')")

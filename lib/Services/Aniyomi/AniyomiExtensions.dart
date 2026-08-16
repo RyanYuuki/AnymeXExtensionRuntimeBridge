@@ -259,6 +259,9 @@ class AniyomiExtensions extends Extension {
 
         if (detectedType != targetType) continue;
 
+        final rawIconUrl = map['iconUrl'] as String? ?? '';
+        final rawApkUrl = map['apkUrl'] as String? ?? '';
+
         sources.add(
           ASource(
             id: map["sources"] != null &&
@@ -272,13 +275,15 @@ class AniyomiExtensions extends Extension {
                     ? name.substring(10)
                     : name,
             pkgName: map['pkg'],
-            apkName: map['apk'],
+            apkName: rawApkUrl.startsWith('http') ? rawApkUrl : map['apk'],
             lang: map['lang'],
             version: map['version'],
             isNsfw: map['isNsfw'] ?? false,
             itemType: detectedType,
             repo: repoUrl,
-            iconUrl: "$baseIconUrl/icon/${map['pkg']}.png",
+            iconUrl: rawIconUrl.startsWith('http')
+                ? rawIconUrl
+                : "$baseIconUrl/icon/${map['pkg']}.png",
           )..managerId = managerId,
         );
       }

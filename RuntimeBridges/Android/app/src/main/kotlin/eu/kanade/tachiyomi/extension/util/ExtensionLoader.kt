@@ -105,9 +105,12 @@ internal object ExtensionLoader {
             if (!path.isNullOrBlank()) {
                 val externalDir = File(path, "exts_manga")
                 if (externalDir.exists() && externalDir.absolutePath != privateDir.absolutePath) {
-                    privateDir.listFiles()?.forEach { it.delete() }
-                    externalDir.listFiles()?.asSequence()?.filter { it.isFile && it.extension == "apk" }?.forEach { src ->
+                    val externalApks = externalDir.listFiles()?.filter { it.isFile && it.extension == "apk" } ?: emptyList()
+                    val externalNames = externalApks.map { it.name }.toSet()
+                    privateDir.listFiles()?.forEach { if (it.name !in externalNames) it.delete() }
+                    for (src in externalApks) {
                         val dst = File(privateDir, src.name)
+                        if (dst.exists() && dst.length() == src.length()) continue
                         val tmp = File(privateDir, "${src.name}.tmp")
                         tmp.outputStream().use { out ->
                             src.inputStream().use { it.copyTo(out) }
@@ -136,13 +139,15 @@ internal object ExtensionLoader {
 
         if (allPkgs.isEmpty()) return emptyList()
 
-        // Load each extension concurrently and wait for completion
-        return runBlocking {
-            val deferred = allPkgs.map {
+        val originalPriority = Thread.currentThread().priority
+        Thread.currentThread().priority = Thread.MIN_PRIORITY
+        return try {
+            allPkgs.map {
                 val isShared = sharedPkgsSet.contains(it.packageName)
-                async { loadMangaExtension(context, it.packageName, it, isShared) }
+                loadMangaExtension(context, it.packageName, it, isShared)
             }
-            deferred.map { it.await() }
+        } finally {
+            Thread.currentThread().priority = originalPriority
         }
     }
 
