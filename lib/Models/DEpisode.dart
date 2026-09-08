@@ -5,6 +5,7 @@ class DEpisode {
   String? scanlator;
   String? thumbnail;
   String? description;
+  String? memo;
   bool? filler;
   String episodeNumber;
   Map<String, String>? sortMap;
@@ -16,6 +17,7 @@ class DEpisode {
     this.scanlator,
     this.thumbnail,
     this.description,
+    this.memo,
     this.filler,
     this.sortMap,
     required this.episodeNumber,
@@ -43,6 +45,7 @@ class DEpisode {
       scanlator: json['scanlator'],
       thumbnail: json['thumbnail'],
       description: json['description'],
+      memo: json['memo']?.toString() ?? json['description']?.toString(),
       filler: json['filler'],
       episodeNumber: episodeStr,
       sortMap: json['sortMap'] != null
@@ -65,6 +68,7 @@ class DEpisode {
             json['posterUrl'] ??
             json['extraData']?['thumbnail'],
         description: json['description'],
+        memo: json['memo']?.toString() ?? json['description']?.toString(),
         filler: json['filler'],
         episodeNumber: json['episodeNumber']?.toString() ?? json['episode']?.toString() ?? '1',
         sortMap: {
@@ -80,6 +84,7 @@ class DEpisode {
         'scanlator': scanlator,
         'thumbnail': thumbnail,
         'description': description,
+        if (memo != null) 'memo': memo,
         'filler': filler,
         'episodeNumber': episodeNumber,
         if (sortMap != null) 'sortMap': sortMap,

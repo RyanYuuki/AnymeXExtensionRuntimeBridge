@@ -59,6 +59,43 @@ class RuntimeDownloader {
     }
   }
 
+  static Future<bool> isValidZip(File file, {int minBytes = 1024 * 1024}) async {
+    try {
+      if (!await file.exists()) return false;
+      final len = await file.length();
+      if (len < minBytes) return false;
+      final raf = await file.open(mode: FileMode.read);
+      try {
+        final header = await raf.read(4);
+        if (header.length < 4 ||
+            header[0] != 0x50 ||
+            header[1] != 0x4B ||
+            header[2] != 0x03 ||
+            header[3] != 0x04) {
+          return false;
+        }
+        final searchLen = len < 65557 ? len : 65557;
+        await raf.setPosition(len - searchLen);
+        final tail = await raf.read(searchLen);
+        var hasEocd = false;
+        for (var i = tail.length - 4; i >= 0; i--) {
+          if (tail[i] == 0x50 &&
+              tail[i + 1] == 0x4B &&
+              tail[i + 2] == 0x05 &&
+              tail[i + 3] == 0x06) {
+            hasEocd = true;
+            break;
+          }
+        }
+        return hasEocd;
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> setupRuntime({String? customUrl, bool force = false, String? localApkPath}) async {
     final controller = RuntimeController.it;
     if (controller.isDownloading.value) return;
@@ -75,6 +112,15 @@ class RuntimeDownloader {
       final dex2jarPath = await _paths.dex2jarPath;
 
       final bool isDesktop = !Platform.isAndroid;
+
+      if (localApkPath == null && await bridgeFile.exists()) {
+        final isValid = await isValidZip(bridgeFile, minBytes: Platform.isAndroid ? 5 * 1024 * 1024 : 1024);
+        if (!isValid) {
+          try {
+            await bridgeFile.delete();
+          } catch (_) {}
+        }
+      }
 
       bool needsBridge =
           (localApkPath == null) && (force || !await bridgeFile.exists());
@@ -168,6 +214,11 @@ class RuntimeDownloader {
         controller.updateStatus("Ready.");
         controller.setReady(true);
       } else {
+        if (localApkPath == null && await bridgeFile.exists()) {
+          try {
+            await bridgeFile.delete();
+          } catch (_) {}
+        }
         throw Exception("Failed to load runtime bridge host.");
       }
     } catch (e) {
@@ -194,22 +245,60 @@ class RuntimeDownloader {
 
     final totalSize = response.contentLength ?? 0;
     var downloaded = 0;
-    final file = File(savePath);
-    final sink = file.openWrite();
-
-    await for (final chunk in response.stream) {
-      sink.add(chunk);
-      downloaded += chunk.length;
-      
-      if (totalSize > 0) {
-        final progress = (downloaded / totalSize).clamp(0.0, 1.0);
-        final info = "${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB / ${(totalSize / 1024 / 1024).toStringAsFixed(1)} MB";
-        controller.updateProgress(progress, info);
-      } else {
-        controller.updateProgress(0.0, "${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB downloaded");
-      }
+    final tempPath = "$savePath.tmp";
+    final tempFile = File(tempPath);
+    if (await tempFile.exists()) {
+      try {
+        await tempFile.delete();
+      } catch (_) {}
     }
-    await sink.close();
+    final sink = tempFile.openWrite();
+
+    try {
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        downloaded += chunk.length;
+        
+        if (totalSize > 0) {
+          final progress = (downloaded / totalSize).clamp(0.0, 1.0);
+          final info = "${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB / ${(totalSize / 1024 / 1024).toStringAsFixed(1)} MB";
+          controller.updateProgress(progress, info);
+        } else {
+          controller.updateProgress(0.0, "${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB downloaded");
+        }
+      }
+      await sink.flush();
+      await sink.close();
+
+      if (totalSize > 0 && downloaded < totalSize) {
+        throw Exception("Download incomplete: received $downloaded bytes of expected $totalSize bytes");
+      }
+
+      if (savePath.endsWith('.apk') || savePath.endsWith('.jar') || savePath.endsWith('.zip')) {
+        final isValid = await isValidZip(tempFile, minBytes: savePath.endsWith('.apk') ? 5 * 1024 * 1024 : 1024);
+        if (!isValid) {
+          throw Exception("Downloaded file is invalid or corrupted");
+        }
+      }
+
+      final targetFile = File(savePath);
+      if (await targetFile.exists()) {
+        try {
+          await targetFile.delete();
+        } catch (_) {}
+      }
+      await tempFile.rename(savePath);
+    } catch (e) {
+      try {
+        await sink.close();
+      } catch (_) {}
+      if (await tempFile.exists()) {
+        try {
+          await tempFile.delete();
+        } catch (_) {}
+      }
+      rethrow;
+    }
   }
 
   Future<void> _extractArchive(String archivePath, String targetDir) async {

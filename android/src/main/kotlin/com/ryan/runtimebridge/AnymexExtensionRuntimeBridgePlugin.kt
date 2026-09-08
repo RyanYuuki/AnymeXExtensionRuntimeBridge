@@ -136,18 +136,39 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             return false
         }
 
+        var currentCacheApk: File? = null
+        val originalApk = File(apkPath)
+
         return try {
             runtimeBridge = null
             bridgeClass = null
 
-            val originalApk = File(apkPath)
             if (!originalApk.exists()) {
                 Log.e(TAG, "APK does not exist at path: $apkPath")
                 return false
             }
 
+            try {
+                java.util.zip.ZipFile(originalApk).use { zip ->
+                    if (zip.getEntry("classes.dex") == null) {
+                        Log.e(TAG, "originalApk is missing classes.dex")
+                        if (originalApk.name == "anymex_runtime_host.apk") {
+                            originalApk.delete()
+                        }
+                        return false
+                    }
+                }
+            } catch (ze: Throwable) {
+                Log.e(TAG, "originalApk is not a valid zip archive: ${ze.message}")
+                if (originalApk.name == "anymex_runtime_host.apk") {
+                    originalApk.delete()
+                }
+                return false
+            }
+
             val cacheApkName = "anymex_runtime_${originalApk.length()}_${originalApk.lastModified()}.apk"
             val cacheApk = File(ctx.filesDir, cacheApkName)
+            currentCacheApk = cacheApk
 
             if (!cacheApk.exists()) {
                 Log.i(TAG, "Creating new cached APK: $cacheApkName")
@@ -166,6 +187,27 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 cacheApk.setReadOnly()
             } else {
                 Log.i(TAG, "Using existing cached APK: $cacheApkName")
+                cacheApk.setReadOnly()
+            }
+
+            try {
+                java.util.zip.ZipFile(cacheApk).use { zip ->
+                    if (zip.getEntry("classes.dex") == null) {
+                        Log.e(TAG, "cacheApk is missing classes.dex")
+                        cacheApk.delete()
+                        if (originalApk.name == "anymex_runtime_host.apk") {
+                            originalApk.delete()
+                        }
+                        return false
+                    }
+                }
+            } catch (ze: Throwable) {
+                Log.e(TAG, "cacheApk is not a valid zip archive: ${ze.message}")
+                cacheApk.delete()
+                if (originalApk.name == "anymex_runtime_host.apk") {
+                    originalApk.delete()
+                }
+                return false
             }
 
             ctx.cacheDir.listFiles()?.forEach { file ->
@@ -267,6 +309,12 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to load Runtime Host APK: ${e.message}")
             logToFlutter("ERROR", "BRIDGE_LOAD", "Failed to load Runtime Host APK: ${e.message}\n${Log.getStackTraceString(e)}")
+            try {
+                currentCacheApk?.delete()
+                if (originalApk.name == "anymex_runtime_host.apk") {
+                    originalApk.delete()
+                }
+            } catch (_: Throwable) {}
             false
         }
     }
@@ -843,7 +891,9 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
         private fun shouldDelegateToParent(name: String?): Boolean {
             if (name == null) return false
-            return name.startsWith("androidx.")
+            return name.startsWith("androidx.") ||
+                    name.startsWith("kotlin.") ||
+                    name.startsWith("kotlinx.coroutines.")
         }
 
         override fun loadClass(name: String?, resolve: Boolean): Class<*> {

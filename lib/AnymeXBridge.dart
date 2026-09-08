@@ -117,6 +117,21 @@ class AnymeXRuntimeBridge {
     final bridgeFile = File(bridgePath);
     bool exists = await bridgeFile.exists();
 
+    if (Platform.isAndroid && exists) {
+      final isValid = await RuntimeDownloader.isValidZip(bridgeFile, minBytes: 5 * 1024 * 1024);
+      if (!isValid) {
+        exists = false;
+        try {
+          await bridgeFile.delete();
+        } catch (_) {}
+        if (savedPath != null && savedPath == bridgePath) {
+          try {
+            setVal('runtime_host_path', '');
+          } catch (_) {}
+        }
+      }
+    }
+
     if (!Platform.isAndroid) {
       final jreDir = await paths.jreDir;
       exists = exists && await jreDir.exists();
@@ -124,7 +139,15 @@ class AnymeXRuntimeBridge {
 
     if (exists) {
       if (Platform.isAndroid) {
-        await loadAnymeXRuntimeHost(bridgePath);
+        final isLoaded = await loadAnymeXRuntimeHost(bridgePath);
+        if (!isLoaded && bridgePath.endsWith('anymex_runtime_host.apk')) {
+          try {
+            if (await bridgeFile.exists()) await bridgeFile.delete();
+          } catch (_) {}
+          try {
+            setVal('runtime_host_path', '');
+          } catch (_) {}
+        }
       } else {
         controller.setReady(true);
       }
@@ -137,7 +160,6 @@ class AnymeXRuntimeBridge {
 
   static Completer<bool>? _loadCompleter;
 
-  /// Standard MethodChannel call for Android only
   static Future<bool> loadAnymeXRuntimeHost(String apkPath,
       {Map<String, dynamic>? settings}) async {
     if (!Platform.isAndroid) return false;
@@ -166,12 +188,25 @@ class AnymeXRuntimeBridge {
           Logger.log('Failed to save runtime host APK path to KvStore: $e');
         }
         controller.setReady(true);
+      } else {
+        if (apkPath.endsWith('anymex_runtime_host.apk')) {
+          try {
+            final f = File(apkPath);
+            if (await f.exists()) await f.delete();
+          } catch (_) {}
+        }
       }
 
       _loadCompleter!.complete(isLoaded);
       return isLoaded;
     } catch (e) {
       print('Failed to load Runtime Host APK from $apkPath: $e');
+      if (apkPath.endsWith('anymex_runtime_host.apk')) {
+        try {
+          final f = File(apkPath);
+          if (await f.exists()) await f.delete();
+        } catch (_) {}
+      }
       _loadCompleter?.complete(false);
       return false;
     } finally {

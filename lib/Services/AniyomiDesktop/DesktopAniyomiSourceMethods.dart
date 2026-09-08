@@ -118,6 +118,7 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
         'description': episode.description,
         'episode_number': episode.episodeNumber,
         'scanlator': episode.scanlator,
+        'memo': episode.memo ?? episode.description,
       },
       if (parameters != null) 'parameters': parameters.toJson(),
     });

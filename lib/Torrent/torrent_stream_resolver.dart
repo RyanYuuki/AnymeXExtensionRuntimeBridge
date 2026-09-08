@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
@@ -131,8 +132,12 @@ class TorrentStreamResolver {
         return false;
       }
 
-      customLibraryPath = path;
-      print('[TorrentResolver] Set customLibraryPath to: $customLibraryPath');
+      try {
+        DynamicLibrary.open(path);
+        print('[TorrentResolver] Loaded native library at: $path');
+      } catch (e) {
+        print('[TorrentResolver] Failed to open native library: $e');
+      }
       _lastEngineError = null;
       return true;
     } catch (e) {
