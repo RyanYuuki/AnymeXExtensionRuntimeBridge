@@ -89,7 +89,7 @@ class LegadoExtensions extends Extension {
       final repo = Repo(
         url: repoUrl,
         name: repoName ?? 'Legado Repo',
-        iconUrl: null,
+        iconUrl: 'https://raw.githubusercontent.com/gedoor/legado/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
         managerId: id,
         extensions: parsed.length.toString(),
       );

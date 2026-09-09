@@ -86,13 +86,38 @@ class LegadoSource extends Source {
 
     final hasExplore = json['exploreUrl'] != null && json['exploreUrl'].toString().trim().isNotEmpty;
 
+    String? resolvedIcon;
+    final rawIcon = (json['iconUrl'] ?? json['bookSourceIcon'])?.toString().trim();
+    if (rawIcon != null && rawIcon.isNotEmpty) {
+      if (rawIcon.startsWith('http://') || rawIcon.startsWith('https://')) {
+        resolvedIcon = rawIcon;
+      } else if (rawIcon.startsWith('//')) {
+        resolvedIcon = 'https:$rawIcon';
+      } else if (rawUrl.isNotEmpty) {
+        try {
+          resolvedIcon = Uri.parse(rawUrl).resolve(rawIcon).toString();
+        } catch (_) {}
+      }
+    }
+
+    if (resolvedIcon == null || resolvedIcon.isEmpty) {
+      if (rawUrl.isNotEmpty) {
+        try {
+          final host = Uri.tryParse(rawUrl)?.host;
+          if (host != null && host.isNotEmpty) {
+            resolvedIcon = 'https://www.google.com/s2/favicons?domain=$host&sz=128';
+          }
+        } catch (_) {}
+      }
+    }
+
     return LegadoSource(
       id: sourceId,
       name: rawName,
       baseUrl: rawUrl,
       lang: rawGroup.isNotEmpty ? rawGroup : 'all',
       isNsfw: false,
-      iconUrl: json['iconUrl'] ?? json['bookSourceIcon'],
+      iconUrl: resolvedIcon,
       version: json['version']?.toString() ?? '1.0.0',
       versionLast: json['versionLast']?.toString() ?? '1.0.0',
       itemType: ItemType.novel,
