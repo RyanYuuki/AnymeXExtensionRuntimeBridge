@@ -9,9 +9,7 @@ import 'Services/CloudStream/CloudStreamExtensions.dart';
 import 'Services/Mangayomi/MangayomiExtensions.dart';
 import 'Services/Sora/Models/Source.dart';
 import 'Services/Sora/SoraExtensions.dart';
-import 'anymex_extension_runtime_bridge.dart';
-
-import 'Settings/KvStore.dart';
+import 'anymex_extension_runtime_bridge.dart' hide ExtensionManager, SourceExecution;
 
 class ExtensionManager extends GetxController {
   final managers = <Extension>[].obs;
@@ -47,6 +45,7 @@ class ExtensionManager extends GetxController {
     await _registerAndInitializeManagers([
       SoraExtensions(),
       MangayomiExtensions(),
+      PaperbackExtensions(),
     ]);
 
     await onRuntimeBridgeInitialization();
