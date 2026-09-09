@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'Services/Aniyomi/AniyomiExtensions.dart';
 import 'Services/Aniyomi/Models/Source.dart';
 import 'Services/CloudStream/CloudStreamExtensions.dart';
+import 'Services/Legado/LegadoExtensions.dart';
 import 'Services/Mangayomi/MangayomiExtensions.dart';
 import 'Services/Sora/Models/Source.dart';
 import 'Services/Sora/SoraExtensions.dart';
@@ -47,6 +48,7 @@ class ExtensionManager extends GetxController {
     await _registerAndInitializeManagers([
       SoraExtensions(),
       MangayomiExtensions(),
+      LegadoExtensions(),
     ]);
 
     await onRuntimeBridgeInitialization();
