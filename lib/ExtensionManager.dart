@@ -9,9 +9,7 @@ import 'Services/CloudStream/CloudStreamExtensions.dart';
 import 'Services/Mangayomi/MangayomiExtensions.dart';
 import 'Services/Sora/Models/Source.dart';
 import 'Services/Sora/SoraExtensions.dart';
-import 'anymex_extension_runtime_bridge.dart';
-
-import 'Settings/KvStore.dart';
+import 'anymex_extension_runtime_bridge.dart' hide ExtensionManager, SourceExecution;
 
 class ExtensionManager extends GetxController {
   final managers = <Extension>[].obs;
@@ -47,6 +45,7 @@ class ExtensionManager extends GetxController {
     await _registerAndInitializeManagers([
       SoraExtensions(),
       MangayomiExtensions(),
+      PaperbackExtensions(),
     ]);
 
     await onRuntimeBridgeInitialization();
@@ -340,6 +339,7 @@ extension SourceExecution on Source {
           'https://static.everythingmoe.com/icons/cloudstream.png',
         KotatsuSource _ =>
           'https://raw.githubusercontent.com/KotatsuApp/Kotatsu/devel/metadata/en-US/icon.png',
+        PaperbackSource _ => 'https://paperback.moe/pb-logo.png',
         _ => 'mangayomi',
       };
 
@@ -366,6 +366,8 @@ Extension getSourceManager(Source source) {
   if (source is KotatsuSource) {
     return em.findById('kotatsu') ?? em.findById('kotatsu-desktop')!;
   }
+  if (source is PaperbackSource) return em.findById('paperback')!;
 
   return em.findById('mangayomi')!;
 }
+

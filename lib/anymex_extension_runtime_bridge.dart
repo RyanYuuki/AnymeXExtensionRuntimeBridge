@@ -31,4 +31,7 @@ export './Services/KotatsuDesktop/DesktopKotatsuExtensions.dart';
 export './Services/KotatsuDesktop/DesktopKotatsuSourceMethods.dart';
 export './Torrent/torrent_stream_resolver.dart';
 export './Torrent/torrent_url_detector.dart';
+export './Services/Paperback/Models/PaperbackSource.dart';
+export './Services/Paperback/PaperbackExtensions.dart';
+export './Services/Paperback/PaperbackSourceMethods.dart';
 
