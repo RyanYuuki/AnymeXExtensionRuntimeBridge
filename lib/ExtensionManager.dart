@@ -343,7 +343,7 @@ extension SourceExecution on Source {
         KotatsuSource _ =>
           'https://raw.githubusercontent.com/KotatsuApp/Kotatsu/devel/metadata/en-US/icon.png',
         LegadoSource _ =>
-          'https://raw.githubusercontent.com/gedoor/legado/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
+          'https://raw.githubusercontent.com/gedoor/gedoor.github.io/master/static/img/logo.png',
         _ => 'mangayomi',
       };
 
