@@ -339,7 +339,7 @@ extension SourceExecution on Source {
           'https://static.everythingmoe.com/icons/cloudstream.png',
         KotatsuSource _ =>
           'https://raw.githubusercontent.com/KotatsuApp/Kotatsu/devel/metadata/en-US/icon.png',
-        PaperbackSource _ => 'https://paperback.moe/pb-logo.svg',
+        PaperbackSource _ => 'https://paperback.moe/pb-logo.png',
         _ => 'mangayomi',
       };
 
