@@ -339,6 +339,7 @@ extension SourceExecution on Source {
           'https://static.everythingmoe.com/icons/cloudstream.png',
         KotatsuSource _ =>
           'https://raw.githubusercontent.com/KotatsuApp/Kotatsu/devel/metadata/en-US/icon.png',
+        PaperbackSource _ => 'https://paperback.moe/pb-logo.svg',
         _ => 'mangayomi',
       };
 
@@ -365,6 +366,8 @@ Extension getSourceManager(Source source) {
   if (source is KotatsuSource) {
     return em.findById('kotatsu') ?? em.findById('kotatsu-desktop')!;
   }
+  if (source is PaperbackSource) return em.findById('paperback')!;
 
   return em.findById('mangayomi')!;
 }
+

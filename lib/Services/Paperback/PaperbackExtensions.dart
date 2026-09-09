@@ -100,7 +100,15 @@ class PaperbackExtensions extends Extension {
         if (decoded['repository'] is Map) {
           final rep = decoded['repository'] as Map;
           repoName = rep['name']?.toString();
-          repoIcon = rep['icon']?.toString();
+          final rawRepoIcon = rep['icon']?.toString()?.trim();
+          if (rawRepoIcon != null && rawRepoIcon.isNotEmpty) {
+            if (rawRepoIcon.startsWith('http://') || rawRepoIcon.startsWith('https://')) {
+              repoIcon = rawRepoIcon;
+            } else {
+              final clean = rawRepoIcon.startsWith('/') ? rawRepoIcon.substring(1) : rawRepoIcon;
+              repoIcon = '$baseUrl/$clean';
+            }
+          }
         }
 
         final sources = decoded['sources'];
@@ -210,11 +218,13 @@ class PaperbackExtensions extends Extension {
             final isNsfw = rating == 'ADULT' || rating == 'MATURE';
 
             String iconUrl = '';
-            final iconField = item['icon']?.toString() ?? 'icon.png';
+            final iconField = item['icon']?.toString().trim() ?? 'icon.png';
             if (iconField.startsWith('http://') || iconField.startsWith('https://')) {
               iconUrl = iconField;
             } else {
-              iconUrl = '$baseUrl/$sourceId/$iconField';
+              final cleanIcon = iconField.startsWith('/') ? iconField.substring(1) : iconField;
+              final pathWithStatic = cleanIcon.startsWith('static/') ? cleanIcon : 'static/$cleanIcon';
+              iconUrl = '$baseUrl/$sourceId/$pathWithStatic';
             }
 
             final scriptUrl = '$baseUrl/$sourceId/index.js';
