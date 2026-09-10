@@ -31,4 +31,8 @@ export './Services/KotatsuDesktop/DesktopKotatsuExtensions.dart';
 export './Services/KotatsuDesktop/DesktopKotatsuSourceMethods.dart';
 export './Torrent/torrent_stream_resolver.dart';
 export './Torrent/torrent_url_detector.dart';
+export './Services/Legado/Models/LegadoSource.dart';
+export './Services/Legado/LegadoExtensions.dart';
+export './Services/Legado/LegadoSourceMethods.dart';
+export './Services/Legado/RuleEngine/LegadoRuleEngine.dart';
 

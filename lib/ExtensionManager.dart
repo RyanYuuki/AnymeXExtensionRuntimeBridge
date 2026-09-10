@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'Services/Aniyomi/AniyomiExtensions.dart';
 import 'Services/Aniyomi/Models/Source.dart';
 import 'Services/CloudStream/CloudStreamExtensions.dart';
+import 'Services/Legado/LegadoExtensions.dart';
 import 'Services/Mangayomi/MangayomiExtensions.dart';
 import 'Services/Sora/Models/Source.dart';
 import 'Services/Sora/SoraExtensions.dart';
@@ -47,6 +48,7 @@ class ExtensionManager extends GetxController {
     await _registerAndInitializeManagers([
       SoraExtensions(),
       MangayomiExtensions(),
+      LegadoExtensions(),
     ]);
 
     await onRuntimeBridgeInitialization();
@@ -340,6 +342,8 @@ extension SourceExecution on Source {
           'https://static.everythingmoe.com/icons/cloudstream.png',
         KotatsuSource _ =>
           'https://raw.githubusercontent.com/KotatsuApp/Kotatsu/devel/metadata/en-US/icon.png',
+        LegadoSource _ =>
+          'https://raw.githubusercontent.com/gedoor/gedoor.github.io/master/static/img/logo.png',
         _ => 'mangayomi',
       };
 
@@ -366,6 +370,8 @@ Extension getSourceManager(Source source) {
   if (source is KotatsuSource) {
     return em.findById('kotatsu') ?? em.findById('kotatsu-desktop')!;
   }
+  if (source is LegadoSource) return em.findById('legado')!;
 
   return em.findById('mangayomi')!;
 }
+
