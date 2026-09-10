@@ -892,8 +892,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         private fun shouldDelegateToParent(name: String?): Boolean {
             if (name == null) return false
             return name.startsWith("androidx.") ||
-                    name.startsWith("kotlin.") ||
-                    name.startsWith("kotlinx.coroutines.")
+                    name.startsWith("kotlin.")
         }
 
         override fun loadClass(name: String?, resolve: Boolean): Class<*> {
