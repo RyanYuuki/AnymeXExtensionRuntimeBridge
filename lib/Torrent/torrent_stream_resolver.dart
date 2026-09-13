@@ -133,10 +133,13 @@ class TorrentStreamResolver {
       }
 
       try {
+        customLibraryPath = path;
         DynamicLibrary.open(path);
         print('[TorrentResolver] Loaded native library at: $path');
       } catch (e) {
         print('[TorrentResolver] Failed to open native library: $e');
+        _lastEngineError = 'Failed to open native library: $e';
+        return false;
       }
       _lastEngineError = null;
       return true;
@@ -150,6 +153,7 @@ class TorrentStreamResolver {
   static Future<bool> initialize() async {
     if (_isInitialized) return true;
 
+    String? soPath;
     if (Platform.isAndroid) {
       final loaded = await loadEngineLibrary();
       if (!loaded) {
@@ -157,6 +161,8 @@ class TorrentStreamResolver {
             '[TorrentResolver] Cannot initialize: ${_lastEngineError ?? 'native library not loaded.'}');
         return false;
       }
+      soPath = await getEngineSoPath();
+      customLibraryPath = soPath;
     }
 
     Logger.log('[TorrentResolver] Initializing libtorrent engine...');
@@ -166,6 +172,7 @@ class TorrentStreamResolver {
       await LibtorrentFlutter.init(
         defaultSavePath: downloadPath,
         fetchTrackers: true,
+        customLibPath: soPath,
       );
 
       _isInitialized = true;

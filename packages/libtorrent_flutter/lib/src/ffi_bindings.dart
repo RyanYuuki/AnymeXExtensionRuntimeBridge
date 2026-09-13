@@ -236,11 +236,10 @@ String readCharArray(Array<Char> arr, int maxLen) {
 
 String? customLibraryPath;
 
-DynamicLibrary _openNativeLib() {
-  if (customLibraryPath != null) {
-    try {
-      return DynamicLibrary.open(customLibraryPath!);
-    } catch (_) {}
+DynamicLibrary _openNativeLib([String? path]) {
+  final targetPath = path ?? customLibraryPath;
+  if (targetPath != null) {
+    return DynamicLibrary.open(targetPath);
   }
   const libName = 'libtorrent_flutter';
   if (Platform.isWindows) {
@@ -321,5 +320,5 @@ class TorrentBridgeBindings {
     version             = _lib.lookup<NativeFunction<_VersionN>>('lt_version').asFunction<LtVersion>();
   }
 
-  factory TorrentBridgeBindings.open() => TorrentBridgeBindings(_openNativeLib());
+  factory TorrentBridgeBindings.open([String? path]) => TorrentBridgeBindings(_openNativeLib(path));
 }

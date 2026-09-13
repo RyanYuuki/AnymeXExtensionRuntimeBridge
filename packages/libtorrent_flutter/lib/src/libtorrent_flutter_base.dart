@@ -153,16 +153,19 @@ class LibtorrentFlutter {
     Duration pollInterval = const Duration(milliseconds: 600),
     bool fetchTrackers = true,
     String? defaultSavePath,
+    String? customLibPath,
   }) async {
     if (_instance != null) return;
+    if (customLibPath != null) {
+      customLibraryPath = customLibPath;
+    }
     final engine = LibtorrentFlutter._();
 
-    // Fetch best trackers in background (fire & forget)
     if (fetchTrackers) {
       TrackerManager.fetchBestTrackers();
     }
 
-    final lib = TorrentBridgeBindings.open();
+    final lib = TorrentBridgeBindings.open(customLibPath);
     engine._b = lib;
 
     final iface = listenInterface.toNativeUtf8();
