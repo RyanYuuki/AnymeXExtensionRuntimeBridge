@@ -172,7 +172,6 @@ class TorrentStreamResolver {
       await LibtorrentFlutter.init(
         defaultSavePath: downloadPath,
         fetchTrackers: true,
-        customLibPath: soPath,
       );
 
       _isInitialized = true;
