@@ -8,6 +8,8 @@ import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.util.Timer
+import java.util.TimerTask
 import kotlin.concurrent.thread
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -17,35 +19,88 @@ object MangaImageProxy {
     var port: Int = 0
         private set
 
-    fun start() {
-        if (serverSocket != null) return
-        thread(isDaemon = true, name = "MangaImageProxy") {
-            try {
-                val socket = ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1"))
-                serverSocket = socket
-                port = socket.localPort
-                System.err.println("[INFO] MangaImageProxy started on port $port")
-                while (!socket.isClosed) {
-                    val client = socket.accept()
-                    thread(isDaemon = true) {
-                        handleClient(client)
-                    }
+    private const val INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000L
+    private var inactivityTimer: Timer? = null
+    private var inactivityTask: TimerTask? = null
+
+    @Synchronized
+    private fun resetInactivityTimer() {
+        inactivityTask?.cancel()
+        if (inactivityTimer == null) {
+            inactivityTimer = Timer("MangaImageProxy-Inactivity", true)
+        }
+        val task = object : TimerTask() {
+            override fun run() {
+                synchronized(MangaImageProxy) {
+                    System.err.println("[INFO] MangaImageProxy inactive for 10 minutes, shutting down server")
+                    stop()
                 }
-            } catch (e: Exception) {
-                System.err.println("[ERROR] MangaImageProxy server error: ${e.message}")
             }
         }
+        inactivityTask = task
+        try {
+            inactivityTimer?.schedule(task, INACTIVITY_TIMEOUT_MS)
+        } catch (_: Exception) {}
     }
 
+    @Synchronized
+    fun start(): Int {
+        val currentSocket = serverSocket
+        if (currentSocket != null && !currentSocket.isClosed) {
+            resetInactivityTimer()
+            return port
+        }
+        try {
+            val socket = ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1"))
+            serverSocket = socket
+            port = socket.localPort
+            System.err.println("[INFO] MangaImageProxy started on port $port")
+            resetInactivityTimer()
+            thread(isDaemon = true, name = "MangaImageProxy") {
+                try {
+                    while (!socket.isClosed) {
+                        val client = try {
+                            socket.accept()
+                        } catch (_: Exception) {
+                            break
+                        }
+                        thread(isDaemon = true) {
+                            handleClient(client)
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (!socket.isClosed) {
+                        System.err.println("[ERROR] MangaImageProxy server error: ${e.message}")
+                    }
+                } finally {
+                    synchronized(MangaImageProxy) {
+                        if (serverSocket === socket) {
+                            stop()
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            System.err.println("[ERROR] Failed to start MangaImageProxy: ${e.message}")
+        }
+        return port
+    }
+
+    @Synchronized
     fun stop() {
+        inactivityTask?.cancel()
+        inactivityTask = null
+        inactivityTimer?.cancel()
+        inactivityTimer = null
         try {
             serverSocket?.close()
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
         serverSocket = null
         port = 0
     }
 
     private fun handleClient(client: Socket) {
+        resetInactivityTimer()
         try {
             val reader = client.getInputStream().bufferedReader()
             val firstLine = reader.readLine() ?: return

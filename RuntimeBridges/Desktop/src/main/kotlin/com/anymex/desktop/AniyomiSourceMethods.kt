@@ -21,8 +21,14 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.source.model.Page
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonPrimitive
+import java.util.concurrent.ConcurrentHashMap
 import eu.kanade.tachiyomi.network.normalizeUrl
 object AniyomiSourceMethods {
+    val chapterMemoCache = ConcurrentHashMap<String, JsonObject>()
     private val gson = Gson()
     
     private data class PrefHandlers(
@@ -136,6 +142,11 @@ object AniyomiSourceMethods {
             "episode_number" to chNum, 
             "scanlator" to safe({ scanlator }, "")
         )
+        val memoStr = safe({ memo?.toString() }, null)
+        if (!memoStr.isNullOrBlank()) {
+            map["memo"] = memoStr
+            map["description"] = memoStr
+        }
         if (seasonNum != null) {
             map["season"] = seasonNum
         }
@@ -407,6 +418,14 @@ object AniyomiSourceMethods {
                     }
                 }
                 map.putAll(details!!.toDetailsMap())
+                chapters!!.forEach { ch ->
+                    safe({ ch.memo }, null)?.let { m ->
+                        val u = safe({ ch.url }, "")
+                        val n = safe({ ch.name }, "")
+                        if (u.isNotBlank()) chapterMemoCache[u] = m
+                        if (n.isNotBlank()) chapterMemoCache[n] = m
+                    }
+                }
                 map["episodes"] = chapters!!.map { it.toDetailsMap() }
             }
             gson.toJson(map)
@@ -462,7 +481,7 @@ object AniyomiSourceMethods {
         }
     }
 
-    suspend fun fetchPageList(className: String, url: String, name: String): String {
+    suspend fun fetchPageList(className: String, url: String, name: String, rawMemo: String? = null): String {
         return try {
             val source = DesktopExtensionLoader.loadedMangaSources[className]
                 ?: run {
@@ -472,8 +491,34 @@ object AniyomiSourceMethods {
             val chapter = SChapter.create().apply {
                 this.url = url
                 this.name = name
+                var restoredMemo: JsonObject? = null
+                if (!rawMemo.isNullOrBlank()) {
+                    try {
+                        restoredMemo = Json.parseToJsonElement(rawMemo) as? JsonObject
+                    } catch (_: Exception) {}
+                }
+                if (restoredMemo == null) {
+                    restoredMemo = chapterMemoCache[url] ?: chapterMemoCache[name]
+                }
+                this.memo = restoredMemo
             }
-            val pages = source.getPageList(chapter)
+            val pages = try {
+                source.getPageList(chapter)
+            } catch (e: Exception) {
+                if (e.message?.contains("Refresh Chapter List", ignoreCase = true) == true && chapter.memo == null) {
+                    val slug = url.removePrefix("/").substringBefore("/").takeIf { it.isNotBlank() }
+                    if (slug != null) {
+                        chapter.memo = buildJsonObject {
+                            put("mangaSlug", JsonPrimitive(slug))
+                        }
+                        source.getPageList(chapter)
+                    } else {
+                        throw e
+                    }
+                } else {
+                    throw e
+                }
+            }
             val httpSource = source as? HttpSource
             val overridesClient = try {
                 val networkHelper = uy.kohesive.injekt.Injekt.get<eu.kanade.tachiyomi.network.NetworkHelper>()
@@ -495,6 +540,7 @@ object AniyomiSourceMethods {
 
             val useProxy = hasCustomGetImage || overridesClient
             System.err.println("Source '${className}': hasCustomGetImage=$hasCustomGetImage, overridesClient=$overridesClient -> useProxy=$useProxy")
+            val proxyPort = if (useProxy) MangaImageProxy.start() else 0
 
             return gson.toJson(pages.map { page ->
                 val imageUrl = try {
@@ -509,8 +555,7 @@ object AniyomiSourceMethods {
                     page.imageUrl ?: ""
                 }
                 
-                if (useProxy && MangaImageProxy.port > 0) {
-                    val proxyPort = MangaImageProxy.port
+                if (useProxy && proxyPort > 0) {
                     val proxyUrl = if (imageUrl.isNotEmpty() || page.url.isNotEmpty()) {
                         "http://127.0.0.1:$proxyPort/image?sourceId=${java.net.URLEncoder.encode(className, "UTF-8")}&imageUrl=${java.net.URLEncoder.encode(imageUrl, "UTF-8")}&pageUrl=${java.net.URLEncoder.encode(page.url ?: "", "UTF-8")}&pageNumber=${page.index}"
                     } else {
@@ -826,6 +871,124 @@ object AniyomiSourceMethods {
         System.err.println("Desktop Runtime initialized!")
     }
 
+    private fun registerLoadedSource(
+        instance: Any,
+        extractedVersion: String,
+        extractedPkgName: String,
+        className: String,
+        classLoader: java.net.URLClassLoader,
+        jsonArray: com.google.gson.JsonArray
+    ) {
+        when (instance) {
+            is eu.kanade.tachiyomi.animesource.AnimeSource -> {
+                val extObj = com.google.gson.JsonObject().apply {
+                    addProperty("id", instance.id.toString())
+                    addProperty("name", instance.name)
+                    addProperty("lang", instance.lang)
+                    addProperty("type", "anime")
+                    val baseUrl = (instance as? eu.kanade.tachiyomi.animesource.online.AnimeHttpSource)?.baseUrl ?: ""
+                    addProperty("baseUrl", baseUrl)
+                    addProperty("isNsfw", false)
+                    addProperty("version", extractedVersion)
+                    addProperty("pkgName", extractedPkgName)
+                    addProperty("className", className)
+                    addProperty("itemType", 1)
+                    addProperty("hasUpdate", false)
+                    addProperty("isObsolete", false)
+                    addProperty("isShared", false)
+                    addProperty("supportsLatest", (instance as? eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)?.supportsLatest ?: false)
+                    addProperty("supportsPopular", instance is eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)
+                }
+                jsonArray.add(extObj)
+                DesktopExtensionLoader.loadedAnimeSources[instance.id.toString()] = instance
+                classLoaders[instance.id.toString()] = classLoader
+                System.err.println("    [OK] AnimeSource: ${instance.name} (${instance.lang})")
+            }
+            is eu.kanade.tachiyomi.animesource.AnimeSourceFactory -> {
+                try {
+                    instance.createSources().forEach { src ->
+                        val extObj = com.google.gson.JsonObject().apply {
+                            addProperty("id", src.id.toString())
+                            addProperty("name", src.name)
+                            addProperty("lang", src.lang)
+                            addProperty("type", "anime")
+                            val baseUrl = (src as? eu.kanade.tachiyomi.animesource.online.AnimeHttpSource)?.baseUrl ?: ""
+                            addProperty("baseUrl", baseUrl)
+                            addProperty("isNsfw", false)
+                            addProperty("version", extractedVersion)
+                            addProperty("pkgName", extractedPkgName)
+                            addProperty("className", src.javaClass.name)
+                            addProperty("itemType", 1)
+                            addProperty("hasUpdate", false)
+                            addProperty("isObsolete", false)
+                            addProperty("isShared", false)
+                            addProperty("supportsLatest", (src as? eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)?.supportsLatest ?: false)
+                            addProperty("supportsPopular", src is eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)
+                        }
+                        jsonArray.add(extObj)
+                        DesktopExtensionLoader.loadedAnimeSources[src.id.toString()] = src
+                        classLoaders[src.id.toString()] = classLoader
+                        System.err.println("    [OK] AnimeSource (factory): ${src.name} (${src.lang})")
+                    }
+                } catch (e: Throwable) {
+                    System.err.println("    [FACTORY ERROR] AnimeSourceFactory.createSources() failed: ${e.message}")
+                }
+            }
+            is eu.kanade.tachiyomi.source.MangaSource -> {
+                val extObj = com.google.gson.JsonObject().apply {
+                    addProperty("id", instance.id.toString())
+                    addProperty("name", instance.name)
+                    addProperty("lang", instance.lang)
+                    addProperty("type", "manga")
+                    val baseUrl = (instance as? eu.kanade.tachiyomi.source.online.HttpSource)?.baseUrl ?: ""
+                    addProperty("baseUrl", baseUrl)
+                    addProperty("isNsfw", false)
+                    addProperty("version", extractedVersion)
+                    addProperty("pkgName", extractedPkgName)
+                    addProperty("className", className)
+                    addProperty("itemType", 0)
+                    addProperty("hasUpdate", false)
+                    addProperty("isObsolete", false)
+                    addProperty("supportsLatest", (instance as? eu.kanade.tachiyomi.source.CatalogueSource)?.supportsLatest ?: false)
+                    addProperty("supportsPopular", instance is eu.kanade.tachiyomi.source.CatalogueSource)
+                }
+                jsonArray.add(extObj)
+                DesktopExtensionLoader.loadedMangaSources[instance.id.toString()] = instance
+                classLoaders[instance.id.toString()] = classLoader
+                System.err.println("    [OK] MangaSource: ${instance.name} (${instance.lang})")
+            }
+            is eu.kanade.tachiyomi.source.SourceFactory -> {
+                try {
+                    instance.createSources().filterIsInstance<eu.kanade.tachiyomi.source.MangaSource>().forEach { src ->
+                        val extObj = com.google.gson.JsonObject().apply {
+                            addProperty("id", src.id.toString())
+                            addProperty("name", src.name)
+                            addProperty("lang", src.lang)
+                            addProperty("type", "manga")
+                            val baseUrl = (src as? eu.kanade.tachiyomi.source.online.HttpSource)?.baseUrl ?: ""
+                            addProperty("baseUrl", baseUrl)
+                            addProperty("isNsfw", false)
+                            addProperty("version", extractedVersion)
+                            addProperty("pkgName", extractedPkgName)
+                            addProperty("className", src.javaClass.name)
+                            addProperty("itemType", 0)
+                            addProperty("hasUpdate", false)
+                            addProperty("isObsolete", false)
+                            addProperty("supportsLatest", (src as? eu.kanade.tachiyomi.source.CatalogueSource)?.supportsLatest ?: false)
+                            addProperty("supportsPopular", src is eu.kanade.tachiyomi.source.CatalogueSource)
+                        }
+                        jsonArray.add(extObj)
+                        DesktopExtensionLoader.loadedMangaSources[src.id.toString()] = src
+                        classLoaders[src.id.toString()] = classLoader
+                        System.err.println("    [OK] MangaSource (factory): ${src.name} (${src.lang})")
+                    }
+                } catch (e: Throwable) {
+                    System.err.println("    [FACTORY ERROR] SourceFactory.createSources() failed: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun loadExtensions(folderPath: String): String {
         initialize()
         val folder = java.io.File(folderPath)
@@ -851,213 +1014,113 @@ object AniyomiSourceMethods {
         folder.listFiles { file -> file.extension == "jar" }?.forEach { jar ->
             System.err.println("Processing JAR: ${jar.name}")
             try {
+                if (!JarFixer.isFixed(jar)) {
+                    try {
+                        JarFixer.fixStackmapFrames(jar)
+                    } catch (e: Throwable) {
+                        System.err.println("    [FIX ERROR] JarFixer failed on ${jar.name}: ${e.message}")
+                    }
+                }
+
                 val tempJar = java.io.File.createTempFile("ext_${jar.nameWithoutExtension}_", ".jar")
                 tempJar.deleteOnExit()
                 jar.copyTo(tempJar, overwrite = true)
 
                 val classLoader = com.anymex.desktop.ChildFirstURLClassLoader(arrayOf(tempJar.toURI().toURL()), DesktopExtensionLoader::class.java.classLoader)
-                var extractedVersion = "1.0.0"
-                var extractedPkgName = jar.nameWithoutExtension
 
-                val zipFile1 = java.util.zip.ZipFile(jar)
-                for (entry in zipFile1.entries()) {
-                    if (entry.name.endsWith("BuildConfig.class")) {
-                        val className = entry.name.replace('/', '.').replace('\\', '.').removeSuffix(".class")
-                        try {
-                            val clazz = Class.forName(className, false, classLoader)
-                            try { extractedVersion = clazz.getField("VERSION_NAME").get(null) as String } catch(_: Throwable) {}
-                            try { 
-                                val appId = clazz.getField("APPLICATION_ID").get(null) as String 
-                                if (appId.isNotEmpty()) {
-                                    extractedPkgName = appId
-                                }
-                            } catch(_: Throwable) {}
-                        } catch (e: Throwable) {
-                            System.err.println("    [BUILDCONFIG] Could not parse BuildConfig: ${e.javaClass.simpleName}: ${e.message}")
+                var extMeta: ExtensionMeta? = null
+                try {
+                    java.util.jar.JarFile(tempJar).use { jf ->
+                        val entry = jf.getJarEntry("META-INF/anymex-extension.json")
+                            ?: jf.getJarEntry("META-INF/miwayomi-extension.json")
+                        if (entry != null) {
+                            val text = jf.getInputStream(entry).bufferedReader().use { it.readText() }
+                            extMeta = gson.fromJson(text, ExtensionMeta::class.java)
                         }
-                        break
                     }
-                }
-                zipFile1.close()
+                } catch (_: Throwable) {}
 
-                val zipFile = java.util.zip.ZipFile(jar)
-                val entries = zipFile.entries()
-                
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    if (entry.name.endsWith(".class") && !entry.name.contains("$")) {
-                        val className = entry.name.replace('/', '.').replace('\\', '.').removeSuffix(".class")
-
-                        if (className.startsWith("kotlin.") || className.startsWith("kotlinx.") || className.startsWith("android.") || className.startsWith("androidx.")) continue
-                        if (className.contains(".dto.")) continue
-
+                if (extMeta != null) {
+                    val meta = extMeta!!
+                    val classesToLoad = meta.sourceClasses + listOfNotNull(meta.factoryClass)
+                    for (cName in classesToLoad) {
+                        val fqcn = PackageTools.resolveClassName(cName, meta.pkgName)
                         try {
-                            val clazz = try {
-                                Class.forName(className, false, classLoader)
+                            val clazz = Class.forName(fqcn, false, classLoader)
+                            val instance = instantiateSource(clazz)
+                            if (instance != null) {
+                                registerLoadedSource(instance, meta.versionName, meta.pkgName, fqcn, classLoader, jsonArray)
+                            }
+                        } catch (e: Throwable) {
+                            System.err.println("    [LOAD ERROR] $fqcn: ${e.message}")
+                        }
+                    }
+                } else {
+                    var extractedVersion = "1.0.0"
+                    var extractedPkgName = jar.nameWithoutExtension
+
+                    val zipFile1 = java.util.zip.ZipFile(jar)
+                    for (entry in zipFile1.entries()) {
+                        if (entry.name.endsWith("BuildConfig.class")) {
+                            val className = entry.name.replace('/', '.').replace('\\', '.').removeSuffix(".class")
+                            try {
+                                val clazz = Class.forName(className, false, classLoader)
+                                try { extractedVersion = clazz.getField("VERSION_NAME").get(null) as String } catch(_: Throwable) {}
+                                try { 
+                                    val appId = clazz.getField("APPLICATION_ID").get(null) as String 
+                                    if (appId.isNotEmpty()) {
+                                        extractedPkgName = appId
+                                    }
+                                } catch(_: Throwable) {}
                             } catch (e: Throwable) {
-                                System.err.println("    [CLASS LOAD FAIL] $className: ${e.javaClass.simpleName}: ${e.message}")
-                                e.printStackTrace(System.err)
-                                continue
+                                System.err.println("    [BUILDCONFIG] Could not parse BuildConfig: ${e.javaClass.simpleName}: ${e.message}")
                             }
-
-                            if (clazz.isInterface || java.lang.reflect.Modifier.isAbstract(clazz.modifiers)) continue
-
-                            val isAnimeType = try { isAssignableByClassName(clazz, animeTargetNames) } catch (e: Throwable) {
-                                System.err.println("    [ASSIGN FAIL] anime check for $className: ${e.javaClass.simpleName}: ${e.message}")
-                                false
-                            }
-                            val isAnimeFactory = if (!isAnimeType) try { isAssignableByClassName(clazz, listOf("eu.kanade.tachiyomi.animesource.AnimeSourceFactory")) } catch (e: Throwable) {
-                                System.err.println("    [ASSIGN FAIL] AnimeFactory check for $className: ${e.javaClass.simpleName}: ${e.message}")
-                                false
-                            } else false
-                            val isMangaType = if (!isAnimeType && !isAnimeFactory) try { isAssignableByClassName(clazz, mangaTargetNames) } catch (e: Throwable) {
-                                System.err.println("    [ASSIGN FAIL] manga check for $className: ${e.javaClass.simpleName}: ${e.message}")
-                                false
-                            } else false
-                            val isMangaFactory = if (!isAnimeType && !isAnimeFactory && !isMangaType) try { isAssignableByClassName(clazz, listOf("eu.kanade.tachiyomi.source.SourceFactory")) } catch (e: Throwable) {
-                                System.err.println("    [ASSIGN FAIL] MangaFactory check for $className: ${e.javaClass.simpleName}: ${e.message}")
-                                false
-                            } else false
-
-                            if (isAnimeType) {
-                                val instance = try { instantiateSource(clazz) as? eu.kanade.tachiyomi.animesource.AnimeSource } catch (e: Throwable) {
-                                    System.err.println("    [INSTANTIATE FAIL] $className: ${e.javaClass.simpleName}: ${e.message}")
-                                    null
-                                }
-                                if (instance != null) {
-                                    val extObj = com.google.gson.JsonObject().apply {
-                                        addProperty("id", instance.id.toString())
-                                        addProperty("name", instance.name)
-                                        addProperty("lang", instance.lang)
-                                        addProperty("type", "anime")
-                                        val baseUrl = (instance as? eu.kanade.tachiyomi.animesource.online.AnimeHttpSource)?.baseUrl ?: ""
-                                        addProperty("baseUrl", baseUrl)
-                                        addProperty("isNsfw", false)
-                                        addProperty("version", extractedVersion)
-                                        addProperty("pkgName", extractedPkgName)
-                                        addProperty("className", className)
-                                        addProperty("itemType", 1)
-                                        addProperty("hasUpdate", false)
-                                        addProperty("isObsolete", false)
-                                        addProperty("isShared", false)
-                                        addProperty("supportsLatest", (instance as? eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)?.supportsLatest ?: false)
-                                        addProperty("supportsPopular", instance is eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)
-                                    }
-                                    jsonArray.add(extObj)
-                                    DesktopExtensionLoader.loadedAnimeSources[instance.id.toString()] = instance
-                                    classLoaders[instance.id.toString()] = classLoader
-                                    System.err.println("    [OK] AnimeSource: ${instance.name} (${instance.lang})")
-                                }
-                            } else if (isAnimeFactory) {
-                                val factory = try { instantiateSource(clazz) as? eu.kanade.tachiyomi.animesource.AnimeSourceFactory } catch (e: Throwable) {
-                                    System.err.println("    [INSTANTIATE FAIL] $className: ${e.javaClass.simpleName}: ${e.message}")
-                                    null
-                                }
-                                if (factory != null) {
-                                    try {
-                                        factory.createSources().forEach { src ->
-                                            val extObj = com.google.gson.JsonObject().apply {
-                                                addProperty("id", src.id.toString())
-                                                addProperty("name", src.name)
-                                                addProperty("lang", src.lang)
-                                                addProperty("type", "anime")
-                                                val baseUrl = (src as? eu.kanade.tachiyomi.animesource.online.AnimeHttpSource)?.baseUrl ?: ""
-                                                addProperty("baseUrl", baseUrl)
-                                                addProperty("isNsfw", false)
-                                                addProperty("version", extractedVersion)
-                                                addProperty("pkgName", extractedPkgName)
-                                                addProperty("className", src.javaClass.name)
-                                                addProperty("itemType", 1)
-                                                addProperty("hasUpdate", false)
-                                                addProperty("isObsolete", false)
-                                                addProperty("isShared", false)
-                                                addProperty("supportsLatest", (src as? eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)?.supportsLatest ?: false)
-                                                addProperty("supportsPopular", src is eu.kanade.tachiyomi.animesource.AnimeCatalogueSource)
-                                            }
-                                            jsonArray.add(extObj)
-                                            DesktopExtensionLoader.loadedAnimeSources[src.id.toString()] = src
-                                            classLoaders[src.id.toString()] = classLoader
-                                            System.err.println("    [OK] AnimeSource (factory): ${src.name} (${src.lang})")
-                                        }
-                                    } catch (e: Throwable) {
-                                        System.err.println("    [FACTORY ERROR] AnimeSourceFactory.createSources() failed for $className: ${e.javaClass.simpleName}: ${e.message}")
-                                    }
-                                }
-                            } else if (isMangaType) {
-                                val instance = try { instantiateSource(clazz) as? eu.kanade.tachiyomi.source.MangaSource } catch (e: Throwable) {
-                                    System.err.println("    [INSTANTIATE FAIL] $className: ${e.javaClass.simpleName}: ${e.message}")
-                                    null
-                                }
-                                if (instance != null) {
-                                    val extObj = com.google.gson.JsonObject().apply {
-                                        addProperty("id", instance.id.toString())
-                                        addProperty("name", instance.name)
-                                        addProperty("lang", instance.lang)
-                                        addProperty("type", "manga")
-                                        val baseUrl = (instance as? eu.kanade.tachiyomi.source.online.HttpSource)?.baseUrl ?: ""
-                                        addProperty("baseUrl", baseUrl)
-                                        addProperty("isNsfw", false)
-                                        addProperty("version", extractedVersion)
-                                        addProperty("pkgName", extractedPkgName)
-                                        addProperty("className", className)
-                                        addProperty("itemType", 0)
-                                        addProperty("hasUpdate", false)
-                                        addProperty("isObsolete", false)
-                                        addProperty("supportsLatest", (instance as? eu.kanade.tachiyomi.source.CatalogueSource)?.supportsLatest ?: false)
-                                        addProperty("supportsPopular", instance is eu.kanade.tachiyomi.source.CatalogueSource)
-                                    }
-                                    jsonArray.add(extObj)
-                                    DesktopExtensionLoader.loadedMangaSources[instance.id.toString()] = instance
-                                    classLoaders[instance.id.toString()] = classLoader
-                                    System.err.println("    [OK] MangaSource: ${instance.name} (${instance.lang})")
-                                }
-                            } else if (isMangaFactory) {
-                                val factory = try { instantiateSource(clazz) as? eu.kanade.tachiyomi.source.SourceFactory } catch (e: Throwable) {
-                                    System.err.println("    [INSTANTIATE FAIL] $className: ${e.javaClass.simpleName}: ${e.message}")
-                                    null
-                                }
-                                if (factory != null) {
-                                    try {
-                                        factory.createSources().filterIsInstance<eu.kanade.tachiyomi.source.MangaSource>().forEach { src ->
-                                            val extObj = com.google.gson.JsonObject().apply {
-                                                addProperty("id", src.id.toString())
-                                                addProperty("name", src.name)
-                                                addProperty("lang", src.lang)
-                                                addProperty("type", "manga")
-                                                val baseUrl = (src as? eu.kanade.tachiyomi.source.online.HttpSource)?.baseUrl ?: ""
-                                                addProperty("baseUrl", baseUrl)
-                                                addProperty("isNsfw", false)
-                                                addProperty("version", extractedVersion)
-                                                addProperty("pkgName", extractedPkgName)
-                                                addProperty("className", src.javaClass.name)
-                                                addProperty("itemType", 0)
-                                                addProperty("hasUpdate", false)
-                                                addProperty("isObsolete", false)
-                                                addProperty("supportsLatest", (src as? eu.kanade.tachiyomi.source.CatalogueSource)?.supportsLatest ?: false)
-                                                addProperty("supportsPopular", src is eu.kanade.tachiyomi.source.CatalogueSource)
-                                            }
-                                            jsonArray.add(extObj)
-                                            DesktopExtensionLoader.loadedMangaSources[src.id.toString()] = src
-                                            classLoaders[src.id.toString()] = classLoader
-                                            System.err.println("    [OK] MangaSource (factory): ${src.name} (${src.lang})")
-                                        }
-                                    } catch (e: Throwable) {
-                                        System.err.println("    [FACTORY ERROR] SourceFactory.createSources() failed for $className: ${e.javaClass.simpleName}: ${e.message}")
-                                        System.err.println("    [DELETED BROKEN EXTENSION] Skipped broken extension ${jar.name} (auto-delete disabled)")
-                                        // try { jar.delete() } catch (_: Throwable) {}
-                                    }
-                                }
-                            }
-                        } catch (e: Throwable) {
-                            System.err.println("    [SKIP] $className: ${e.javaClass.simpleName}: ${e.message}")
+                            break
                         }
                     }
+                    zipFile1.close()
+
+                    val zipFile = java.util.zip.ZipFile(jar)
+                    val entries = zipFile.entries()
+                    
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        if (entry.name.endsWith(".class") && !entry.name.contains("$")) {
+                            val className = entry.name.replace('/', '.').replace('\\', '.').removeSuffix(".class")
+
+                            if (className.startsWith("kotlin.") || className.startsWith("kotlinx.") || className.startsWith("android.") || className.startsWith("androidx.")) continue
+                            if (className.contains(".dto.")) continue
+
+                            try {
+                                val clazz = try {
+                                    Class.forName(className, false, classLoader)
+                                } catch (e: Throwable) {
+                                    System.err.println("    [CLASS LOAD FAIL] $className: ${e.javaClass.simpleName}: ${e.message}")
+                                    continue
+                                }
+
+                                if (clazz.isInterface || java.lang.reflect.Modifier.isAbstract(clazz.modifiers)) continue
+
+                                val isAnimeType = try { isAssignableByClassName(clazz, animeTargetNames) } catch (e: Throwable) { false }
+                                val isAnimeFactory = if (!isAnimeType) try { isAssignableByClassName(clazz, listOf("eu.kanade.tachiyomi.animesource.AnimeSourceFactory")) } catch (e: Throwable) { false } else false
+                                val isMangaType = if (!isAnimeType && !isAnimeFactory) try { isAssignableByClassName(clazz, mangaTargetNames) } catch (e: Throwable) { false } else false
+                                val isMangaFactory = if (!isAnimeType && !isAnimeFactory && !isMangaType) try { isAssignableByClassName(clazz, listOf("eu.kanade.tachiyomi.source.SourceFactory")) } catch (e: Throwable) { false } else false
+
+                                if (isAnimeType || isAnimeFactory || isMangaType || isMangaFactory) {
+                                    val instance = try { instantiateSource(clazz) } catch (e: Throwable) { null }
+                                    if (instance != null) {
+                                        registerLoadedSource(instance, extractedVersion, extractedPkgName, className, classLoader, jsonArray)
+                                    }
+                                }
+                            } catch (e: Throwable) {
+                                System.err.println("    [SKIP] $className: ${e.javaClass.simpleName}: ${e.message}")
+                            }
+                        }
+                    }
+                    zipFile.close()
                 }
-                zipFile.close()
             } catch (e: Throwable) {
                 System.err.println("    [JAR ERROR] Failed to process ${jar.name}: ${e.javaClass.simpleName}: ${e.message}")
-                System.err.println("    [DELETED BROKEN EXTENSION] Skipped broken extension ${jar.name} (auto-delete disabled)")
-                // try { jar.delete() } catch (_: Throwable) {}
                 e.printStackTrace(System.err)
             }
         }

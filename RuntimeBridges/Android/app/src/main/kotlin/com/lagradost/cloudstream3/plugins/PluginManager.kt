@@ -7,6 +7,7 @@ import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.google.gson.Gson
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.plugins.RepositoryManager.getRepositories
@@ -169,7 +170,7 @@ object PluginManager {
             }
 
             val manifestText = manifestUrl.openStream().bufferedReader().use { it.readText() }
-            val manifest = parseJson<BasePlugin.Manifest>(manifestText)
+            val manifest = Gson().fromJson(manifestText, BasePlugin.Manifest::class.java)
 
             Log.i(PLUGIN_TAG, "Parsed manifest: ${manifest.name} v${manifest.version}")
 

@@ -1,83 +1,57 @@
 package com.anymex.desktop
 
-import com.googlecode.d2j.dex.Dex2jar
-import com.googlecode.d2j.reader.MultiDexFileReader
-import com.googlecode.dex2jar.tools.BaksmaliBaseDexExceptionHandler
+import com.google.gson.Gson
 import java.io.File
-import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 object ApkConverter {
 
+    private val gson = Gson()
+
     fun convertApkToJar(apkPath: String, outJarPath: String) {
         val apkFile = File(apkPath)
         require(apkFile.exists()) { "APK not found: $apkPath" }
 
-        val tempDex = File.createTempFile("dex2jar_classes_", ".dex")
-        tempDex.deleteOnExit()
-
-        ZipInputStream(apkFile.inputStream()).use { zip ->
-            var entry = zip.nextEntry
-            var found = false
-            while (entry != null) {
-                if (entry.name == "classes.dex") {
-                    tempDex.outputStream().use { zip.copyTo(it) }
-                    found = true
-                    break
-                }
-                entry = zip.nextEntry
-            }
-            if (!found) throw IllegalArgumentException("No classes.dex found in APK: $apkPath")
-        }
+        val meta = PackageTools.parseMeta(apkFile)
 
         val tempJar = File.createTempFile("dex2jar_out_", ".jar")
         tempJar.deleteOnExit()
-        dex2jar(tempDex.absolutePath, tempJar.absolutePath)
-        tempDex.delete()
 
-        val outFile = File(outJarPath)
-        outFile.parentFile?.mkdirs()
-        bundleAssetsFromApk(apkFile, tempJar, outFile)
-        tempJar.delete()
+        try {
+            PackageTools.dex2jar(apkFile, tempJar)
+            JarFixer.fixStackmapFrames(tempJar)
 
-        System.err.println("[ApkConverter] Converted ${apkFile.name} → ${outFile.name}")
+            val outFile = File(outJarPath)
+            outFile.parentFile?.mkdirs()
+            bundleAssetsAndMetadata(apkFile, tempJar, outFile, meta)
+
+            System.err.println("[ApkConverter] Converted & bytecode-fixed ${apkFile.name} → ${outFile.name}")
+        } finally {
+            tempJar.delete()
+        }
     }
 
-    private fun dex2jar(dexFile: String, jarFile: String) {
-        val jarFilePath = File(jarFile).toPath()
-        val reader = MultiDexFileReader.open(Files.readAllBytes(File(dexFile).toPath()))
-        val handler = BaksmaliBaseDexExceptionHandler()
-
-        Dex2jar
-            .from(reader)
-            .withExceptionHandler(handler)
-            .reUseReg(false)
-            .topoLogicalSort()
-            .skipDebug(true)
-            .optimizeSynchronized(false)
-            .printIR(false)
-            .noCode(false)
-            .skipExceptions(false)
-            .dontSanitizeNames(true)
-            .to(jarFilePath)
-    }
-
-    private fun bundleAssetsFromApk(apkFile: File, tempJar: File, outFile: File) {
+    private fun bundleAssetsAndMetadata(apkFile: File, tempJar: File, outFile: File, meta: ExtensionMeta?) {
         ZipOutputStream(outFile.outputStream()).use { jarOut ->
             ZipInputStream(tempJar.inputStream()).use { jarIn ->
                 var entry = jarIn.nextEntry
                 while (entry != null) {
-                    if (!entry.name.startsWith("META-INF/")) {
-                        jarOut.putNextEntry(ZipEntry(entry.name))
-                        jarIn.copyTo(jarOut)
-                        jarOut.closeEntry()
-                    }
+                    jarOut.putNextEntry(ZipEntry(entry.name))
+                    jarIn.copyTo(jarOut)
+                    jarOut.closeEntry()
                     entry = jarIn.nextEntry
                 }
             }
 
+            if (meta != null) {
+                try {
+                    jarOut.putNextEntry(ZipEntry("META-INF/anymex-extension.json"))
+                    jarOut.write(gson.toJson(meta).toByteArray(Charsets.UTF_8))
+                    jarOut.closeEntry()
+                } catch (_: Exception) {}
+            }
 
             ZipInputStream(apkFile.inputStream()).use { apkIn ->
                 var entry = apkIn.nextEntry

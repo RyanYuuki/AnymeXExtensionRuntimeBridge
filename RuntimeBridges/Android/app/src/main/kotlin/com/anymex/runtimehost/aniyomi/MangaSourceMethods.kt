@@ -22,6 +22,10 @@ import uy.kohesive.injekt.api.get
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 import eu.kanade.tachiyomi.network.normalizeUrl
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Suppress("PrivatePropertyName")
 class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMethods {
@@ -125,7 +129,7 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
             val details = try {
                 source.getMangaDetails(smanga)
             } catch (e: Throwable) {
-                if (e is UnsupportedOperationException || e is IllegalStateException) {
+                if (e is UnsupportedOperationException || e is IllegalStateException || e is AbstractMethodError || e is NoSuchMethodError) {
                     val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = true, fetchChapters = false)
                     update.manga
                 } else {
@@ -142,20 +146,53 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
 
     override suspend fun getChapterList(media: SAnime): List<SEpisode> {
         val smanga = media.toSManga()
-        return try {
-            source.getChapterList(smanga).map { it.toSEpisode() }
+        val chapters = try {
+            source.getChapterList(smanga)
         } catch (e: Throwable) {
-            if (e is UnsupportedOperationException || e is IllegalStateException) {
+            if (e is UnsupportedOperationException || e is IllegalStateException || e is AbstractMethodError || e is NoSuchMethodError) {
                 val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = false, fetchChapters = true)
-                update.chapters.map { it.toSEpisode() }
+                update.chapters
             } else {
                 throw e
             }
         }
+        chapters.forEach { ch ->
+            val memo = ch.memo
+            if (memo != null && memo.isNotEmpty()) {
+                chapterMemoCache[ch.url] = memo
+            }
+        }
+        return chapters.map { it.toSEpisode() }
     }
 
-    override suspend fun getPageList( chapter: SChapter): List<Page> {
-       return (source).getPageList(chapter)
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        if (chapter.memo == null || chapter.memo?.isEmpty() == true) {
+            chapterMemoCache[chapter.url]?.let { cached ->
+                chapter.memo = cached
+            }
+        }
+        return try {
+            source.getPageList(chapter)
+        } catch (e: Throwable) {
+            val isRefreshNeeded = e.message?.contains("Refresh Chapter List", ignoreCase = true) == true
+            if (isRefreshNeeded) {
+                val seriesSlug = if (chapter.url.contains("/series/")) {
+                    chapter.url.substringAfter("/series/").substringBefore("/chapter/")
+                } else if (chapter.url.contains("/comics/")) {
+                    chapter.url.substringAfter("/comics/").substringBefore("/chapter/")
+                } else null
+
+                if (!seriesSlug.isNullOrBlank()) {
+                    chapter.memo = buildJsonObject {
+                        put("mangaSlug", seriesSlug)
+                    }
+                    try {
+                        return source.getPageList(chapter)
+                    } catch (_: Throwable) {}
+                }
+            }
+            throw e
+        }
     }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
@@ -174,67 +211,63 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
         throw UnsupportedOperationException()
     }
 
-
     private fun mangaPageToAnimePage(mangaPage: MangasPage): AnimesPage {
         return AnimesPage(
             mangaPage.mangas.map { it.toSAnime() },
             mangaPage.hasNextPage
         )
     }
+
     fun SChapter.toSEpisode(): SEpisode {
         val chapter = this
-        return object : SEpisode {
-            override var url: String = chapter.url
-            override var name: String = chapter.name
-            override var date_upload: Long = chapter.date_upload
-            override var episode_number: Float = if (chapter.chapter_number >= 0f) chapter.chapter_number else findChapterNumber(chapter.name) ?: chapter.chapter_number
-            override var fillermark: Boolean = false
-            override var scanlator: String? = chapter.scanlator
-            override var summary: String?= null
-            override var preview_url: String? = null
+        return SEpisode.create().apply {
+            url = chapter.url
+            name = chapter.name
+            date_upload = chapter.date_upload
+            episode_number = if (chapter.chapter_number >= 0f) chapter.chapter_number else findChapterNumber(chapter.name) ?: chapter.chapter_number
+            fillermark = false
+            scanlator = chapter.scanlator
+            summary = chapter.memo?.takeIf { it.isNotEmpty() }?.toString()
+            preview_url = null
         }
     }
 
     fun SAnime.toSManga(): SManga {
         val anime = this
-        return object : SManga {
-            override var url: String = anime.url
-            override var title: String = anime.title
-            override var artist: String? = anime.artist
-            override var author: String? = anime.author
-            override var description: String? = anime.description
-            override var genre: String? = anime.genre
-            override var status: Int = anime.status
-            override var thumbnail_url: String? = anime.thumbnail_url?.takeIf { it.isNotBlank() }?.normalizeUrl()
-            override var update_strategy: UpdateStrategy = UpdateStrategy.ALWAYS_UPDATE
-            override var initialized: Boolean = anime.initialized
+        return SManga.create().apply {
+            url = anime.url
+            title = anime.title
+            artist = anime.artist
+            author = anime.author
+            description = anime.description
+            genre = anime.genre
+            status = anime.status
+            thumbnail_url = anime.thumbnail_url?.takeIf { it.isNotBlank() }?.normalizeUrl()
+            update_strategy = UpdateStrategy.ALWAYS_UPDATE
+            initialized = anime.initialized
         }
     }
 
     fun SManga.toSAnime(fallbackUrl: String? = null): SAnime {
         val manga = this
 
-        return object : SAnime {
-            override var url: String = runCatching { manga.url }.getOrNull()?.takeIf { it.isNotBlank() }
+        return SAnime.create().apply {
+            url = runCatching { manga.url }.getOrNull()?.takeIf { it.isNotBlank() }
                 ?: fallbackUrl
                 ?: ""
-
-            override var title: String = runCatching { manga.title }.getOrElse {
-                ""
-            }
-
-            override var artist: String? = runCatching { manga.artist }.getOrNull()
-            override var author: String? = runCatching { manga.author }.getOrNull()
-            override var description: String? = runCatching { manga.description }.getOrNull()
-            override var genre: String? = runCatching { manga.genre }.getOrNull()
-            override var status: Int = runCatching { manga.status }.getOrDefault(SAnime.UNKNOWN)
-            override var thumbnail_url: String? = runCatching { manga.thumbnail_url }.getOrNull()?.takeIf { it.isNotBlank() }?.normalizeUrl()
-            override var background_url: String? = null
-            override var update_strategy: AnimeUpdateStrategy =
+            title = runCatching { manga.title }.getOrElse { "" }
+            artist = runCatching { manga.artist }.getOrNull()
+            author = runCatching { manga.author }.getOrNull()
+            description = runCatching { manga.description }.getOrNull()
+            genre = runCatching { manga.genre }.getOrNull()
+            status = runCatching { manga.status }.getOrDefault(SAnime.UNKNOWN)
+            thumbnail_url = runCatching { manga.thumbnail_url }.getOrNull()?.takeIf { it.isNotBlank() }?.normalizeUrl()
+            background_url = null
+            update_strategy =
                 runCatching { AnimeUpdateStrategy.ALWAYS_UPDATE }.getOrDefault(AnimeUpdateStrategy.ALWAYS_UPDATE)
-            override var fetch_type: FetchType = runCatching { FetchType.Episodes }.getOrDefault(FetchType.Episodes)
-            override var season_number: Double = runCatching { 1.0 }.getOrDefault(0.0)
-            override var initialized: Boolean = runCatching { manga.initialized }.getOrDefault(false)
+            fetch_type = runCatching { FetchType.Episodes }.getOrDefault(FetchType.Episodes)
+            season_number = runCatching { 1.0 }.getOrDefault(0.0)
+            initialized = runCatching { manga.initialized }.getOrDefault(false)
         }
     }
     private fun safeTitle(manga: SManga): String =
@@ -265,4 +298,8 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     }
 
     override fun getHttpSource(): Any? = source as? HttpSource
+
+    companion object {
+        val chapterMemoCache = ConcurrentHashMap<String, JsonObject>()
+    }
 }

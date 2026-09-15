@@ -42,6 +42,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitAll
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.addSingletonFactory
 import uy.kohesive.injekt.api.get
@@ -169,11 +170,6 @@ object RuntimeBridge {
                 cacheDir.deleteRecursively()
             }
         } catch (_: Exception) {}
-        try {
-            MangaImageProxy.start()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start MangaImageProxy: ${e.message}")
-        }
         initialized = true
     }
 
@@ -522,7 +518,9 @@ object RuntimeBridge {
                         "date_upload" to it.date_upload,
                         "episode_number" to epNum,
                         "season" to seasonNum,
-                        "scanlator" to it.scanlator
+                        "scanlator" to it.scanlator,
+                        "description" to it.summary,
+                        "memo" to it.summary
                     )
                 }
             )
@@ -641,6 +639,14 @@ object RuntimeBridge {
             val chapter = SChapter.create().apply {
                 name = chapterMap["name"] as? String ?: ""
                 url = chapterMap["url"] as? String ?: ""
+                val rawMemo = (chapterMap["memo"] as? String)
+                    ?: (chapterMap["description"] as? String)
+                    ?: (chapterMap["extra"] as? String)
+                if (!rawMemo.isNullOrBlank()) {
+                    try {
+                        memo = Json.parseToJsonElement(rawMemo) as? JsonObject
+                    } catch (_: Exception) {}
+                }
             }
             val m = media(context, sourceId, isAnime)
             m.parameters = parameters
@@ -668,6 +674,7 @@ object RuntimeBridge {
 
             val useProxy = hasCustomGetImage || overridesClient
             Log.i("RuntimeBridge", "Source '${sourceId}': hasCustomGetImage=$hasCustomGetImage, overridesClient=$overridesClient -> useProxy=$useProxy")
+            val proxyPort = if (useProxy) MangaImageProxy.start() else 0
 
             pages.map { page ->
                 val imageUrl = try {
@@ -681,8 +688,7 @@ object RuntimeBridge {
                     page.imageUrl ?: ""
                 }
                 
-                if (useProxy && MangaImageProxy.port > 0) {
-                    val proxyPort = MangaImageProxy.port
+                if (useProxy && proxyPort > 0) {
                     val proxyUrl = if (imageUrl.isNotEmpty() || page.url.isNotEmpty()) {
                         "http://127.0.0.1:$proxyPort/image?sourceId=${java.net.URLEncoder.encode(sourceId, "UTF-8")}&imageUrl=${java.net.URLEncoder.encode(imageUrl, "UTF-8")}&pageUrl=${java.net.URLEncoder.encode(page.url ?: "", "UTF-8")}&pageNumber=${page.index}"
                     } else {

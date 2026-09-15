@@ -108,7 +108,7 @@ object DataStore {
             getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE).edit {
                 putString(path, mapper.writeValueAsString(value))
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             logError(e)
         }
     }

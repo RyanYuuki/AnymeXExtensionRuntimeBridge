@@ -13,6 +13,15 @@ import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import android.content.Context
 
 object APIHolder {
+    init {
+        try {
+            val impl = kotlin.reflect.jvm.internal.ReflectionFactoryImpl()
+            val factoryField = kotlin.jvm.internal.Reflection::class.java.getDeclaredField("factory")
+            factoryField.isAccessible = true
+            factoryField.set(null, impl)
+        } catch (_: Throwable) {}
+    }
+
     val allProviders: MutableList<MainAPI> = synchronizedList(mutableListOf())
     val apis: MutableList<MainAPI> = synchronizedList(mutableListOf())
     

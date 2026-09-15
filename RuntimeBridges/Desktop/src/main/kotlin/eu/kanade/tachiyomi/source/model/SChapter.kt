@@ -16,12 +16,15 @@ interface SChapter : Serializable {
 
     var scanlator: String?
 
+    var memo: kotlinx.serialization.json.JsonObject?
+
     fun copyFrom(other: SChapter) {
         name = other.name
         url = other.url
         date_upload = other.date_upload
         chapter_number = other.chapter_number
         scanlator = other.scanlator
+        memo = other.memo
     }
 
     companion object {

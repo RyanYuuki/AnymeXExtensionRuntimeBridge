@@ -13,9 +13,19 @@ class ChildFirstPathClassLoader(
 ) : PathClassLoader(dexPath, librarySearchPath, parent) {
 
     private val systemClassLoader: ClassLoader? = getSystemClassLoader()
-
     override fun loadClass(name: String?, resolve: Boolean): Class<*> {
         var c = findLoadedClass(name)
+
+        if (c == null && name != null) {
+            val shouldDelegate = name.startsWith("kotlin.") ||
+                    name.startsWith("kotlinx.coroutines.")
+
+            if (shouldDelegate) {
+                try {
+                    c = parent.loadClass(name)
+                } catch (_: ClassNotFoundException) {}
+            }
+        }
 
         if (c == null && systemClassLoader != null) {
             try {

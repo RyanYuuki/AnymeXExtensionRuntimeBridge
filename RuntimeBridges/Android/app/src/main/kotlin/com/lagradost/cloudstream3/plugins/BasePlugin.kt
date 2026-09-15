@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.plugins
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.google.gson.annotations.SerializedName
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.utils.ExtractorApi
@@ -64,18 +65,23 @@ abstract class BasePlugin {
 
     class Manifest {
         @JsonProperty("name")
+        @SerializedName("name")
         var name: String = ""
 
         @JsonProperty("pluginClassName")
+        @SerializedName("pluginClassName")
         var pluginClassName: String = ""
 
         @JsonProperty("version")
+        @SerializedName("version")
         var version: Int = 0
 
         @JsonProperty("requiresResources")
+        @SerializedName("requiresResources")
         var requiresResources: Boolean = false
         
         @JsonProperty("tvTypes")
+        @SerializedName("tvTypes")
         var tvTypes: List<String>? = null
     }
 }
