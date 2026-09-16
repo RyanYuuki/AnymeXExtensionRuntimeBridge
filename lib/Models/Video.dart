@@ -18,10 +18,27 @@ class Video {
   });
 
   factory Video.fromJson(Map<String, dynamic> json) {
+    final title = json['title']?.toString().trim();
+    final rawQuality = json['quality']?.toString().trim();
+    final validTitle = (title != null && title != 'null' && title.isNotEmpty) ? title : null;
+    final validQuality = (rawQuality != null && rawQuality != 'null' && rawQuality.isNotEmpty) ? rawQuality : null;
+
+    var quality = validQuality ?? validTitle ?? 'Default';
+    final videoTitle = validTitle ?? validQuality ?? 'Default';
+
+    if (validTitle != null) {
+      final titleLower = validTitle.toLowerCase();
+      final qualityLower = quality.toLowerCase();
+      if ((titleLower.contains('dub') && !qualityLower.contains('dub')) ||
+          (titleLower.contains('sub') && !qualityLower.contains('sub'))) {
+        quality = validTitle;
+      }
+    }
+
     return Video(
-      json['title'].toString().trim(),
-      json['url'].toString().trim(),
-      json['quality'].toString().trim(),
+      videoTitle,
+      (json['url'] ?? '').toString().trim(),
+      quality,
       headers: normalizeHeaders((json['headers'] as Map?)?.cast<String, String>()),
       subtitles: json['subtitles'] != null
           ? (json['subtitles'] as List)
@@ -38,11 +55,28 @@ class Video {
   }
 
   factory Video.fromCs(Map<String, dynamic> json) {
+    final title = json['title']?.toString().trim();
+    final rawQuality = json['quality']?.toString().trim();
+    final validTitle = (title != null && title != 'null' && title.isNotEmpty) ? title : null;
+    final validQuality = (rawQuality != null && rawQuality != 'null' && rawQuality.isNotEmpty) ? rawQuality : null;
+
+    var quality = validQuality ?? validTitle ?? 'Default';
+    final videoTitle = validTitle ?? validQuality ?? 'Default';
+
+    if (validTitle != null) {
+      final titleLower = validTitle.toLowerCase();
+      final qualityLower = quality.toLowerCase();
+      if ((titleLower.contains('dub') && !qualityLower.contains('dub')) ||
+          (titleLower.contains('sub') && !qualityLower.contains('sub'))) {
+        quality = validTitle;
+      }
+    }
+
     return Video(
-      json['title'].toString().trim(),
-      json['url'].toString().trim(),
-      json['quality'].toString().trim(),
-      headers: normalizeHeaders((json["extraData"]['allHeaders'] as Map?)?.cast<String, String>()),
+      videoTitle,
+      (json['url'] ?? '').toString().trim(),
+      quality,
+      headers: normalizeHeaders((json["extraData"]?['allHeaders'] as Map?)?.cast<String, String>()),
       subtitles: json['subtitles'] != null
           ? (json['subtitles'] as List)
               .map((e) => Track.fromJson(Map<String, dynamic>.from(e)))
