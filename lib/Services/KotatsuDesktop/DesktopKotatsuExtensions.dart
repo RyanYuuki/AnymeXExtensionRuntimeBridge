@@ -15,6 +15,10 @@ class DesktopKotatsuExtensions extends DesktopExtensionBase {
   String get name => 'Kotatsu (Desktop)';
 
   @override
+  String get icon =>
+      'https://raw.githubusercontent.com/KotatsuApp/Kotatsu/devel/metadata/en-US/icon.png';
+
+  @override
   bool get supportsAnime => false;
 
   @override

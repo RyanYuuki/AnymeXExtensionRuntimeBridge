@@ -23,6 +23,10 @@ class MangayomiExtensions extends Extension {
   String get name => 'Mangayomi';
 
   @override
+  String get icon =>
+      'https://raw.githubusercontent.com/kodjodevf/mangayomi/main/assets/app_icons/icon-red.png';
+
+  @override
   SourceMethods createSourceMethods(Source source) =>
       MangayomiSourceMethods(source);
 

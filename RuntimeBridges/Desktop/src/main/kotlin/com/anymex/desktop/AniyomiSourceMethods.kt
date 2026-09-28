@@ -503,10 +503,16 @@ object AniyomiSourceMethods {
                 }
 
                 if (hosters.isNotEmpty()) {
+                    println("[Desktop_Hoster] Source '${source.name}' hasHosters=true. Found ${hosters.size} hosters for episode ${episode.name}")
+                    hosters.forEachIndexed { i, h ->
+                        println("[Desktop_Hoster]   Hoster #$i: name='${h.hosterName}', url='${h.hosterUrl}', videoListSize=${h.videoList?.size ?: 0}")
+                    }
                     hosters.flatMap { hoster ->
                         try {
                             val hosterVideos = source.getVideoList(hoster)
+                            println("[Desktop_Hoster]   -> Fetched ${hosterVideos.size} videos from hoster '${hoster.hosterName}'")
                             hosterVideos.map { v ->
+                                println("[Desktop_Hoster]      Video: title='${v.videoTitle}', quality='${v.quality}', url='${v.videoUrl}'")
                                 val combinedTitle = if (hoster.hosterName.isNotBlank() && !v.videoTitle.contains(hoster.hosterName, ignoreCase = true)) {
                                     "${hoster.hosterName} - ${v.videoTitle.ifBlank { "Default" }}"
                                 } else {
@@ -515,22 +521,35 @@ object AniyomiSourceMethods {
                                 v.copy(videoTitle = combinedTitle)
                             }
                         } catch (e: Exception) {
+                            println("[Desktop_Hoster]   -> Failed fetching videos from hoster '${hoster.hosterName}': ${e.message}")
                             emptyList()
                         }
                     }
                 } else {
-                    source.getVideoList(episode)
+                    val vids = source.getVideoList(episode)
+                    println("[Desktop_Hoster] source.getVideoList(episode) returned ${vids.size} videos (hasHosters was true but hosters empty)")
+                    vids
                 }
             } else {
                 try {
-                    source.getVideoList(episode)
+                    val vids = source.getVideoList(episode)
+                    println("[Desktop_Hoster] source.getVideoList(episode) returned ${vids.size} videos (direct)")
+                    vids.forEach { v ->
+                        println("[Desktop_Hoster]    Direct Video: title='${v.videoTitle}', quality='${v.quality}', url='${v.videoUrl}'")
+                    }
+                    vids
                 } catch (e: Exception) {
+                    println("[Desktop_Hoster] source.getVideoList(episode) failed: ${e.message}, falling back to getHosterList(episode)")
                     val hosters = source.getHosterList(episode)
+                    println("[Desktop_Hoster] Fallback hosters count: ${hosters.size}")
                     if (hosters.isNotEmpty()) {
                         hosters.flatMap { hoster ->
                             try {
+                                println("[Desktop_Hoster]   Fallback hoster: name='${hoster.hosterName}', url='${hoster.hosterUrl}'")
                                 val hosterVideos = source.getVideoList(hoster)
+                                println("[Desktop_Hoster]   -> Fetched ${hosterVideos.size} videos from fallback hoster '${hoster.hosterName}'")
                                 hosterVideos.map { v ->
+                                    println("[Desktop_Hoster]      Video: title='${v.videoTitle}', quality='${v.quality}', url='${v.videoUrl}'")
                                     val combinedTitle = if (hoster.hosterName.isNotBlank() && !v.videoTitle.contains(hoster.hosterName, ignoreCase = true)) {
                                         "${hoster.hosterName} - ${v.videoTitle.ifBlank { "Default" }}"
                                     } else {
@@ -539,6 +558,7 @@ object AniyomiSourceMethods {
                                     v.copy(videoTitle = combinedTitle)
                                 }
                             } catch (err: Exception) {
+                                println("[Desktop_Hoster]   -> Failed fetching videos from fallback hoster '${hoster.hosterName}': ${err.message}")
                                 emptyList()
                             }
                         }

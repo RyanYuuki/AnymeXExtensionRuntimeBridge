@@ -6,10 +6,18 @@ import 'package:get/get.dart';
 import 'Services/Aniyomi/AniyomiExtensions.dart';
 import 'Services/Aniyomi/Models/Source.dart';
 import 'Services/CloudStream/CloudStreamExtensions.dart';
+import 'Services/IReader/DesktopIReaderExtensions.dart';
+import 'Services/IReader/IReaderExtensions.dart';
+import 'Services/IReader/Models/Source.dart';
 import 'Services/Legado/LegadoExtensions.dart';
+import 'Services/LnReader/LnReaderExtensions.dart';
+import 'Services/LnReader/Models/Source.dart';
 import 'Services/Mangayomi/MangayomiExtensions.dart';
 import 'Services/Sora/Models/Source.dart';
 import 'Services/Sora/SoraExtensions.dart';
+import 'Services/Tsundoku/DesktopTsundokuExtensions.dart';
+import 'Services/Tsundoku/Models/Source.dart';
+import 'Services/Tsundoku/TsundokuExtensions.dart';
 import 'anymex_extension_runtime_bridge.dart';
 
 import 'Settings/KvStore.dart';
@@ -49,6 +57,7 @@ class ExtensionManager extends GetxController {
       SoraExtensions(),
       MangayomiExtensions(),
       LegadoExtensions(),
+      LnReaderExtensions(),
     ]);
 
     await onRuntimeBridgeInitialization();
@@ -66,12 +75,17 @@ class ExtensionManager extends GetxController {
             AniyomiExtensions(),
             CloudStreamExtensions(),
             KotatsuExtensions(),
+            TsundokuExtensions(),
+            IReaderExtensions(),
           ] else if (Platform.isWindows ||
               Platform.isLinux ||
-              Platform.isMacOS) ...[
+              Platform.isMacOS ||
+              Platform.isIOS) ...[
             DesktopAniyomiExtensions(),
             DesktopCloudStreamExtensions(),
             DesktopKotatsuExtensions(),
+            DesktopTsundokuExtensions(),
+            DesktopIReaderExtensions(),
           ],
         ],
         insertAtStart: true,
@@ -333,19 +347,7 @@ extension SourceExecution on Source {
 
   String get extensionType => getSourceManager(this).id;
 
-  String get managerIcon => switch (this) {
-        ASource _ => 'https://aniyomi.org/img/logo-128px.png',
-        MSource _ =>
-          'https://raw.githubusercontent.com/kodjodevf/mangayomi/main/assets/app_icons/icon-red.png',
-        SSource _ => 'https://static.everythingmoe.com/icons/sora.png',
-        CloudStreamSource _ =>
-          'https://static.everythingmoe.com/icons/cloudstream.png',
-        KotatsuSource _ =>
-          'https://raw.githubusercontent.com/KotatsuApp/Kotatsu/devel/metadata/en-US/icon.png',
-        LegadoSource _ =>
-          'https://raw.githubusercontent.com/gedoor/gedoor.github.io/master/static/img/logo.png',
-        _ => 'mangayomi',
-      };
+  String get managerIcon => getSourceManager(this).icon;
 
   Future<void> install() async => getSourceManager(this).installSource(this);
   Future<void> uninstall() async =>
@@ -371,6 +373,13 @@ Extension getSourceManager(Source source) {
     return em.findById('kotatsu') ?? em.findById('kotatsu-desktop')!;
   }
   if (source is LegadoSource) return em.findById('legado')!;
+  if (source is LSource) return em.findById('lnreader')!;
+  if (source is TSource) {
+    return em.findById('tsundoku') ?? em.findById('tsundoku-desktop')!;
+  }
+  if (source is ISource) {
+    return em.findById('ireader') ?? em.findById('ireader-desktop')!;
+  }
 
   return em.findById('mangayomi')!;
 }

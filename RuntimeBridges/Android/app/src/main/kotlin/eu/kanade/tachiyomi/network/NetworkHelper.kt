@@ -68,7 +68,15 @@ class NetworkHelper(
                 }
             })
             .addInterceptor(CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider))
-            .addInterceptor(BrotliInterceptor)
+            .addInterceptor(object : Interceptor {
+                override fun intercept(chain: Interceptor.Chain): Response {
+                    return try {
+                        BrotliInterceptor.intercept(chain)
+                    } catch (_: Throwable) {
+                        chain.proceed(chain.request())
+                    }
+                }
+            })
             .addInterceptor(IgnoreGzipInterceptor())
             .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
             // Per-host User-Agent override — explicit class to avoid SAM cast across classloaders

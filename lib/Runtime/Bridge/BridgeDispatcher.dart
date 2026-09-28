@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'SidecarBridge.dart';
+import '../../Engines/JavaEngine/Bridge/EmbeddedJvmBridge.dart';
 
 enum BridgeType { jni, sidecar }
 
@@ -12,6 +14,10 @@ class BridgeDispatcher {
   void setMode(BridgeType mode) {}
 
   Future<void> initialize(String bridgeJarPath) async {
+    if (Platform.isIOS) {
+      await EmbeddedJvmBridge().init(pluginJarPath: bridgeJarPath);
+      return;
+    }
     await SidecarBridge().initialize(bridgeJarPath);
   }
 
@@ -20,6 +26,9 @@ class BridgeDispatcher {
     Map<String, dynamic> args, {
     Duration timeout = const Duration(seconds: 60),
   }) async {
+    if (Platform.isIOS) {
+      return await EmbeddedJvmBridge().invokeMethod(method, args, timeout: timeout);
+    }
     return await SidecarBridge().invokeMethod(method, args, timeout: timeout);
   }
 
@@ -32,6 +41,10 @@ class BridgeDispatcher {
   }
 
   void dispose() {
+    if (Platform.isIOS) {
+      EmbeddedJvmBridge().dispose();
+      return;
+    }
     SidecarBridge().dispose();
   }
 }

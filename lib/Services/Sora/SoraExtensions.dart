@@ -23,6 +23,9 @@ class SoraExtensions extends Extension {
   String get name => 'Sora';
 
   @override
+  String get icon => 'https://static.everythingmoe.com/icons/sora.png';
+
+  @override
   bool get supportsNovel => true;
 
   @override

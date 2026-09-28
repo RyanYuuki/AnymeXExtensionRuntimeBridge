@@ -86,7 +86,11 @@ class AniyomiSourceMethods extends SourceMethods {
       if (parameters != null) 'parameters': parameters.toJson(),
     });
 
-    return await compute(parseVideos, List<dynamic>.from(result));
+    final parsed = await compute(parseVideos, List<dynamic>.from(result));
+    for (final v in parsed) {
+      print("[Aniyomi_Flutter] Video: title='${v.title}', quality='${v.quality}', url='${v.url}'");
+    }
+    return parsed;
   }
 
   @override

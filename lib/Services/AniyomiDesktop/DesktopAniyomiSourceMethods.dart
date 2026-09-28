@@ -5,9 +5,8 @@ import 'package:flutter/foundation.dart';
 import '../../Logger.dart';
 import '../../anymex_extension_runtime_bridge.dart';
 import '../Aniyomi/Models/Source.dart';
-import '../Mangayomi/Eval/dart/model/filter.dart';
 import '../../Runtime/Bridge/BridgeDispatcher.dart';
-import '../../Torrent/torrent_stream_resolver.dart';
+import '../Mangayomi/Eval/dart/model/filter.dart';
 
 class DesktopAniyomiSourceMethods extends SourceMethods {
   @override

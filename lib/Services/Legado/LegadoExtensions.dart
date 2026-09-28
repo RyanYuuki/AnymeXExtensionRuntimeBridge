@@ -20,6 +20,10 @@ class LegadoExtensions extends Extension {
   String get name => 'Legado';
 
   @override
+  String get icon =>
+      'https://raw.githubusercontent.com/gedoor/gedoor.github.io/master/static/img/logo.png';
+
+  @override
   bool get supportsAnime => false;
 
   @override

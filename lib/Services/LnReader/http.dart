@@ -2,18 +2,18 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:d4rt/d4rt.dart';
 import 'package:flutter_qjs/flutter_qjs.dart';
-import 'package:http_interceptor/http_interceptor.dart';
+import 'package:http/http.dart';
 import 'package:http/http.dart' as http;
 
-import '../Mangayomi/http/m_client.dart';
+import '../../ExtensionBridge.dart';
 
 class JsHttpClient {
   late JavascriptRuntime runtime;
   JsHttpClient(this.runtime);
 
   void init() {
-    InterceptedClient client() {
-      return MClient.init();
+    http.Client client() {
+      return AnymeXExtensionBridge.context.http ?? http.Client();
     }
 
     runtime.onMessage('http_head', (dynamic args) async {

@@ -15,7 +15,7 @@ class AnymeXRuntimeBridge {
   static final Map<String, String> cookiesMap = {};
   static final Map<String, String> userAgentMap = {};
 
-  static bool get isSupportedPlatform => !Platform.isIOS;
+  static bool get isSupportedPlatform => true;
 
   static String? _cachedBridgePath;
   static String? _cachedToolsDirPath;

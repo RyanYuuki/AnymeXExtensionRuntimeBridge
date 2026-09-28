@@ -1,5 +1,5 @@
 package com.anymex.runtimehost.aniyomi
-
+import android.util.Log
 import eu.kanade.tachiyomi.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
@@ -152,11 +152,18 @@ class AnimeSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
                 emptyList()
             }
 
+            Log.d("AnymeX_Hoster", "Source '${source.name}' hasHosters=true. Found ${hosters.size} hosters for episode ${episode.name}")
+            hosters.forEachIndexed { i, h ->
+                Log.d("AnymeX_Hoster", "  Hoster #$i: name='${h.hosterName}', url='${h.hosterUrl}', videoListSize=${h.videoList?.size ?: 0}")
+            }
+
             if (hosters.isNotEmpty()) {
                 return hosters.flatMap { hoster ->
                     try {
                         val hosterVideos = source.getVideoList(hoster)
+                        Log.d("AnymeX_Hoster", "  -> Fetched ${hosterVideos.size} videos from hoster '${hoster.hosterName}'")
                         hosterVideos.map { v ->
+                            Log.d("AnymeX_Hoster", "     Video: title='${v.videoTitle}', quality='${v.quality}', url='${v.videoUrl}'")
                             val combinedTitle = if (hoster.hosterName.isNotBlank() && !v.videoTitle.contains(hoster.hosterName, ignoreCase = true)) {
                                 "${hoster.hosterName} - ${v.videoTitle.ifBlank { "Default" }}"
                             } else {
@@ -165,6 +172,7 @@ class AnimeSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
                             v.copy(videoTitle = combinedTitle)
                         }
                     } catch (e: Exception) {
+                        Log.w("AnymeX_Hoster", "  -> Failed fetching videos from hoster '${hoster.hosterName}': ${e.message}")
                         emptyList()
                     }
                 }
@@ -172,15 +180,25 @@ class AnimeSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
         }
 
         return try {
-            source.getVideoList(episode)
+            val vids = source.getVideoList(episode)
+            Log.d("AnymeX_Hoster", "source.getVideoList(episode) returned ${vids.size} videos (direct)")
+            vids.forEach { v ->
+                Log.d("AnymeX_Hoster", "   Direct Video: title='${v.videoTitle}', quality='${v.quality}', url='${v.videoUrl}'")
+            }
+            vids
         } catch (e: Exception) {
+            Log.d("AnymeX_Hoster", "source.getVideoList(episode) failed: ${e.message}, falling back to getHosterList(episode)")
             try {
                 val hosters = source.getHosterList(episode)
+                Log.d("AnymeX_Hoster", "Fallback hosters count: ${hosters.size}")
                 if (hosters.isNotEmpty()) {
                     hosters.flatMap { hoster ->
                         try {
+                            Log.d("AnymeX_Hoster", "  Fallback hoster: name='${hoster.hosterName}', url='${hoster.hosterUrl}'")
                             val hosterVideos = source.getVideoList(hoster)
+                            Log.d("AnymeX_Hoster", "  -> Fetched ${hosterVideos.size} videos from fallback hoster '${hoster.hosterName}'")
                             hosterVideos.map { v ->
+                                Log.d("AnymeX_Hoster", "     Video: title='${v.videoTitle}', quality='${v.quality}', url='${v.videoUrl}'")
                                 val combinedTitle = if (hoster.hosterName.isNotBlank() && !v.videoTitle.contains(hoster.hosterName, ignoreCase = true)) {
                                     "${hoster.hosterName} - ${v.videoTitle.ifBlank { "Default" }}"
                                 } else {
@@ -189,6 +207,7 @@ class AnimeSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
                                 v.copy(videoTitle = combinedTitle)
                             }
                         } catch (err: Exception) {
+                            Log.w("AnymeX_Hoster", "  -> Failed fetching videos from fallback hoster '${hoster.hosterName}': ${err.message}")
                             emptyList()
                         }
                     }

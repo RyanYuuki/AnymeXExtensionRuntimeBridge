@@ -9,6 +9,7 @@ import 'SourceMethods.dart';
 abstract class Extension {
   String get id;
   String get name;
+  String get icon;
 
   bool get supportsAnime => true;
   bool get supportsManga => true;

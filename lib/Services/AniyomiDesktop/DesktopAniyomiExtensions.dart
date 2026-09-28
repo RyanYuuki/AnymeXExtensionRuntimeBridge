@@ -32,6 +32,9 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
   String get name => 'Aniyomi (Desktop)';
 
   @override
+  String get icon => 'https://aniyomi.org/img/logo-128px.png';
+
+  @override
   bool get supportsNovel => false;
 
   @override

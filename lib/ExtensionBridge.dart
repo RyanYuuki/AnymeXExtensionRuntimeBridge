@@ -8,6 +8,7 @@ import 'package:isar_community/isar.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'AddonManager.dart';
 import 'AnymeXBridge.dart';
 import 'ExtensionManager.dart';
 import 'Logger.dart';
@@ -98,6 +99,7 @@ class AnymeXExtensionBridge {
     );
 
     Get.lazyPut<ExtensionManager>(() => ExtensionManager());
+    Get.lazyPut<AddonManager>(() => AddonManager());
     _initialized = true;
   }
 

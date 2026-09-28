@@ -29,6 +29,9 @@ class AniyomiExtensions extends Extension {
   String get name => 'Aniyomi';
 
   @override
+  String get icon => 'https://aniyomi.org/img/logo-128px.png';
+
+  @override
   SourceMethods createSourceMethods(Source source) =>
       AniyomiSourceMethods(source);
 

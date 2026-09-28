@@ -1,13 +1,16 @@
 package eu.kanade.tachiyomi.network.interceptor
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.content.ContextCompat
 import eu.kanade.tachiyomi.network.AndroidCookieJar
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -24,10 +27,10 @@ class CloudflareInterceptor(
     defaultUserAgentProvider: () -> String,
 ) : WebViewInterceptor(context, defaultUserAgentProvider) {
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val executor = ContextCompat.getMainExecutor(context)
 
     override fun shouldIntercept(response: Response): Boolean {
-        return response.code in ERROR_CODES && response.header("Server") in SERVER_CHECK
+        return response.header("cf-mitigated") == "challenge" && response.header("Server") in SERVER_CHECK
     }
 
     override fun intercept(
@@ -49,15 +52,17 @@ class CloudflareInterceptor(
         }
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     private fun resolveWithWebView(originalRequest: Request, oldCookie: Cookie?) {
         val latch = CountDownLatch(1)
         var webview: WebView? = null
+        var challengeFound = false
         var cloudflareBypassed = false
         val origRequestUrl = originalRequest.url.toString()
         val headers = parseHeaders(originalRequest.headers)
         val activity = com.anymex.runtimehost.RuntimeBridge.resolveAppCompatActivity(context)
 
-        handler.post {
+        executor.execute {
             val webViewContext = activity ?: context
             val wv = WebView(webViewContext).apply {
                 setLayerType(View.LAYER_TYPE_SOFTWARE, null)
@@ -87,23 +92,59 @@ class CloudflareInterceptor(
                 (activity.window.decorView as ViewGroup).addView(wv, ViewGroup.LayoutParams(1, 1))
             }
 
+            wv.addJavascriptInterface(
+                object {
+                    @Suppress("unused")
+                    @JavascriptInterface
+                    fun interactiveDetected() {
+                        latch.countDown()
+                    }
+                },
+                "anymex",
+            )
+
             wv.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
-                    val newClearance = cookieManager.get(origRequestUrl.toHttpUrl())
-                        .firstOrNull { it.name == "cf_clearance" }
-                    if (newClearance != null && newClearance != oldCookie) {
+                    fun isCloudFlareBypassed(): Boolean {
+                        return cookieManager.get(origRequestUrl.toHttpUrl())
+                            .firstOrNull { it.name == "cf_clearance" }
+                            .let { it != null && it != oldCookie }
+                    }
+
+                    if (isCloudFlareBypassed()) {
                         cloudflareBypassed = true
                         latch.countDown()
                     }
+
+                    if (url == origRequestUrl) {
+                        if (!challengeFound) {
+                            latch.countDown()
+                        } else {
+                            view.evaluateJavascript(
+                                """
+                                    addEventListener("message", ({data}) => {
+                                        if (data?.source === "cloudflare-challenge" && data?.event === "interactiveBegin") {
+                                            anymex.interactiveDetected();
+                                        }
+                                    })
+                                """.trimIndent(),
+                                null,
+                            )
+                        }
+                    }
                 }
 
-                override fun onReceivedError(
-                    view: WebView,
-                    request: android.webkit.WebResourceRequest,
-                    error: android.webkit.WebResourceError,
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: WebResourceResponse?,
                 ) {
-                    if (request.isForMainFrame) {
-                        latch.countDown()
+                    if (request?.isForMainFrame == true) {
+                        if (errorResponse?.responseHeaders?.get("cf-mitigated") == "challenge") {
+                            challengeFound = true
+                        } else {
+                            latch.countDown()
+                        }
                     }
                 }
             }
@@ -113,7 +154,7 @@ class CloudflareInterceptor(
 
         latch.await(30, TimeUnit.SECONDS)
 
-        handler.post {
+        executor.execute {
             webview?.let { wv ->
                 wv.stopLoading()
                 if (activity != null) {
@@ -131,7 +172,6 @@ class CloudflareInterceptor(
     }
 
     companion object {
-        private val ERROR_CODES = listOf(403, 503)
         private val SERVER_CHECK = arrayOf("cloudflare-nginx", "cloudflare")
         private val COOKIE_NAMES = listOf("cf_clearance")
     }

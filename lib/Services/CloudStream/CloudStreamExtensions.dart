@@ -60,6 +60,9 @@ class CloudStreamExtensions extends Extension {
   String get name => 'CloudStream';
 
   @override
+  String get icon => 'https://static.everythingmoe.com/icons/cloudstream.png';
+
+  @override
   SourceMethods createSourceMethods(Source source) =>
       CloudStreamSourceMethods(source);
 
