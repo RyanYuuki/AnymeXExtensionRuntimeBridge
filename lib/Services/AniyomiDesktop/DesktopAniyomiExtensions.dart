@@ -197,10 +197,14 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
         decoded = PbDecoder.decodeIndex(bytes);
       }
 
-      final baseIconUrl = repoUrl
+      var baseIconUrl = repoUrl
           .replaceAll('/index.min.json', '')
+          .replaceAll('/index.json', '')
           .replaceAll('/index.pb.gz', '')
           .replaceAll('/index.pb', '');
+      if (baseIconUrl.endsWith('/')) {
+        baseIconUrl = baseIconUrl.substring(0, baseIconUrl.length - 1);
+      }
       final sources = <Source>[];
 
       for (final item in decoded) {

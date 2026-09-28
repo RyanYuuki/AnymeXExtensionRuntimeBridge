@@ -59,10 +59,14 @@ class ASource extends Source {
     }
 
     if (repo != null && repo!.startsWith('http')) {
-      final baseRepoUrl = repo!
+      var baseRepoUrl = repo!
           .replaceAll('/index.min.json', '')
+          .replaceAll('/index.json', '')
           .replaceAll('/index.pb.gz', '')
           .replaceAll('/index.pb', '');
+      if (baseRepoUrl.endsWith('/')) {
+        baseRepoUrl = baseRepoUrl.substring(0, baseRepoUrl.length - 1);
+      }
       return '$baseRepoUrl/apk/$apkName';
     }
 
