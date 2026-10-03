@@ -46,6 +46,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
     private var runtimeBridge: Any? = null
     private var bridgeClass: Class<*>? = null
+    private val methodCache = java.util.concurrent.ConcurrentHashMap<String, Method>()
     private var videoStreamJob: kotlinx.coroutines.Job? = null
     
     private var currentVideoStreamToken: String? = null
@@ -54,6 +55,12 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
+        try {
+            Class.forName("androidx.appcompat.app.AppCompatDelegate")
+                .getMethod("setCompatVectorFromResourcesEnabled", Boolean::class.javaPrimitiveType)
+                .invoke(null, true)
+        } catch (_: Throwable) {
+        }
 
         anymeXChannel = MethodChannel(binding.binaryMessenger, "anymeXBridge")
         anymeXChannel.setMethodCallHandler { call, result -> handleAnymeX(call, result) }
@@ -115,6 +122,12 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
+        try {
+            Class.forName("androidx.appcompat.app.AppCompatDelegate")
+                .getMethod("setCompatVectorFromResourcesEnabled", Boolean::class.javaPrimitiveType)
+                .invoke(null, true)
+        } catch (_: Throwable) {
+        }
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -136,152 +149,17 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             return false
         }
 
-        var currentCacheApk: File? = null
-        val originalApk = File(apkPath)
-
         return try {
             runtimeBridge = null
             bridgeClass = null
+            methodCache.clear()
 
-            if (!originalApk.exists()) {
-                Log.e(TAG, "APK does not exist at path: $apkPath")
-                return false
-            }
-
-            try {
-                java.util.zip.ZipFile(originalApk).use { zip ->
-                    if (zip.getEntry("classes.dex") == null) {
-                        Log.e(TAG, "originalApk is missing classes.dex")
-                        if (originalApk.name == "anymex_runtime_host.apk") {
-                            originalApk.delete()
-                        }
-                        return false
-                    }
-                }
-            } catch (ze: Throwable) {
-                Log.e(TAG, "originalApk is not a valid zip archive: ${ze.message}")
-                if (originalApk.name == "anymex_runtime_host.apk") {
-                    originalApk.delete()
-                }
-                return false
-            }
-
-            val cacheApkName = "anymex_runtime_${originalApk.length()}_${originalApk.lastModified()}.apk"
-            val cacheApk = File(ctx.filesDir, cacheApkName)
-            currentCacheApk = cacheApk
-
-            if (!cacheApk.exists()) {
-                Log.i(TAG, "Creating new cached APK: $cacheApkName")
-                ctx.filesDir.listFiles()?.forEach { file ->
-                    if (file.name.startsWith("anymex_runtime_") && file.name.endsWith(".apk") && file.name != cacheApkName) {
-                        Log.d(TAG, "Deleting old cached APK: ${file.name}")
-                        file.delete()
-                    }
-                }
-
-                originalApk.inputStream().use { input ->
-                    FileOutputStream(cacheApk).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                cacheApk.setReadOnly()
-            } else {
-                Log.i(TAG, "Using existing cached APK: $cacheApkName")
-                cacheApk.setReadOnly()
-            }
+            val loaded = RuntimeLoader.loadRuntime(ctx, apkPath)
+            bridgeClass = loaded.bridgeClass
+            runtimeBridge = loaded.bridgeInstance
 
             try {
-                java.util.zip.ZipFile(cacheApk).use { zip ->
-                    if (zip.getEntry("classes.dex") == null) {
-                        Log.e(TAG, "cacheApk is missing classes.dex")
-                        cacheApk.delete()
-                        if (originalApk.name == "anymex_runtime_host.apk") {
-                            originalApk.delete()
-                        }
-                        return false
-                    }
-                }
-            } catch (ze: Throwable) {
-                Log.e(TAG, "cacheApk is not a valid zip archive: ${ze.message}")
-                cacheApk.delete()
-                if (originalApk.name == "anymex_runtime_host.apk") {
-                    originalApk.delete()
-                }
-                return false
-            }
-
-            ctx.cacheDir.listFiles()?.forEach { file ->
-                if (file.isDirectory && (file.name.startsWith("anymex_dex_") || file.name.startsWith("anymex_libs_"))) {
-                    file.deleteRecursively()
-                }
-            }
-
-            val optimizedDir = File(ctx.cacheDir, "anymex_dex_${System.currentTimeMillis()}")
-            optimizedDir.mkdirs()
-
-            val libsDir = File(ctx.cacheDir, "anymex_libs_${System.currentTimeMillis()}")
-            libsDir.mkdirs()
-
-            try {
-                java.util.zip.ZipFile(cacheApk).use { zip ->
-                    val abisList = android.os.Build.SUPPORTED_ABIS
-                    var selectedAbi: String? = null
-                    
-                    for (abi in abisList) {
-                        val prefix = "lib/$abi/"
-                        var found = false
-                        val entriesEnum = zip.entries()
-                        while (entriesEnum.hasMoreElements()) {
-                            val entry = entriesEnum.nextElement()
-                            if (entry.name.startsWith(prefix) && entry.name.endsWith(".so")) {
-                                found = true
-                                break
-                            }
-                        }
-                        if (found) {
-                            selectedAbi = abi
-                            break
-                        }
-                    }
-
-                    if (selectedAbi != null) {
-                        Log.i(TAG, "Extracting native libraries for ABI: $selectedAbi")
-                        val prefix = "lib/$selectedAbi/"
-                        val entriesEnum = zip.entries()
-                        while (entriesEnum.hasMoreElements()) {
-                            val entry = entriesEnum.nextElement()
-                            if (entry.name.startsWith(prefix) && entry.name.endsWith(".so")) {
-                                val libName = entry.name.substringAfterLast('/')
-                                val outFile = File(libsDir, libName)
-                                zip.getInputStream(entry).use { input ->
-                                    FileOutputStream(outFile).use { output ->
-                                        input.copyTo(output)
-                                    }
-                                }
-                                Log.d(TAG, "Extracted native library: $libName to ${outFile.absolutePath}")
-                            }
-                        }
-                    } else {
-                        Log.w(TAG, "No matching native libraries found in APK for supported ABIs: ${abisList.joinToString()}")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to extract native libraries: ${e.message}", e)
-            }
-
-            val loader = ChildFirstClassLoader(
-                cacheApk.absolutePath,
-                optimizedDir.absolutePath,
-                libsDir.absolutePath,
-                ctx.classLoader!!
-            )
-
-            bridgeClass = loader.loadClass("com.anymex.runtimehost.RuntimeBridge")
-            Log.d(TAG, "bridgeClass loaded: $bridgeClass")
-            runtimeBridge = bridgeClass!!.getField("INSTANCE").get(null)
-            
-            try {
-                val loggerClass = loader.loadClass("com.anymex.runtimehost.Logger")
+                val loggerClass = ctx.classLoader.loadClass("com.anymex.runtimehost.Logger")
                 val setLogCallbackMethod = loggerClass.getMethod("setLogCallback", Any::class.java, Method::class.java)
                 val ourLogMethod = AnymexExtensionRuntimeBridgePlugin::class.java.getMethod(
                     "logFromHost",
@@ -296,7 +174,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             }
 
             Log.i(TAG, "AnymeX Runtime Bridge initialized successfully")
-            
+
             try {
                 call("initialize", ctx, settingsMap)
             } catch (e: Throwable) {
@@ -309,12 +187,6 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to load Runtime Host APK: ${e.message}")
             logToFlutter("ERROR", "BRIDGE_LOAD", "Failed to load Runtime Host APK: ${e.message}\n${Log.getStackTraceString(e)}")
-            try {
-                currentCacheApk?.delete()
-                if (originalApk.name == "anymex_runtime_host.apk") {
-                    originalApk.delete()
-                }
-            } catch (_: Throwable) {}
             false
         }
     }
@@ -714,10 +586,13 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         val bridge = runtimeBridge ?: throw IllegalStateException("Runtime Host not loaded")
         val cls = bridgeClass ?: throw IllegalStateException("Runtime Host class not loaded")
 
-        val method = cls.methods.filter { it.name == methodName }
-            .firstOrNull { it.parameterTypes.size == args.size }
-            ?: cls.methods.firstOrNull { it.name == methodName }
-            ?: throw NoSuchMethodException("No method '$methodName' in RuntimeBridge")
+        val cacheKey = "$methodName:${args.size}"
+        val method = methodCache.computeIfAbsent(cacheKey) {
+            cls.methods.filter { it.name == methodName }
+                .firstOrNull { it.parameterTypes.size == args.size }
+                ?: cls.methods.firstOrNull { it.name == methodName }
+                ?: throw NoSuchMethodException("No method '$methodName' in RuntimeBridge")
+        }
 
         val effectiveArgs = if (method.parameterTypes.size != args.size) {
             logToFlutter("WARNING", "BRIDGE", "Argument count mismatch for $methodName. Expected ${method.parameterTypes.size}, got ${args.size}. Adjusting.")
@@ -877,51 +752,6 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to uninstall source internally: ${e.message}", e)
             false
-        }
-    }
-
-    private class ChildFirstClassLoader(
-        dexPath: String,
-        optimizedDirectory: String?,
-        librarySearchPath: String?,
-        parent: ClassLoader
-    ) : DexClassLoader(dexPath, optimizedDirectory, librarySearchPath, parent) {
-
-        private val systemClassLoader: ClassLoader? = getSystemClassLoader()
-
-        private fun shouldDelegateToParent(name: String?): Boolean {
-            if (name == null) return false
-            return name.startsWith("androidx.")
-        }
-
-        override fun loadClass(name: String?, resolve: Boolean): Class<*> {
-            var c = findLoadedClass(name)
-
-            if (c == null && systemClassLoader != null) {
-                try {
-                    c = systemClassLoader.loadClass(name)
-                } catch (_: ClassNotFoundException) {}
-            }
-
-            if (c == null && shouldDelegateToParent(name)) {
-                try {
-                    c = parent.loadClass(name)
-                } catch (_: ClassNotFoundException) {}
-            }
-
-            if (c == null) {
-                try {
-                    c = findClass(name)
-                } catch (_: ClassNotFoundException) {
-                    c = super.loadClass(name, resolve)
-                }
-            }
-
-            if (resolve) {
-                resolveClass(c)
-            }
-
-            return c
         }
     }
 }
