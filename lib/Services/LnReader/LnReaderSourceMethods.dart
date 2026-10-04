@@ -134,16 +134,6 @@ const extension = exports.default;
     return jsonDecode(promised.stringResult);
   }
 
-  T _call<T>(String expr, T fallback) {
-    if (_runtime == null) return fallback;
-    try {
-      final res = _runtime!.evaluate('JSON.stringify(extension.$expr)');
-      return jsonDecode(res.stringResult) as T;
-    } catch (_) {
-      return fallback;
-    }
-  }
-
   List<DMedia> _toMediaList(dynamic raw) {
     if (raw is! List) return const [];
     return raw
@@ -182,10 +172,10 @@ const extension = exports.default;
 
   @override
   Future<DMedia> getDetail(DMedia media, {SourceParams? parameters}) async {
+    final novelRaw = await _callAsync('parseNovel(${jsonEncode(media.url)})');
     final novel = SourceNovel.fromJson(
-      Map<String, dynamic>.from(
-        await _callAsync('parseNovel(${jsonEncode(media.url)})'),
-      ),
+      Map<String, dynamic>.from(novelRaw is Map ? novelRaw : {}),
+      media.url,
     );
 
     var chapters = novel.chapters ?? const <ChapterItem>[];
@@ -193,11 +183,13 @@ const extension = exports.default;
     if (chapters.isEmpty) {
       try {
         final pageRaw = await _callAsync(
-          'parsePage(${jsonEncode(novel.path)}, "1")',
+          'parsePage(${jsonEncode(novel.path.isNotEmpty ? novel.path : media.url)}, "1")',
         );
-        chapters = SourcePage.fromJson(
-          Map<String, dynamic>.from(pageRaw),
-        ).chapters;
+        if (pageRaw is Map) {
+          chapters = SourcePage.fromJson(
+            Map<String, dynamic>.from(pageRaw),
+          ).chapters;
+        }
       } catch (_) {}
     }
 

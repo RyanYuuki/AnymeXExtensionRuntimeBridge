@@ -17,6 +17,9 @@ class DartExtensionService implements ExtensionService {
 
   DartExtensionService(this.source);
 
+  @override
+  void dispose() {}
+
   D4rt _executeLib() {
     final interpreter = D4rt();
     RegistrerBridge.registerBridge(interpreter);

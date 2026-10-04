@@ -409,4 +409,10 @@ class Element {
 }
 ''');
   }
+
+  void dispose() {
+    if (_elements.isEmpty) return;
+    _elements.clear();
+    _elementKey = 0;
+  }
 }

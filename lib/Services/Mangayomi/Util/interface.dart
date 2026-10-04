@@ -15,6 +15,8 @@ abstract interface class ExtensionService {
 
   bool get supportsLatest;
 
+  void dispose();
+
   Map<String, String> getHeaders();
 
   Future<MPages> getPopular(int page);

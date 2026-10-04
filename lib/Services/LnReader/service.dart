@@ -33,6 +33,7 @@ class LNReaderExtensionService implements ExtensionService {
   @override
   late MSource source;
   bool _isInitialized = false;
+  late JsCheerio _jsCheerio;
 
   LNReaderExtensionService(this.source);
 
@@ -46,7 +47,7 @@ module={},exports=Function("return this")(),Object.defineProperties(module,{name
     JsHttpClient(runtime).init();
     JsLibs(runtime).init();
     JsHtmlParser(runtime).init();
-    JsCheerio(runtime).init();
+    _jsCheerio = JsCheerio(runtime)..init();
     runtime.evaluate('''
 const require = (package) => {
   switch (package) {
@@ -87,6 +88,13 @@ ${source.sourceCode}
 const extension = exports.default;
 ''');
     _isInitialized = true;
+  }
+
+  @override
+  void dispose() {
+    if (!_isInitialized) return;
+    _jsCheerio.dispose();
+    _isInitialized = false;
   }
 
   @override
@@ -145,7 +153,10 @@ const extension = exports.default;
   @override
   Future<MPages> search(String query, int page, List<dynamic> filters) async {
     final items =
-        ((await _extensionCallAsync('searchNovels("$query",$page)', [])))
+        ((await _extensionCallAsync(
+              'searchNovels(${jsonEncode(query)},$page)',
+              [],
+            )))
             .map((e) => NovelItem.fromJson(e))
             .map(
               (e) => MManga(
@@ -161,29 +172,47 @@ const extension = exports.default;
 
   @override
   Future<MManga> getDetail(String url) async {
+    List<ChapterItem>? chapters = [];
+    final itemRaw = await _extensionCallAsync<Map?>(
+      'parseNovel(${jsonEncode(url)})',
+      {},
+    );
     final item = SourceNovel.fromJson(
-      await _extensionCallAsync('parseNovel(`$url`)', {}),
+      itemRaw != null ? Map<String, dynamic>.from(itemRaw) : <String, dynamic>{},
+      url,
     );
-    final chapters = SourcePage.fromJson(
-      await _extensionCallAsync('parsePage(`${item.path}`, `1`)', {}),
-    );
+    chapters = item.chapters;
+    if (chapters?.isEmpty ?? true) {
+      final pageRaw = await _extensionCallAsync<Map?>(
+        'parsePage(${jsonEncode(item.path.isNotEmpty ? item.path : url)}, ${jsonEncode('1')})',
+        {},
+      );
+      if (pageRaw != null && pageRaw.isNotEmpty) {
+        final sourcePage = SourcePage.fromJson(
+          Map<String, dynamic>.from(pageRaw),
+        );
+        if (sourcePage.chapters.isNotEmpty) {
+          chapters = sourcePage.chapters;
+        }
+      }
+    }
+
     final chaps =
-        ((chapters.chapters.isNotEmpty ? chapters.chapters : item.chapters)
-                ?.map(
-                  (e) => MChapter(
-                    name: e.name,
-                    url: e.path,
-                    dateUpload: e.releaseTime != null
-                        ? DateTime.tryParse(
-                              e.releaseTime!,
-                            )?.millisecondsSinceEpoch.toString() ??
-                            int.tryParse(e.releaseTime!)?.toString() ??
-                            DateTime.now().millisecondsSinceEpoch.toString()
-                        : DateTime.now().millisecondsSinceEpoch.toString(),
-                  ),
-                )
-                .toList() ??
-            []);
+        chapters
+            ?.map(
+              (e) => MChapter(
+                name: e.name,
+                url: e.path,
+                dateUpload: e.releaseTime != null
+                    ? DateTime.tryParse(e.releaseTime!)?.millisecondsSinceEpoch
+                              .toString() ??
+                          int.tryParse(e.releaseTime!)?.toString() ??
+                          DateTime.now().millisecondsSinceEpoch.toString()
+                    : DateTime.now().millisecondsSinceEpoch.toString(),
+              ),
+            )
+            .toList() ??
+        [];
     return MManga(
       name: item.name,
       imageUrl: item.cover,
@@ -216,11 +245,15 @@ const extension = exports.default;
     _init();
     final res = (await runtime.handlePromise(
       await runtime.evaluateAsync(
-        'jsonStringify(() => extension.parseChapter(`$url`))',
+        'jsonStringify(() => extension.parseChapter(${jsonEncode(url)}))',
       ),
-    ))
-        .stringResult;
-    return res;
+    )).stringResult;
+    try {
+      final decoded = jsonDecode(res);
+      return decoded is String ? decoded : decoded?.toString() ?? '';
+    } catch (_) {
+      return res;
+    }
   }
 
   @override

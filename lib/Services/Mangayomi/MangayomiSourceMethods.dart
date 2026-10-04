@@ -220,8 +220,6 @@ class MangayomiSourceMethods implements SourceMethods {
       {SourceParams? parameters}) async {
     try {
       final data = await getExtensionService(source).getPageList(episode.url!);
-      if (data == null) return [];
-
       return data.map((e) => PageUrl(e.url, headers: e.headers)).toList();
     } catch (e) {
       Logger.log("Mangayomi: getPageList failed: $e");
@@ -234,8 +232,6 @@ class MangayomiSourceMethods implements SourceMethods {
       {SourceParams? parameters}) async {
     try {
       final data = await getExtensionService(source).getVideoList(episode.url!);
-      if (data == null) return [];
-
       return data.map((e) {
         return Video(
           e.quality,
@@ -256,11 +252,16 @@ class MangayomiSourceMethods implements SourceMethods {
   Future<String?> getNovelContent(String chapterTitle, String chapterId,
       {SourceParams? parameters}) async {
     try {
-      final data = await getExtensionService(source)
-          .getHtmlContent(chapterTitle, chapterId);
-
-      return data;
+      final service = getExtensionService(source);
+      final data = await service.getHtmlContent(chapterTitle, chapterId);
+      try {
+        final cleaned = await service.cleanHtmlContent(data);
+        return cleaned.isNotEmpty ? cleaned : data;
+      } catch (_) {
+        return data;
+      }
     } catch (e) {
+      Logger.log("Mangayomi getNovelContent failed: $e");
       return null;
     }
   }

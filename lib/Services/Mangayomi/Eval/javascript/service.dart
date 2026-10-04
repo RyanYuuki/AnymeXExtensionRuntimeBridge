@@ -22,6 +22,7 @@ class JsExtensionService implements ExtensionService {
   @override
   late MSource source;
   bool _isInitialized = false;
+  late JsDomSelector _jsDomSelector;
 
   JsExtensionService(this.source);
 
@@ -29,15 +30,16 @@ class JsExtensionService implements ExtensionService {
     if (_isInitialized) return;
     runtime = getJavascriptRuntime();
     JsHttpClient(runtime).init();
-    JsDomSelector(runtime).init();
+    _jsDomSelector = JsDomSelector(runtime)..init();
     JsVideosExtractors(runtime).init();
     JsUtils(runtime).init();
     JsPreferences(runtime, source).init();
+    final sourceJson = jsonEncode(source.toMSource().toJson());
 
     runtime.evaluate('''
 class MProvider {
     get source() {
-        return JSON.parse('${jsonEncode(source.toMSource().toJson())}');
+        return $sourceJson;
     }
     get supportsLatest() {
         throw new Error("supportsLatest not implemented");
@@ -80,16 +82,26 @@ async function jsonStringify(fn) {
     return JSON.stringify(await fn());
 }
 ''');
-    runtime.evaluate('''${source.sourceCode}
+    _throwIfError(
+      runtime.evaluate('''${source.sourceCode}
 var extention = new DefaultExtension();
-''');
+'''),
+      'loading the source',
+    );
     _isInitialized = true;
+  }
+
+  @override
+  void dispose() {
+    if (!_isInitialized) return;
+    _jsDomSelector.dispose();
+    _isInitialized = false;
   }
 
   @override
   Map<String, String> getHeaders() {
     return _extensionCall<Map>(
-      'getHeaders(`${source.baseUrl ?? ''}`)',
+      'getHeaders(${jsonEncode(source.baseUrl ?? '')})',
       {},
     ).toMapStringString!;
   }
@@ -123,7 +135,7 @@ var extention = new DefaultExtension();
     final activeFilters =
         filters.isNotEmpty ? filters : getFilterList().filters;
     final res = await _extensionCallAsync(
-      'search("$query",$page,${jsonEncode(filterValuesListToJson(activeFilters))})',
+      'search(${jsonEncode(query)},$page,${jsonEncode(filterValuesListToJson(activeFilters))})',
     );
     if (res == null) return MPages(list: [], hasNextPage: false);
     return MPages.fromJson(res);
@@ -131,14 +143,14 @@ var extention = new DefaultExtension();
 
   @override
   Future<MManga> getDetail(String url) async {
-    final res = await _extensionCallAsync('getDetail(`$url`)');
+    final res = await _extensionCallAsync('getDetail(${jsonEncode(url)})');
     if (res == null) return MManga();
     return MManga.fromJson(res);
   }
 
   @override
   Future<List<PageUrl>> getPageList(String url) async {
-    final res = await _extensionCallAsync('getPageList(`$url`)');
+    final res = await _extensionCallAsync('getPageList(${jsonEncode(url)})');
     if (res == null || res is! List) return [];
     return res
         .map(
@@ -151,7 +163,7 @@ var extention = new DefaultExtension();
 
   @override
   Future<List<Video>> getVideoList(String url) async {
-    final res = await _extensionCallAsync('getVideoList(`$url`)');
+    final res = await _extensionCallAsync('getVideoList(${jsonEncode(url)})');
     if (res == null || res is! List) return [];
     return res
         .where(
@@ -171,11 +183,15 @@ var extention = new DefaultExtension();
     _init();
     final res = (await runtime.handlePromise(
       await runtime.evaluateAsync(
-        'jsonStringify(() => extention.getHtmlContent(`$name`, `$url`))',
+        'jsonStringify(() => extention.getHtmlContent(${jsonEncode(name)}, ${jsonEncode(url)}))',
       ),
-    ))
-        .stringResult;
-    return res;
+    )).stringResult;
+    try {
+      final decoded = jsonDecode(res);
+      return decoded is String ? decoded : decoded?.toString() ?? '';
+    } catch (_) {
+      return res;
+    }
   }
 
   @override
@@ -183,11 +199,15 @@ var extention = new DefaultExtension();
     _init();
     final res = (await runtime.handlePromise(
       await runtime.evaluateAsync(
-        'jsonStringify(() => extention.cleanHtmlContent(`$html`))',
+        'jsonStringify(() => extention.cleanHtmlContent(${jsonEncode(html)}))',
       ),
-    ))
-        .stringResult;
-    return res;
+    )).stringResult;
+    try {
+      final decoded = jsonDecode(res);
+      return decoded is String ? decoded : decoded?.toString() ?? '';
+    } catch (_) {
+      return res;
+    }
   }
 
   @override
@@ -217,15 +237,16 @@ var extention = new DefaultExtension();
   T _extensionCall<T>(String call, T def) {
     _init();
 
-    try {
-      final res = runtime.evaluate('JSON.stringify(extention.$call)');
+    final res = runtime.evaluate('JSON.stringify(extention.$call)');
+    if (res.isError) {
+      if (_isNotImplemented(res) && def != null) return def;
+      _throwIfError(res, call);
+    }
 
+    try {
       return jsonDecode(res.stringResult) as T;
     } catch (_) {
-      if (def != null) {
-        return def;
-      }
-
+      if (def != null) return def;
       rethrow;
     }
   }
@@ -233,14 +254,26 @@ var extention = new DefaultExtension();
   Future<T> _extensionCallAsync<T>(String call) async {
     _init();
 
-    try {
-      final promised = await runtime.handlePromise(
-        await runtime.evaluateAsync('jsonStringify(() => extention.$call)'),
-      );
+    final evaluated = await runtime.evaluateAsync(
+      'jsonStringify(() => extention.$call)',
+    );
+    _throwIfError(evaluated, call);
 
-      return jsonDecode(promised.stringResult) as T;
-    } catch (e) {
-      rethrow;
-    }
+    final promised = await runtime.handlePromise(evaluated);
+    _throwIfError(promised, call);
+
+    return jsonDecode(promised.stringResult) as T;
   }
+
+  void _throwIfError(JsEvalResult result, String what) {
+    if (!result.isError) return;
+    final detail = result.stringResult.trim();
+    throw Exception(
+      'Extension "${source.name ?? 'unknown'}" failed while $what'
+      '${detail.isEmpty ? '' : ': $detail'}',
+    );
+  }
+
+  bool _isNotImplemented(JsEvalResult result) =>
+      result.stringResult.contains('not implemented');
 }

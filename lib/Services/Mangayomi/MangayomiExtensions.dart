@@ -329,27 +329,6 @@ class MangayomiExtensions extends Extension {
     );
   }
 
-  String _convertLang(String lang) {
-    switch (lang) {
-      case "English":
-        return "en";
-      case "Français":
-        return "fr";
-      case "Español":
-        return "es";
-      case "Português":
-        return "pt";
-      case "Русский":
-        return "ru";
-      case "日本語":
-        return "ja";
-      case "中文, 汉语, 漢語":
-        return "zh";
-      default:
-        return "all";
-    }
-  }
-
   @override
   Set<String> get schemes => {"dar", "anymex", "sugoireads", "mangayomi"};
 
