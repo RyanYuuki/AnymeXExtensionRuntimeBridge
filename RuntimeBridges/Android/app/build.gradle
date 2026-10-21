@@ -97,5 +97,6 @@ configurations.all {
         force 'com.squareup.okhttp3:okhttp-brotli:5.3.2'
         force 'com.squareup.okhttp3:okhttp-zstd:5.3.2'
         force 'com.squareup.okhttp3:okhttp-android:5.3.2'
+        force 'com.google.code.gson:gson:2.11.0'
     }
 }

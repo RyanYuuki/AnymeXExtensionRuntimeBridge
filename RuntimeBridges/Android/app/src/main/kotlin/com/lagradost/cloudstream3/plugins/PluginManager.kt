@@ -170,7 +170,26 @@ object PluginManager {
             }
 
             val manifestText = manifestUrl.openStream().bufferedReader().use { it.readText() }
-            val manifest = Gson().fromJson(manifestText, BasePlugin.Manifest::class.java)
+            val manifest = try {
+                Gson().fromJson(manifestText, BasePlugin.Manifest::class.java)
+            } catch (e: Throwable) {
+                Log.w(PLUGIN_TAG, "Gson parsing failed, falling back to JSONObject")
+                val json = org.json.JSONObject(manifestText)
+                val tvTypesList = mutableListOf<String>()
+                val tvTypesArray = json.optJSONArray("tvTypes")
+                if (tvTypesArray != null) {
+                    for (i in 0 until tvTypesArray.length()) {
+                        tvTypesList.add(tvTypesArray.getString(i))
+                    }
+                }
+                BasePlugin.Manifest().apply {
+                    name = json.optString("name", "")
+                    pluginClassName = json.optString("pluginClassName", "")
+                    version = json.optInt("version", 0)
+                    requiresResources = json.optBoolean("requiresResources", false)
+                    tvTypes = tvTypesList
+                }
+            }
 
             Log.i(PLUGIN_TAG, "Parsed manifest: ${manifest.name} v${manifest.version}")
 
