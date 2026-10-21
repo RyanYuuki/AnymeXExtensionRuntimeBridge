@@ -5,10 +5,19 @@ NS_ASSUME_NONNULL_BEGIN
 typedef void (^EmbeddedJvmCompletion)(NSError *_Nullable error);
 typedef void (^EmbeddedJvmResultCompletion)(NSString *_Nullable result,
                                             NSError *_Nullable error);
+typedef void (^EmbeddedJvmLogHandler)(NSArray<NSString *> *lines);
+
+/// Receives every line the VM produces (HotSpot output, System.out/err,
+/// uncaught exceptions, bridge trace), batched, on the main queue.
+FOUNDATION_EXPORT void EmbeddedJvmSetLogHandler(
+    EmbeddedJvmLogHandler _Nullable handler);
 
 /// Creates the single in-process OpenJDK Zero VM if it is not already up.
 /// Idempotent; safe to call from every backend as it initializes.
-FOUNDATION_EXPORT void EmbeddedJvmStart(EmbeddedJvmCompletion completion);
+/// [logDirectory] receives `jvm.log` (every line, written synchronously so it
+/// survives a crash) and HotSpot's fatal error report `hs_err.log`.
+FOUNDATION_EXPORT void EmbeddedJvmStart(NSString *_Nullable logDirectory,
+                                       EmbeddedJvmCompletion completion);
 
 /// Attaches a backend fat JAR in its own child-first class loader and
 /// instantiates its `com.aayush262.dartotsu_extension_bridge.Main.api()`.

@@ -21,7 +21,7 @@ object ApkConverter {
 
         try {
             PackageTools.dex2jar(apkFile, tempJar)
-            JarFixer.fixStackmapFrames(tempJar)
+            com.anymex.desktop.util.BytecodeEditor.fixAndroidClasses(tempJar.toPath(), apkFile.toPath())
 
             val outFile = File(outJarPath)
             outFile.parentFile?.mkdirs()

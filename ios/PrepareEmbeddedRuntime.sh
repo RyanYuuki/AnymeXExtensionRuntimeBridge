@@ -15,7 +15,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 CACHE_DIR="${HOME}/Library/Caches/anymex_extension_bridge/embedded-openjdk-ios13-v16"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dartotsu-embedded-zero.XXXXXX")"
 FRAMEWORKS_DIR="${SCRIPT_DIR}/anymex_extension_bridge/Frameworks"
-RUNTIME_DIR="${SCRIPT_DIR}/anymex_extension_bridge/Sources/anymex_extension_bridge/Runtime"
+RUNTIME_DIR="${SCRIPT_DIR}/anymex_extension_bridge/Sources/anymex_embedded_jvm/Runtime"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
 # --- the embedded-bridge shim JAR -------------------------------------------

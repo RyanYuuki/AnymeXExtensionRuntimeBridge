@@ -89,20 +89,15 @@ class TorrServerAddon extends Addon {
     );
   }
 
-  Future<String> _startStreamImpl({
+  Future<TorrentInfo> _addTorrent(
+    TorrServerController controller, {
     required String url,
     String? title,
     String? category,
     String? poster,
-    String? episode,
-    int? preferredFileIndex,
   }) async {
-    final controller = await ensureStarted();
-    await stopStream();
-
-    late final TorrentInfo added;
     if (url.startsWith("magnet:")) {
-      added = await controller.addTorrent(
+      return controller.addTorrent(
         magnet: url,
         title: title,
         category: category,
@@ -111,7 +106,7 @@ class TorrServerAddon extends Addon {
     } else if (url.startsWith("http://") || url.startsWith("https://")) {
       final torrentFile = await _downloadTorrentFile(url);
       try {
-        added = await controller.addTorrent(
+        return await controller.addTorrent(
           torrentFile: await torrentFile.readAsBytes(),
           title: title,
           category: category,
@@ -123,13 +118,57 @@ class TorrServerAddon extends Addon {
         }
       }
     } else {
-      added = await controller.addTorrent(
+      return controller.addTorrent(
         torrentFile: await File(url).readAsBytes(),
         title: title,
         category: category,
         poster: poster,
       );
     }
+  }
+
+  Future<TorrentInfo> addForDownload({
+    required String url,
+    String? title,
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    final controller = await ensureStarted();
+    final added = await _addTorrent(controller, url: url, title: title);
+    return _waitForMetadata(controller, added.hash, timeout: timeout);
+  }
+
+  Uri fileUrl(String hash, int fileIndex) {
+    final controller = _controller;
+    if (controller == null) {
+      throw StateError("TorrServer is not running");
+    }
+    return controller.streamUrl(hash, fileIndex: fileIndex);
+  }
+
+  Future<void> release(String hash) async {
+    try {
+      await _controller?.removeTorrent(hash);
+    } catch (_) {}
+  }
+
+  Future<String> _startStreamImpl({
+    required String url,
+    String? title,
+    String? category,
+    String? poster,
+    String? episode,
+    int? preferredFileIndex,
+  }) async {
+    final controller = await ensureStarted();
+    await stopStream();
+
+    final added = await _addTorrent(
+      controller,
+      url: url,
+      title: title,
+      category: category,
+      poster: poster,
+    );
 
     _activeHash = added.hash;
 

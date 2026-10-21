@@ -1,12 +1,9 @@
 import Flutter
 import UIKit
+#if canImport(anymex_embedded_jvm)
+import anymex_embedded_jvm
+#endif
 
-/// iOS entry point for dartotsu_extension_bridge.
-///
-/// Only the embedded-JVM channel is implemented here; the plugin's other
-/// channels are Android/desktop-only. The embedded VM boots lazily on the
-/// first `start`/`load` and stays up for the process lifetime; it is only
-/// paused/resumed with the app lifecycle.
 public final class AnymexExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
   private var vmRequested = false
   private let torrServerBridge = TorrServerBridge()
@@ -17,6 +14,9 @@ public final class AnymexExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
       binaryMessenger: registrar.messenger())
     let instance = AnymexExtensionRuntimeBridgePlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
+    EmbeddedJvmSetLogHandler { lines in
+      channel.invokeMethod("log", arguments: lines)
+    }
     instance.observeApplicationLifecycle()
     instance.torrServerBridge.attach(to: registrar)
   }
@@ -25,7 +25,7 @@ public final class AnymexExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
     switch call.method {
     case "start":
       vmRequested = true
-      EmbeddedJvmStart { error in
+      EmbeddedJvmStart(Self.stringArg(call, "logDirectory")) { error in
         Self.finish(result, error: error, ok: nil)
       }
 
@@ -69,8 +69,6 @@ public final class AnymexExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
     }
   }
 
-  // MARK: - Lifecycle
-
   private func observeApplicationLifecycle() {
     NotificationCenter.default.addObserver(
       self, selector: #selector(applicationDidEnterBackground),
@@ -93,8 +91,6 @@ public final class AnymexExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
   deinit {
     NotificationCenter.default.removeObserver(self)
   }
-
-  // MARK: - Helpers
 
   private static func stringArg(_ call: FlutterMethodCall, _ key: String) -> String? {
     (call.arguments as? [String: Any])?[key] as? String

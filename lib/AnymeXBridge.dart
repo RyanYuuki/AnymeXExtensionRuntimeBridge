@@ -8,12 +8,47 @@ import 'Runtime/RuntimeDownloader.dart';
 import 'Runtime/RuntimeController.dart';
 import 'Runtime/RuntimePaths.dart';
 import 'Runtime/Bridge/BridgeDispatcher.dart';
+import 'Engines/JavaEngine/Bridge/EmbeddedJvmBridge.dart';
 import 'dart:async';
 class AnymeXRuntimeBridge {
   static const _channel = MethodChannel('anymeXBridge');
 
   static final Map<String, String> cookiesMap = {};
   static final Map<String, String> userAgentMap = {};
+  static Future<bool> Function(String url)? onSolveCloudflare;
+  static bool _handlerSetUp = false;
+
+  static void _setupMethodCallHandler() {
+    if (_handlerSetUp) return;
+    _handlerSetUp = true;
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'getCookies':
+          final url = call.arguments['url'] as String? ?? '';
+          final host = Uri.tryParse(url)?.host ?? '';
+          return cookiesMap[host] ?? '';
+        case 'getUserAgent':
+          final url = call.arguments['url'] as String? ?? '';
+          final host = Uri.tryParse(url)?.host ?? '';
+          return userAgentMap[host] ?? '';
+        case 'setCookies':
+          final url = call.arguments['url'] as String? ?? '';
+          final cookies = (call.arguments['cookies'] as List?)?.cast<String>() ?? [];
+          final host = Uri.tryParse(url)?.host ?? '';
+          if (host.isNotEmpty && cookies.isNotEmpty) {
+            cookiesMap[host] = cookies.join('; ');
+          }
+          return true;
+        case 'solveCloudflare':
+          final url = call.arguments['url'] as String? ?? '';
+          if (onSolveCloudflare != null) {
+            return await onSolveCloudflare!(url);
+          }
+          return false;
+      }
+      return null;
+    });
+  }
 
   static bool get isSupportedPlatform => true;
 
@@ -25,6 +60,7 @@ class AnymeXRuntimeBridge {
   static bool _hasLoadedMetadata = false;
 
   static Future<void> _initPathsAndLoadMetadata() async {
+    _setupMethodCallHandler();
     if (_cachedBridgePath != null) return;
     try {
       final paths = RuntimePaths();
@@ -102,6 +138,12 @@ class AnymeXRuntimeBridge {
   static Future<void> checkAndInitialize() async {
     if (!isSupportedPlatform) return;
     await _initPathsAndLoadMetadata();
+
+    if (Platform.isIOS) {
+      controller.setReady(true);
+      Logger.log("AnymeX Bridge initialized for iOS embedded runtime.");
+      return;
+    }
 
     final paths = RuntimePaths();
 
@@ -379,11 +421,12 @@ class AnymeXRuntimeBridge {
   }
 
   static bool get isPluginInstalled {
+    if (Platform.isIOS) return true;
     if (_cachedBridgePath == null) return false;
     final bridgeFile = File(_cachedBridgePath!);
     if (!bridgeFile.existsSync()) return false;
 
-    if (!Platform.isAndroid && _cachedJreDirPath != null) {
+    if (!Platform.isAndroid && !Platform.isIOS && _cachedJreDirPath != null) {
       final jreDir = Directory(_cachedJreDirPath!);
       if (!jreDir.existsSync()) return false;
     }
@@ -414,6 +457,10 @@ class AnymeXRuntimeBridge {
         Logger.log("Failed to write metadata.json: $e");
       }
     }
+  }
+
+  static Future<void> clearJvmCrashProtection() async {
+    await EmbeddedJvmBridge.clearCrashFlag();
   }
 
   static Future<bool> isLoadedFromStorage() async {

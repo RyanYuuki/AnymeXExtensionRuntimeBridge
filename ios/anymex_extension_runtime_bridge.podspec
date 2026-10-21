@@ -10,8 +10,8 @@ Runs the extension backend JARs in-process on iOS using a lazily loaded, interpr
   s.author           = { 'RyanYuuki' => 'ryan@example.com' }
   s.source           = { :path => '.' }
 
-  s.source_files = 'anymex_extension_bridge/Sources/anymex_extension_bridge/**/*.{h,m,mm,swift}'
-  s.public_header_files = 'anymex_extension_bridge/Sources/anymex_extension_bridge/include/**/*.h'
+  s.source_files = 'anymex_extension_bridge/Sources/**/*.{h,c,m,mm,swift}'
+  s.public_header_files = 'anymex_extension_bridge/Sources/anymex_embedded_jvm/include/**/*.h'
   s.dependency 'Flutter'
   s.platform = :ios, '13.0'
 
@@ -21,7 +21,7 @@ Runs the extension backend JARs in-process on iOS using a lazily loaded, interpr
     'anymex_extension_bridge/Frameworks/TorrServerKit.xcframework',
   ]
   s.resource_bundles = {
-    'anymex_extension_bridge_runtime' => ['anymex_extension_bridge/Sources/anymex_extension_bridge/Runtime/**/*'],
+    'anymex_extension_bridge_runtime' => ['anymex_extension_bridge/Sources/anymex_embedded_jvm/Runtime/**/*'],
     'anymex_extension_bridge_privacy' => ['anymex_extension_bridge/Sources/anymex_extension_bridge/PrivacyInfo.xcprivacy'],
   }
   s.preserve_paths = 'RuntimeSources/**/*', 'PrepareEmbeddedRuntime.sh', 'PrepareTorrServerRuntime.sh'

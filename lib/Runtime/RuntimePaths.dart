@@ -64,7 +64,7 @@ class RuntimePaths {
   }
 
   Future<String?> get javaExecutablePath async {
-    if (Platform.isAndroid) return null;
+    if (Platform.isAndroid || Platform.isIOS) return null;
 
     final jreRoot = await jreDir;
     if (!await jreRoot.exists()) return null;

@@ -1,37 +1,17 @@
 // swift-tools-version: 5.9
-import PackageDescription
 import Foundation
+import PackageDescription
 
-// PrepareEmbeddedRuntime.sh (../PrepareEmbeddedRuntime.sh) builds
-// Frameworks/OpenJDKRuntime.xcframework and Sources/anymex_extension_bridge/Runtime/.
-// It only runs automatically as CocoaPods' `prepare_command` — SPM has no
-// equivalent hook that can do a network download (build-tool plugins are
-// sandboxed with no network access). If this app also depends on any plugin
-// without SPM support, CocoaPods still runs and keeps these paths populated
-// as a side effect; for a pure-SPM build with no such plugin, or for `swift
-// build`/`swift package resolve` run standalone, run that script by hand
-// first. See runtimeManager/EMBEDDED_IOS_NOTES.md, "Swift Package Manager
-// support", for the durable fix (a pinned, checksummed xcframework release
-// referenced via `binaryTarget(url:checksum:)` instead of a local path).
-let packageDir = URL(fileURLWithPath: #file).deletingLastPathComponent()
-let xcframeworkPath = "Frameworks/OpenJDKRuntime.xcframework"
-let torrServerXCFrameworkPath = "Frameworks/TorrServerKit.xcframework"
+let ffmpegZip = "Frameworks/ffmpeg-v1/DartotsuFfmpeg.xcframework.zip"
+let hasFfmpeg = FileManager.default.fileExists(
+    atPath: URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .appendingPathComponent(ffmpegZip).path
+)
 
-func warnIfMissing(_ relativePath: String, prepareScript: String) {
-    let exists = FileManager.default.fileExists(
-        atPath: packageDir.appendingPathComponent(relativePath).path)
-    guard !exists else { return }
-    FileHandle.standardError.write(
-        """
-        warning: [anymex_extension_bridge] \(relativePath) not found.
-        Run ios/\(prepareScript) before building with Swift Package \
-        Manager (CocoaPods' `pod install` normally does this for you).
-
-        """.data(using: .utf8)!)
-}
-
-warnIfMissing(xcframeworkPath, prepareScript: "PrepareEmbeddedRuntime.sh")
-warnIfMissing(torrServerXCFrameworkPath, prepareScript: "PrepareTorrServerRuntime.sh")
+let ffmpegTargets: [Target] = hasFfmpeg ? [
+    .binaryTarget(name: "AnymeXFfmpeg", path: ffmpegZip)
+] : []
 
 let package = Package(
     name: "anymex_extension_bridge",
@@ -42,24 +22,33 @@ let package = Package(
         .library(name: "anymex-extension-bridge", targets: ["anymex_extension_bridge"])
     ],
     dependencies: [],
-    targets: [
+    targets: ffmpegTargets + [
         .binaryTarget(
             name: "OpenJDKRuntime",
-            path: xcframeworkPath
+            path: "Frameworks/ios-runtime-v1/OpenJDKRuntime.xcframework.zip"
         ),
         .binaryTarget(
             name: "TorrServerKit",
-            path: torrServerXCFrameworkPath
+            url: "https://github.com/YouROK/TorrServer/releases/download/MatriX.146.1/TorrServer-ios-TorrServerKit.xcframework.zip",
+            checksum: "20d0f1e705f72cc87209330570b058eb6368a8800a4ad7cc694802b11b9a2700"
+        ),
+        .target(
+            name: "anymex_embedded_jvm",
+            dependencies: ["OpenJDKRuntime"],
+            resources: [
+                .copy("Runtime"),
+            ],
+            cSettings: [
+                .headerSearchPath("include"),
+                .headerSearchPath("jdk"),
+            ]
         ),
         .target(
             name: "anymex_extension_bridge",
-            dependencies: ["OpenJDKRuntime", "TorrServerKit"],
+            dependencies: ["anymex_embedded_jvm", "TorrServerKit"]
+                + (hasFfmpeg ? ["AnymeXFfmpeg"] : []),
             resources: [
-                .copy("Runtime"),
                 .process("PrivacyInfo.xcprivacy"),
-            ],
-            cSettings: [
-                .headerSearchPath("include/anymex_extension_bridge")
             ]
         ),
     ],
