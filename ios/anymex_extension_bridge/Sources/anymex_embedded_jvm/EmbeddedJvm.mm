@@ -335,8 +335,24 @@ NSError *EmbeddedJvmError(NSInteger code, NSString *message) {
 NSString *OpenJDKRuntimePath() {
   NSString *relativePath =
       [NSString stringWithUTF8String:kOpenJDKFrameworkRelativePath];
-  return [NSBundle.mainBundle.bundlePath
+  NSString *defaultPath = [NSBundle.mainBundle.bundlePath
       stringByAppendingPathComponent:relativePath];
+  if ([NSFileManager.defaultManager fileExistsAtPath:defaultPath]) {
+    return defaultPath;
+  }
+  Class threadClass = [DartotsuEmbeddedJvmThread class];
+  if (threadClass != nil) {
+    NSBundle *b = [NSBundle bundleForClass:threadClass];
+    NSString *p = [b.bundlePath stringByAppendingPathComponent:relativePath];
+    if ([NSFileManager.defaultManager fileExistsAtPath:p]) return p;
+  }
+  for (NSBundle *fw in [NSBundle allFrameworks]) {
+    if ([fw.bundlePath hasSuffix:@"OpenJDKRuntime.framework"]) {
+      NSString *p = [fw.bundlePath stringByAppendingPathComponent:@"OpenJDKRuntime"];
+      if ([NSFileManager.defaultManager fileExistsAtPath:p]) return p;
+    }
+  }
+  return defaultPath;
 }
 
 NSString *OpenJDKRuntimeHome() {
@@ -345,27 +361,126 @@ NSString *OpenJDKRuntimeHome() {
 }
 
 NSString *EmbeddedRuntimeResourcePath() {
+  NSFileManager *fm = NSFileManager.defaultManager;
+
 #if SWIFT_PACKAGE
-  NSString *bundlePath = SWIFTPM_MODULE_BUNDLE.resourcePath;
-  return bundlePath == nil
-      ? NSBundle.mainBundle.resourcePath
-      : [bundlePath stringByAppendingPathComponent:@"Runtime"];
-#else
-  NSBundle *pluginBundle = [NSBundle
-      bundleForClass:NSClassFromString(
-                         @"dartotsu_extension_bridge.DartotsuExtensionBridgePlugin")];
-  NSString *bundlePath =
-      [pluginBundle pathForResource:@"dartotsu_extension_bridge_runtime"
-                            ofType:@"bundle"];
-  if (bundlePath == nil) {
-    bundlePath = [NSBundle.mainBundle
-        pathForResource:@"dartotsu_extension_bridge_runtime"
-                 ofType:@"bundle"];
+  NSString *spmBundlePath = SWIFTPM_MODULE_BUNDLE.resourcePath;
+  if (spmBundlePath != nil) {
+    NSString *spmRuntime = [spmBundlePath stringByAppendingPathComponent:@"Runtime"];
+    if ([fm fileExistsAtPath:[spmRuntime stringByAppendingPathComponent:@"lib/security/cacerts"]]) {
+      return spmRuntime;
+    }
+    if ([fm fileExistsAtPath:[spmBundlePath stringByAppendingPathComponent:@"lib/security/cacerts"]]) {
+      return spmBundlePath;
+    }
   }
-  NSBundle *runtimeBundle =
-      bundlePath == nil ? nil : [NSBundle bundleWithPath:bundlePath];
-  return runtimeBundle.resourcePath ?: NSBundle.mainBundle.resourcePath;
 #endif
+
+  NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+  NSArray<NSString *> *bundleNames = @[
+    @"anymex_extension_bridge_runtime",
+    @"anymex_extension_runtime_bridge_runtime",
+    @"dartotsu_extension_bridge_runtime",
+  ];
+
+  NSMutableArray<NSBundle *> *searchBundles = [NSMutableArray array];
+  Class threadClass = [DartotsuEmbeddedJvmThread class];
+  if (threadClass != nil) {
+    NSBundle *b = [NSBundle bundleForClass:threadClass];
+    if (b != nil && ![searchBundles containsObject:b]) {
+      [searchBundles addObject:b];
+    }
+  }
+
+  NSArray<NSString *> *pluginClassNames = @[
+    @"AnymexExtensionRuntimeBridgePlugin",
+    @"anymex_extension_runtime_bridge.AnymexExtensionRuntimeBridgePlugin",
+    @"anymex_extension_bridge.AnymexExtensionRuntimeBridgePlugin",
+    @"DartotsuExtensionBridgePlugin",
+    @"dartotsu_extension_bridge.DartotsuExtensionBridgePlugin",
+  ];
+  for (NSString *className in pluginClassNames) {
+    Class cls = NSClassFromString(className);
+    if (cls != nil) {
+      NSBundle *b = [NSBundle bundleForClass:cls];
+      if (b != nil && ![searchBundles containsObject:b]) {
+        [searchBundles addObject:b];
+      }
+    }
+  }
+
+  for (NSBundle *b in [NSBundle allBundles]) {
+    if (![searchBundles containsObject:b]) {
+      [searchBundles addObject:b];
+    }
+  }
+  for (NSBundle *b in [NSBundle allFrameworks]) {
+    if (![searchBundles containsObject:b]) {
+      [searchBundles addObject:b];
+    }
+  }
+
+  if (![searchBundles containsObject:NSBundle.mainBundle]) {
+    [searchBundles addObject:NSBundle.mainBundle];
+  }
+
+  for (NSBundle *bundle in searchBundles) {
+    for (NSString *name in bundleNames) {
+      NSString *p = [bundle pathForResource:name ofType:@"bundle"];
+      if (p != nil) {
+        NSBundle *subBundle = [NSBundle bundleWithPath:p];
+        if (subBundle.resourcePath != nil) {
+          [candidates addObject:subBundle.resourcePath];
+        }
+        [candidates addObject:p];
+      }
+    }
+    if (bundle.resourcePath != nil) {
+      [candidates addObject:bundle.resourcePath];
+      [candidates addObject:[bundle.resourcePath stringByAppendingPathComponent:@"Runtime"]];
+    }
+  }
+
+  NSString *mainPath = NSBundle.mainBundle.bundlePath;
+  if (mainPath != nil) {
+    for (NSString *name in bundleNames) {
+      [candidates addObject:[mainPath stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"bundle"]]];
+    }
+    NSString *frameworksDir = [mainPath stringByAppendingPathComponent:@"Frameworks"];
+    NSArray<NSString *> *frameworkContents = [fm contentsOfDirectoryAtPath:frameworksDir error:nil];
+    for (NSString *item in frameworkContents) {
+      if ([item hasSuffix:@".framework"]) {
+        NSString *fw = [frameworksDir stringByAppendingPathComponent:item];
+        for (NSString *name in bundleNames) {
+          [candidates addObject:[fw stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"bundle"]]];
+        }
+      }
+    }
+  }
+
+  for (NSString *candidate in candidates) {
+    NSString *cacerts = [candidate stringByAppendingPathComponent:@"lib/security/cacerts"];
+    NSString *jar = [candidate stringByAppendingPathComponent:@"embedded-bridge.jar"];
+    if ([fm fileExistsAtPath:cacerts] && [fm fileExistsAtPath:jar]) {
+      return candidate;
+    }
+  }
+
+  if (mainPath != nil) {
+    NSDirectoryEnumerator *enumerator = [fm enumeratorAtPath:mainPath];
+    NSString *file;
+    while ((file = [enumerator nextObject])) {
+      if ([file hasSuffix:@"lib/security/cacerts"]) {
+        NSString *fullPath = [mainPath stringByAppendingPathComponent:file];
+        NSString *runtimeDir = [[fullPath stringByDeletingLastPathComponent] stringByDeletingLastPathComponent];
+        if ([fm fileExistsAtPath:[runtimeDir stringByAppendingPathComponent:@"embedded-bridge.jar"]]) {
+          return runtimeDir;
+        }
+      }
+    }
+  }
+
+  return NSBundle.mainBundle.resourcePath;
 }
 
 bool LoadOpenJDKRuntime(NSError **error) {

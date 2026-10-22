@@ -4,6 +4,7 @@ import UIKit
 import anymex_embedded_jvm
 #endif
 
+@objc(AnymexExtensionRuntimeBridgePlugin)
 public final class AnymexExtensionRuntimeBridgePlugin: NSObject, FlutterPlugin {
   private var vmRequested = false
   private let torrServerBridge = TorrServerBridge()
