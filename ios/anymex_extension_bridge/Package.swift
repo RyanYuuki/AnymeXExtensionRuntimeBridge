@@ -2,17 +2,6 @@
 import Foundation
 import PackageDescription
 
-let ffmpegZip = "Frameworks/ffmpeg-v1/DartotsuFfmpeg.xcframework.zip"
-let hasFfmpeg = FileManager.default.fileExists(
-    atPath: URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .appendingPathComponent(ffmpegZip).path
-)
-
-let ffmpegTargets: [Target] = hasFfmpeg ? [
-    .binaryTarget(name: "AnymeXFfmpeg", path: ffmpegZip)
-] : []
-
 let package = Package(
     name: "anymex_extension_bridge",
     platforms: [
@@ -22,7 +11,7 @@ let package = Package(
         .library(name: "anymex-extension-bridge", targets: ["anymex_extension_bridge"])
     ],
     dependencies: [],
-    targets: ffmpegTargets + [
+    targets: [
         .binaryTarget(
             name: "OpenJDKRuntime",
             path: "Frameworks/ios-runtime-v1/OpenJDKRuntime.xcframework.zip"
@@ -45,8 +34,7 @@ let package = Package(
         ),
         .target(
             name: "anymex_extension_bridge",
-            dependencies: ["anymex_embedded_jvm", "TorrServerKit"]
-                + (hasFfmpeg ? ["AnymeXFfmpeg"] : []),
+            dependencies: ["anymex_embedded_jvm", "TorrServerKit"],
             resources: [
                 .process("PrivacyInfo.xcprivacy"),
             ]
