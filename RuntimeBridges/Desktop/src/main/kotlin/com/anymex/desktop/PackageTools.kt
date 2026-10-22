@@ -3,11 +3,14 @@ package com.anymex.desktop
 import com.googlecode.d2j.dex.Dex2jar
 import com.googlecode.dex2jar.tools.BaksmaliBaseDexExceptionHandler
 import net.dongliu.apk.parser.ApkFile
-import org.w3c.dom.Element
-import org.w3c.dom.Node
-import java.io.ByteArrayInputStream
+import java.io.BufferedOutputStream
 import java.io.File
-import javax.xml.parsers.DocumentBuilderFactory
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.nio.file.spi.FileSystemProvider
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 object PackageTools {
 
@@ -20,26 +23,36 @@ object PackageTools {
     private const val MD_ANIME_SOURCE_FACTORY = "tachiyomi.animeextension.factory"
     private const val MD_ANIME_NSFW = "tachiyomi.animeextension.nsfw"
 
+    private val metaDataTag = Regex("""<meta-data\b[^>]*>""")
+    private val attribute = Regex("""([\w:.-]+)\s*=\s*["']([^"']*)["']""")
+
+    private fun metaDataOf(manifestXml: String): Map<String, String> {
+        val start = manifestXml.indexOf("<application")
+        if (start < 0) return emptyMap()
+        val end = manifestXml.indexOf("</application>", start).let { if (it < 0) manifestXml.length else it }
+        val out = LinkedHashMap<String, String>()
+        for (tag in metaDataTag.findAll(manifestXml, start).takeWhile { it.range.first < end }) {
+            var name: String? = null
+            var value: String? = null
+            for (attr in attribute.findAll(tag.value)) {
+                when (attr.groupValues[1].substringAfterLast(':')) {
+                    "name" -> name = unescapeXml(attr.groupValues[2])
+                    "value" -> value = unescapeXml(attr.groupValues[2])
+                }
+            }
+            if (name != null && value != null) out[name] = value
+        }
+        return out
+    }
+
+    private fun unescapeXml(s: String) = s
+        .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+        .replace("&apos;", "'").replace("&amp;", "&")
+
     fun parseMeta(apk: File): ExtensionMeta? {
         return try {
             ApkFile(apk).use { parsed ->
-                val meta = HashMap<String, String>()
-                val manifestXml = parsed.manifestXml
-                val doc = DocumentBuilderFactory.newInstance()
-                    .newDocumentBuilder()
-                    .parse(ByteArrayInputStream(manifestXml.toByteArray()))
-                val appTag = doc.getElementsByTagName("application").item(0) ?: return@use null
-                val children = appTag.childNodes
-                for (i in 0 until children.length) {
-                    val node = children.item(i)
-                    if (node.nodeType == Node.ELEMENT_NODE && node.nodeName == "meta-data") {
-                        val elem = node as Element
-                        val name = elem.getAttribute("android:name")
-                        val value = elem.getAttribute("android:value")
-                        if (name.isNotEmpty()) meta[name] = value
-                    }
-                }
-
+                val meta = metaDataOf(parsed.manifestXml)
                 val pkgName = parsed.apkMeta.packageName
                 val animeClass = meta[MD_ANIME_SOURCE_CLASS]
                 val mangaClass = meta[MD_SOURCE_CLASS]
@@ -70,9 +83,35 @@ object PackageTools {
         }
     }
 
+    private val zipFsAvailable: Boolean by lazy {
+        FileSystemProvider.installedProviders().any { it.scheme.equals("jar", ignoreCase = true) }
+    }
+
+    private fun writeJar(converter: Dex2jar, target: Path) {
+        if (zipFsAvailable) {
+            converter.to(target)
+            return
+        }
+        val dir = Files.createTempDirectory(target.parent ?: Paths.get(""), "anymex-d2j-")
+        try {
+            converter.to(dir)
+            ZipOutputStream(BufferedOutputStream(Files.newOutputStream(target))).use { zip ->
+                Files.walk(dir).use { paths ->
+                    paths.filter { Files.isRegularFile(it) }.sorted().forEach { file ->
+                        zip.putNextEntry(ZipEntry(dir.relativize(file).joinToString("/")))
+                        Files.copy(file, zip)
+                        zip.closeEntry()
+                    }
+                }
+            }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
     fun dex2jar(apk: File, jarFile: File) {
         val handler = BaksmaliBaseDexExceptionHandler()
-        Dex2jar.from(apk)
+        val converter = Dex2jar.from(apk)
             .withExceptionHandler(handler)
             .reUseReg(false)
             .topoLogicalSort()
@@ -82,7 +121,7 @@ object PackageTools {
             .noCode(false)
             .skipExceptions(false)
             .dontSanitizeNames(true)
-            .to(jarFile.toPath())
+        writeJar(converter, jarFile.toPath())
 
         if (handler.hasException()) {
             System.err.println("dex2jar finished with errors for $apk (some classes may be missing)")

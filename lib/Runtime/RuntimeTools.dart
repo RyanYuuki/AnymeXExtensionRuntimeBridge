@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:archive/archive_io.dart';
 import 'RuntimeController.dart';
 import 'RuntimePaths.dart';
+import 'Bridge/BridgeDispatcher.dart';
 import '../Logger.dart';
 
 class RuntimeTools {
@@ -81,6 +82,16 @@ class RuntimeTools {
   }
 
   Future<void> runDex2Jar(String dexPath, String outJarPath) async {
+    try {
+      await BridgeDispatcher().invokeMethod('dex2jar', {
+        'dexPath': dexPath,
+        'outJarPath': outJarPath,
+      });
+      return;
+    } catch (e) {
+      if (Platform.isIOS) rethrow;
+    }
+
     final dex2jarPath = await ensureDex2Jar();
     final javaPath = await _paths.javaExecutablePath;
 

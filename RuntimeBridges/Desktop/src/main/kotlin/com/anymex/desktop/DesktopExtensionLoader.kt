@@ -107,6 +107,15 @@ object DesktopExtensionLoader {
                 ApkConverter.convertApkToJar(apkPath, outJarPath)
                 mapOf("success" to true, "outJarPath" to outJarPath)
             }
+            "dex2jar" -> {
+                val dexPath = getSafeString("dexPath")
+                val outJarPath = getSafeString("outJarPath")
+                val dexFile = File(dexPath)
+                val outJar = File(outJarPath)
+                outJar.parentFile?.mkdirs()
+                PackageTools.dex2jar(dexFile, outJar)
+                mapOf("success" to true, "outJarPath" to outJarPath)
+            }
             "loadExtensions" -> {
                 val path = getSafeString("folderPath")
                 AniyomiSourceMethods.loadExtensions(path)
