@@ -84,7 +84,11 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
 
       final parsed = <ASource>[];
 
-      for (final e in (result as List)) {
+      final list = result is List
+          ? result
+          : (result is String ? (jsonDecode(result) as List? ?? []) : []);
+
+      for (final e in list) {
         final map = e as Map<String, dynamic>;
         final detectedType =
             map['type'] == 'anime' ? ItemType.anime : ItemType.manga;

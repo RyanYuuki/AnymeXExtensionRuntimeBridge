@@ -121,7 +121,11 @@ class ExtensionManager extends GetxController {
         listChanged = true;
       }
 
-      await (existingManager ?? manager).initialize();
+      try {
+        await (existingManager ?? manager).initialize();
+      } catch (e, s) {
+        Logger.log('Error initializing manager ${manager.id}: $e\n$s');
+      }
 
       if (existingManager == null) {
         for (final type in ItemType.values) {

@@ -28,6 +28,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.google.gson.JsonPrimitive
 import kotlinx.coroutines.*
 import java.util.concurrent.ConcurrentHashMap
 import tachiyomi.core.util.lang.awaitSingle
@@ -47,6 +48,267 @@ object DesktopExtensionLoader {
         val change: Preference.OnPreferenceChangeListener?
     )
     private val sourcePreferences = mutableMapOf<String, MutableMap<String, PrefHandlers>>()
+
+    fun handleRequest(requestJson: String): String {
+        return try {
+            val request = gson.fromJson(requestJson, JsonObject::class.java)
+            val method = request.get("method")?.let { if (it.isJsonPrimitive) it.asString else null }
+                ?: return createErrorEnvelope("Missing method", null)
+            val methodArgs = request.getAsJsonObject("args") ?: JsonObject()
+            val resultData = runBlocking(Dispatchers.IO) {
+                executeMethod(method, methodArgs, null)
+            }
+            createSuccessEnvelope(resultData)
+        } catch (e: Throwable) {
+            createErrorEnvelope(e.message ?: e.javaClass.simpleName, e.stackTraceToString())
+        }
+    }
+
+    fun createSuccessEnvelope(data: Any?): String {
+        val envelope = JsonObject()
+        envelope.addProperty("success", true)
+        val decoded = if (data is String) {
+            try { gson.fromJson(data, JsonElement::class.java) } catch (_: Exception) { JsonPrimitive(data) }
+        } else {
+            gson.toJsonTree(data)
+        }
+        envelope.add("data", decoded)
+        return gson.toJson(envelope)
+    }
+
+    fun createErrorEnvelope(error: String, trace: String?): String {
+        val envelope = JsonObject()
+        envelope.addProperty("success", false)
+        envelope.addProperty("error", error)
+        if (trace != null) {
+            envelope.addProperty("trace", trace)
+        }
+        return gson.toJson(envelope)
+    }
+
+    suspend fun executeMethod(
+        method: String,
+        methodArgs: JsonObject,
+        onPartialResponse: ((Any?) -> Unit)? = null
+    ): Any? {
+        fun getSafeString(key: String): String =
+            methodArgs.get(key)?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+
+        fun getSafeInt(key: String, default: Int): Int =
+            methodArgs.get(key)?.let { if (it.isJsonPrimitive && it.asJsonPrimitive.isNumber) it.asInt else default } ?: default
+
+        fun getSafeBoolean(key: String, default: Boolean): Boolean =
+            methodArgs.get(key)?.let { if (it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) it.asBoolean else default } ?: default
+
+        return when (method) {
+            "convertApk" -> {
+                val apkPath = getSafeString("apkPath")
+                val outJarPath = getSafeString("outJarPath")
+                ApkConverter.convertApkToJar(apkPath, outJarPath)
+                mapOf("success" to true, "outJarPath" to outJarPath)
+            }
+            "loadExtensions" -> {
+                val path = getSafeString("folderPath")
+                AniyomiSourceMethods.loadExtensions(path)
+            }
+            "getPopular" -> {
+                val sourceId = getSafeString("sourceId")
+                val page = getSafeInt("page", 1)
+                val isAnime = getSafeBoolean("isAnime", true)
+                AniyomiSourceMethods.fetchPopular(sourceId, page, isAnime)
+            }
+            "getLatestUpdates" -> {
+                val sourceId = getSafeString("sourceId")
+                val page = getSafeInt("page", 1)
+                val isAnime = getSafeBoolean("isAnime", true)
+                AniyomiSourceMethods.fetchLatestUpdates(sourceId, page, isAnime)
+            }
+            "search" -> {
+                val sourceId = getSafeString("sourceId")
+                val query = getSafeString("query")
+                val page = getSafeInt("page", 1)
+                val isAnime = getSafeBoolean("isAnime", true)
+                val filters = methodArgs.getAsJsonArray("filters")
+                AniyomiSourceMethods.search(sourceId, query, page, isAnime, filters)
+            }
+            "getDetail" -> {
+                val sourceId = getSafeString("sourceId")
+                val media = methodArgs.getAsJsonObject("media") ?: JsonObject()
+                val url = media.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val title = media.get("title")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val cover = media.get("thumbnail_url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val isAnime = getSafeBoolean("isAnime", true)
+                AniyomiSourceMethods.fetchDetails(sourceId, url, title, cover, isAnime)
+            }
+            "getVideoList" -> {
+                val sourceId = getSafeString("sourceId")
+                val episode = methodArgs.getAsJsonObject("episode") ?: JsonObject()
+                val url = episode.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val name = episode.get("name")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                AniyomiSourceMethods.fetchVideoList(sourceId, url, name)
+            }
+            "getPageList" -> {
+                val sourceId = getSafeString("sourceId")
+                val episode = methodArgs.getAsJsonObject("episode") ?: JsonObject()
+                val url = episode.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val name = episode.get("name")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val memo = episode.get("memo")?.let { if (it.isJsonPrimitive) it.asString else it.toString() }
+                    ?: episode.get("description")?.let { if (it.isJsonPrimitive) it.asString else it.toString() }
+                AniyomiSourceMethods.fetchPageList(sourceId, url, name, memo)
+            }
+            "stopHttpServer" -> {
+                val sourceId = getSafeString("sourceId")
+                val isAnime = getSafeBoolean("isAnime", true)
+                AniyomiSourceMethods.stopHttpServer(sourceId, isAnime)
+                "null"
+            }
+            "unloadExtension" -> {
+                val sourceId = getSafeString("sourceId")
+                AniyomiSourceMethods.unloadExtension(sourceId)
+                "null"
+            }
+            "getFilterList" -> {
+                val sourceId = getSafeString("sourceId")
+                val isAnime = getSafeBoolean("isAnime", true)
+                AniyomiSourceMethods.getFilterList(sourceId, isAnime)
+            }
+            "aniyomiGetPreferences" -> {
+                val sourceId = getSafeString("sourceId")
+                val isAnime = getSafeBoolean("isAnime", true)
+                AniyomiSourceMethods.getPreferences(sourceId, isAnime)
+            }
+            "aniyomiSavePreference" -> {
+                val sourceId = getSafeString("sourceId")
+                val key = getSafeString("key")
+                val value = methodArgs.get("value")
+                val isAnime = getSafeBoolean("isAnime", true)
+                val actualValue: Any? = if (value == null || value.isJsonNull) {
+                    null
+                } else if (value.isJsonPrimitive) {
+                    val p = value.asJsonPrimitive
+                    when {
+                        p.isBoolean -> p.asBoolean
+                        p.isNumber -> {
+                            val n = p.asNumber
+                            if (n.toDouble() == n.toInt().toDouble()) n.toInt() else n.toDouble()
+                        }
+                        else -> p.asString
+                    }
+                } else if (value.isJsonArray) {
+                    value.asJsonArray.map { it.asString }.toSet()
+                } else {
+                    value.toString()
+                }
+                val result = AniyomiSourceMethods.savePreference(sourceId, key, actualValue, isAnime)
+                if (result == "success") "true" else "false"
+            }
+            "csLoadExtensions" -> {
+                val path = getSafeString("folderPath")
+                com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.loadExtensions(path)
+            }
+            "csSearch" -> {
+                val sourceId = getSafeString("sourceId")
+                val query = getSafeString("query")
+                val page = getSafeInt("page", 1)
+                com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.search(sourceId, query, page)
+            }
+            "csGetDetail" -> {
+                val sourceId = getSafeString("sourceId")
+                val url = methodArgs.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.fetchDetails(sourceId, url)
+            }
+            "csGetVideoList" -> {
+                val sourceId = getSafeString("sourceId")
+                val url = methodArgs.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.fetchVideoList(sourceId, url)
+            }
+            "csGetVideoListStream" -> {
+                val sourceId = getSafeString("sourceId")
+                val url = methodArgs.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.fetchVideoListStream(sourceId, url) { linkJson ->
+                    onPartialResponse?.invoke(linkJson)
+                }
+                "completed"
+            }
+            "kotatsuLoadExtensions" -> {
+                val path = getSafeString("folderPath")
+                com.anymex.desktop.kotatsu.KotatsuExtensionLoader.loadExtensions(path)
+            }
+            "kotatsuGetPopular" -> {
+                val sourceId = getSafeString("sourceId")
+                val page = getSafeInt("page", 1)
+                com.anymex.desktop.kotatsu.KotatsuExtensionLoader.getPopular(sourceId, page)
+            }
+            "kotatsuGetLatestUpdates" -> {
+                val sourceId = getSafeString("sourceId")
+                val page = getSafeInt("page", 1)
+                com.anymex.desktop.kotatsu.KotatsuExtensionLoader.getLatestUpdates(sourceId, page)
+            }
+            "kotatsuSearch" -> {
+                val sourceId = getSafeString("sourceId")
+                val query = getSafeString("query")
+                val page = getSafeInt("page", 1)
+                com.anymex.desktop.kotatsu.KotatsuExtensionLoader.search(sourceId, query, page)
+            }
+            "kotatsuGetDetail" -> {
+                val sourceId = getSafeString("sourceId")
+                val media = methodArgs.getAsJsonObject("media") ?: JsonObject()
+                val url = media.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val title = media.get("title")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val cover = media.get("thumbnail_url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                com.anymex.desktop.kotatsu.KotatsuExtensionLoader.getDetails(sourceId, url, title, cover)
+            }
+            "kotatsuGetPageList" -> {
+                val sourceId = getSafeString("sourceId")
+                val episode = methodArgs.getAsJsonObject("episode") ?: JsonObject()
+                val url = episode.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val name = episode.get("name")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                com.anymex.desktop.kotatsu.KotatsuExtensionLoader.getPageList(sourceId, url, name)
+            }
+            "setCookies" -> {
+                val url = getSafeString("url")
+                val cookieString = getSafeString("cookieString")
+                if (url.isBlank() || cookieString.isBlank()) {
+                    "{\"error\": \"url and cookieString are required\"}"
+                } else {
+                    try {
+                        val uri = java.net.URI(url)
+                        cookieString.split(";").map { it.trim() }.filter { it.isNotEmpty() }.forEach { cookie ->
+                            NetworkHelper.sharedCookieManager.cookieStore.add(uri, java.net.HttpCookie.parse("Set-Cookie: $cookie").firstOrNull() ?: return@forEach)
+                        }
+                        System.err.println("[RPC] setCookies: injected ${cookieString.split(";").size} cookie(s) for $url")
+                        "ok"
+                    } catch (e: Exception) {
+                        System.err.println("[RPC] setCookies error: ${e.message}")
+                        "{\"error\": \"${e.message}\"}"
+                    }
+                }
+            }
+            "setUserAgent" -> {
+                val url = getSafeString("url")
+                val userAgent = getSafeString("userAgent")
+                if (url.isBlank() || userAgent.isBlank()) {
+                    "{\"error\": \"url and userAgent are required\"}"
+                } else {
+                    try {
+                        val host = java.net.URI(url).host ?: url
+                        System.setProperty("anymex.ua.$host", userAgent)
+                        System.err.println("[RPC] setUserAgent: stored UA for host=$host")
+                        "ok"
+                    } catch (e: Exception) {
+                        System.err.println("[RPC] setUserAgent error: ${e.message}")
+                        "{\"error\": \"${e.message}\"}"
+                    }
+                }
+            }
+            "ping" -> "pong"
+            "exit" -> {
+                System.exit(0)
+                ""
+            }
+            else -> "{\"error\": \"Unknown method: $method\"}"
+        }
+    }
 }
 
 fun main(args: Array<String>) = runBlocking {
@@ -148,216 +410,8 @@ fun main(args: Array<String>) = runBlocking {
                 }
 
                 val resultData = withContext(ioContext) {
-                    when (method) {
-                        "convertApk" -> {
-                            val apkPath = getSafeString("apkPath")
-                            val outJarPath = getSafeString("outJarPath")
-                            ApkConverter.convertApkToJar(apkPath, outJarPath)
-                            mapOf("success" to true, "outJarPath" to outJarPath)
-                        }
-                        "loadExtensions" -> {
-                            val path = getSafeString("folderPath")
-                            AniyomiSourceMethods.loadExtensions(path)
-                        }
-                        "getPopular" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val page = getSafeInt("page", 1)
-                            val isAnime = getSafeBoolean("isAnime", true)
-                            AniyomiSourceMethods.fetchPopular(sourceId, page, isAnime)
-                        }
-                        "getLatestUpdates" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val page = getSafeInt("page", 1)
-                            val isAnime = getSafeBoolean("isAnime", true)
-                            AniyomiSourceMethods.fetchLatestUpdates(sourceId, page, isAnime)
-                        }
-                        "search" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val query = getSafeString("query")
-                            val page = getSafeInt("page", 1)
-                            val isAnime = getSafeBoolean("isAnime", true)
-                            val filters = methodArgs.getAsJsonArray("filters")
-                            AniyomiSourceMethods.search(sourceId, query, page, isAnime, filters)
-                        }
-                        "getDetail" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val media = methodArgs.getAsJsonObject("media") ?: JsonObject()
-                            val url = media.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val title = media.get("title")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val cover = media.get("thumbnail_url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val isAnime = getSafeBoolean("isAnime", true)
-                            AniyomiSourceMethods.fetchDetails(sourceId, url, title, cover, isAnime)
-                        }
-                        "getVideoList" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val episode = methodArgs.getAsJsonObject("episode") ?: JsonObject()
-                            val url = episode.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val name = episode.get("name")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            AniyomiSourceMethods.fetchVideoList(sourceId, url, name)
-                        }
-                        "getPageList" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val episode = methodArgs.getAsJsonObject("episode") ?: JsonObject()
-                            val url = episode.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val name = episode.get("name")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val memo = episode.get("memo")?.let { if (it.isJsonPrimitive) it.asString else it.toString() }
-                                ?: episode.get("description")?.let { if (it.isJsonPrimitive) it.asString else it.toString() }
-                            AniyomiSourceMethods.fetchPageList(sourceId, url, name, memo)
-                        }
-                        "stopHttpServer" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val isAnime = getSafeBoolean("isAnime", true)
-                            AniyomiSourceMethods.stopHttpServer(sourceId, isAnime)
-                            "null"
-                        }
-                        "unloadExtension" -> {
-                            val sourceId = getSafeString("sourceId")
-                            AniyomiSourceMethods.unloadExtension(sourceId)
-                            "null"
-                        }
-                        "getFilterList" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val isAnime = getSafeBoolean("isAnime", true)
-                            AniyomiSourceMethods.getFilterList(sourceId, isAnime)
-                        }
-                        "aniyomiGetPreferences" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val isAnime = getSafeBoolean("isAnime", true)
-                            AniyomiSourceMethods.getPreferences(sourceId, isAnime)
-                        }
-                        "aniyomiSavePreference" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val key = getSafeString("key")
-                            val value = methodArgs.get("value")
-                            val isAnime = getSafeBoolean("isAnime", true)
-                            
-                            val actualValue: Any? = if (value == null || value.isJsonNull) {
-                                null
-                            } else if (value.isJsonPrimitive) {
-                                val p = value.asJsonPrimitive
-                                when {
-                                    p.isBoolean -> p.asBoolean
-                                    p.isNumber -> {
-                                        val n = p.asNumber
-                                        if (n.toDouble() == n.toInt().toDouble()) n.toInt() else n.toDouble()
-                                    }
-                                    else -> p.asString
-                                }
-                            } else if (value.isJsonArray) {
-                                value.asJsonArray.map { it.asString }.toSet()
-                            } else {
-                                value.toString()
-                            }
-                            
-                            val result = AniyomiSourceMethods.savePreference(sourceId, key, actualValue, isAnime)
-                            if (result == "success") "true" else "false"
-                        }
-                        "csLoadExtensions" -> {
-                            val path = getSafeString("folderPath")
-                            com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.loadExtensions(path)
-                        }
-                        "csSearch" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val query = getSafeString("query")
-                            val page = getSafeInt("page", 1)
-                            com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.search(sourceId, query, page)
-                        }
-                        "csGetDetail" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val url = methodArgs.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.fetchDetails(sourceId, url)
-                        }
-                        "csGetVideoList" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val url = methodArgs.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.fetchVideoList(sourceId, url)
-                        }
-                        "csGetVideoListStream" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val url = methodArgs.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            com.anymex.desktop.cloudstream.CloudStreamExtensionLoader.fetchVideoListStream(sourceId, url) { linkJson ->
-                                 sendResponse(linkJson, "partial")
-                            }
-                            "completed"
-                        }
-                        "kotatsuLoadExtensions" -> {
-                            val path = getSafeString("folderPath")
-                            com.anymex.desktop.kotatsu.KotatsuExtensionLoader.loadExtensions(path)
-                        }
-                        "kotatsuGetPopular" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val page = getSafeInt("page", 1)
-                            com.anymex.desktop.kotatsu.KotatsuExtensionLoader.getPopular(sourceId, page)
-                        }
-                        "kotatsuGetLatestUpdates" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val page = getSafeInt("page", 1)
-                            com.anymex.desktop.kotatsu.KotatsuExtensionLoader.getLatestUpdates(sourceId, page)
-                        }
-                        "kotatsuSearch" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val query = getSafeString("query")
-                            val page = getSafeInt("page", 1)
-                            com.anymex.desktop.kotatsu.KotatsuExtensionLoader.search(sourceId, query, page)
-                        }
-                        "kotatsuGetDetail" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val media = methodArgs.getAsJsonObject("media") ?: JsonObject()
-                            val url = media.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val title = media.get("title")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val cover = media.get("thumbnail_url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            com.anymex.desktop.kotatsu.KotatsuExtensionLoader.getDetails(sourceId, url, title, cover)
-                        }
-                        "kotatsuGetPageList" -> {
-                            val sourceId = getSafeString("sourceId")
-                            val episode = methodArgs.getAsJsonObject("episode") ?: JsonObject()
-                            val url = episode.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            val name = episode.get("name")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
-                            com.anymex.desktop.kotatsu.KotatsuExtensionLoader.getPageList(sourceId, url, name)
-                        }
-                        "setCookies" -> {
-                            val url = getSafeString("url")
-                            val cookieString = getSafeString("cookieString")
-                            if (url.isBlank() || cookieString.isBlank()) {
-                                "{\"error\": \"url and cookieString are required\"}"
-                            } else {
-                                try {
-                                    val uri = java.net.URI(url)
-                                    cookieString.split(";").map { it.trim() }.filter { it.isNotEmpty() }.forEach { cookie ->
-                                        NetworkHelper.sharedCookieManager.cookieStore.add(uri, java.net.HttpCookie.parse("Set-Cookie: $cookie").firstOrNull() ?: return@forEach)
-                                    }
-                                    System.err.println("[RPC] setCookies: injected ${cookieString.split(";").size} cookie(s) for $url")
-                                    "ok"
-                                } catch (e: Exception) {
-                                    System.err.println("[RPC] setCookies error: ${e.message}")
-                                    "{\"error\": \"${e.message}\"}"
-                                }
-                            }
-                        }
-                        "setUserAgent" -> {
-                            val url = getSafeString("url")
-                            val userAgent = getSafeString("userAgent")
-                            if (url.isBlank() || userAgent.isBlank()) {
-                                "{\"error\": \"url and userAgent are required\"}"
-                            } else {
-                                try {
-                                    val host = java.net.URI(url).host ?: url
-                                    System.setProperty("anymex.ua.$host", userAgent)
-                                    System.err.println("[RPC] setUserAgent: stored UA for host=$host")
-                                    "ok"
-                                } catch (e: Exception) {
-                                    System.err.println("[RPC] setUserAgent error: ${e.message}")
-                                    "{\"error\": \"${e.message}\"}"
-                                }
-                            }
-                        }
-                        "ping" -> "pong"
-                        "exit" -> {
-                            System.exit(0)
-                            ""
-                        }
-                        else -> "{\"error\": \"Unknown method: $method\"}"
-
+                    DesktopExtensionLoader.executeMethod(method, methodArgs) { partialData ->
+                        sendResponse(partialData, "partial")
                     }
                 }
 

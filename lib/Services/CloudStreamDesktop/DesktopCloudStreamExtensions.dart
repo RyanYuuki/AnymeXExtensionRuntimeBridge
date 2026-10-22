@@ -91,7 +91,11 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
       final parsed = <Source>[];
       final metas = <String, Map<String, dynamic>>{};
 
-      for (final e in (result as List)) {
+      final list = result is List
+          ? result
+          : (result is String ? (jsonDecode(result) as List? ?? []) : []);
+
+      for (final e in list) {
         final map = e as Map<String, dynamic>;
 
         final internalName = map['name'] as String?;
