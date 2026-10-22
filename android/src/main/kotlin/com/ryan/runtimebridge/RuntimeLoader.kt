@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import dalvik.system.BaseDexClassLoader
+import dalvik.system.DexClassLoader
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -55,6 +56,36 @@ object RuntimeLoader {
                             Log.w(TAG, "Native library already loaded or failed: ${out.name}")
                         }
                     }
+            }
+        }
+    }
+
+    private class RuntimeClassLoader(
+        dexPath: String,
+        optimizedDirectory: String?,
+        librarySearchPath: String?,
+        parent: ClassLoader
+    ) : DexClassLoader(dexPath, optimizedDirectory, librarySearchPath, parent) {
+
+        override fun loadClass(name: String, resolve: Boolean): Class<*> {
+            var c = findLoadedClass(name)
+            if (c != null) return c
+
+            if (name.startsWith("java.") ||
+                name.startsWith("javax.") ||
+                name.startsWith("android.") ||
+                name.startsWith("androidx.") ||
+                name.startsWith("kotlin.") ||
+                name.startsWith("io.flutter.") ||
+                name.startsWith("com.ryan.runtimebridge.")
+            ) {
+                return super.loadClass(name, resolve)
+            }
+
+            return try {
+                findClass(name).also { if (resolve) resolveClass(it) }
+            } catch (_: ClassNotFoundException) {
+                super.loadClass(name, resolve)
             }
         }
     }
@@ -121,7 +152,14 @@ object RuntimeLoader {
             addDexPath.invoke(pathList, dst.absolutePath, optimizedDir)
         }
 
-        val clazz = context.classLoader.loadClass(className)
+        val runtimeClassLoader = RuntimeClassLoader(
+            dst.absolutePath,
+            optimizedDir.absolutePath,
+            File(context.codeCacheDir, "plugin_libs").absolutePath,
+            context.classLoader
+        )
+
+        val clazz = runtimeClassLoader.loadClass(className)
         val instance = try {
             clazz.getField("INSTANCE").get(null)
         } catch (_: Exception) {

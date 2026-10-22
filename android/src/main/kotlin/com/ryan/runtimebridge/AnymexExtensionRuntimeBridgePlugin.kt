@@ -159,7 +159,8 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             runtimeBridge = loaded.bridgeInstance
 
             try {
-                val loggerClass = ctx.classLoader.loadClass("com.anymex.runtimehost.Logger")
+                val loggerClass = loaded.bridgeClass.classLoader?.loadClass("com.anymex.runtimehost.Logger")
+                    ?: ctx.classLoader.loadClass("com.anymex.runtimehost.Logger")
                 val setLogCallbackMethod = loggerClass.getMethod("setLogCallback", Any::class.java, Method::class.java)
                 val ourLogMethod = AnymexExtensionRuntimeBridgePlugin::class.java.getMethod(
                     "logFromHost",
