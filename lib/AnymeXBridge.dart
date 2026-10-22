@@ -139,12 +139,6 @@ class AnymeXRuntimeBridge {
     if (!isSupportedPlatform) return;
     await _initPathsAndLoadMetadata();
 
-    if (Platform.isIOS) {
-      controller.setReady(true);
-      Logger.log("AnymeX Bridge initialized for iOS embedded runtime.");
-      return;
-    }
-
     final paths = RuntimePaths();
 
     String? savedPath;
@@ -174,7 +168,7 @@ class AnymeXRuntimeBridge {
       }
     }
 
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !Platform.isIOS) {
       final jreDir = await paths.jreDir;
       exists = exists && await jreDir.exists();
     }
@@ -421,7 +415,6 @@ class AnymeXRuntimeBridge {
   }
 
   static bool get isPluginInstalled {
-    if (Platform.isIOS) return true;
     if (_cachedBridgePath == null) return false;
     final bridgeFile = File(_cachedBridgePath!);
     if (!bridgeFile.existsSync()) return false;

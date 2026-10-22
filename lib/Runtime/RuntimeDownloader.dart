@@ -111,7 +111,7 @@ class RuntimeDownloader {
       final toolsDir = await _paths.toolsDir;
       final dex2jarPath = await _paths.dex2jarPath;
 
-      final bool isDesktop = !Platform.isAndroid;
+      final bool isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
       if (localApkPath == null && await bridgeFile.exists()) {
         final isValid = await isValidZip(bridgeFile, minBytes: Platform.isAndroid ? 5 * 1024 * 1024 : 1024);

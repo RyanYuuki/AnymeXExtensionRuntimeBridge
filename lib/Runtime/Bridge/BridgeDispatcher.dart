@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'SidecarBridge.dart';
 import '../../Engines/JavaEngine/Bridge/EmbeddedJvmBridge.dart';
@@ -33,10 +34,28 @@ class BridgeDispatcher {
   }
 
   Stream<dynamic> invokeStreamMethod(String method, Map<String, dynamic> args) {
+    if (Platform.isIOS) {
+      final controller = StreamController<dynamic>();
+      invokeMethod(method, args).then((data) {
+        if (data is List) {
+          for (final item in data) {
+            controller.add(item);
+          }
+        } else if (data != null) {
+          controller.add(data);
+        }
+        controller.close();
+      }).catchError((err, st) {
+        controller.addError(err, st);
+        controller.close();
+      });
+      return controller.stream;
+    }
     return SidecarBridge().invokeStreamMethod(method, args);
   }
 
   Future<bool> cancelRequest(String id) async {
+    if (Platform.isIOS) return false;
     return SidecarBridge().cancelRequest(id);
   }
 
