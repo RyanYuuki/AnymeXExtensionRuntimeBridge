@@ -1,7 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -326,9 +325,9 @@ class TorrServerAddon extends Addon {
   @override
   IconData get icon => Icons.extension;
 
-  static const _owner = "ayman708-UX";
-  static const _repo = "torrserver_flutter";
-  static const _version = "v0.0.6";
+  static const _owner = "YouROK";
+  static const _repo = "TorrServer";
+  static const _version = "MatriX.146.1";
 
   String get version => _version;
 
@@ -368,34 +367,23 @@ class TorrServerAddon extends Addon {
     return (await _binaryFile).exists();
   }
 
-  String get _archiveName {
+  String get _assetName {
     if (Platform.isWindows) {
-      return "torrserver-windows-amd64.zip";
+      return "TorrServer-windows-amd64.exe";
     }
     if (Platform.isMacOS) {
-      final arch = _isArm ? "arm64" : "amd64";
-      return "torrserver-darwin-$arch.tar.gz";
+      return "TorrServer-darwin-${_isArm ? "arm64" : "amd64"}";
     }
     if (Platform.isLinux) {
-      final arch = _isArm ? "arm64" : "amd64";
-      return "torrserver-linux-$arch.tar.gz";
+      return "TorrServer-linux-${_isArm ? "arm64" : "amd64"}";
     }
     if (Platform.isAndroid) {
-      return "torrserver-android-$_androidAbi.zip";
+      return "TorrServer-android-$_androidAbi";
     }
     throw UnsupportedError(
       "TorrServerAddon only downloads for Windows/macOS/Linux/Android; "
       "iOS embeds its xcframework instead.",
     );
-  }
-
-  String get _entryName {
-    if (Platform.isWindows) return "torrserver-windows-amd64.exe";
-    if (Platform.isMacOS) {
-      return "torrserver-darwin-${_isArm ? "arm64" : "amd64"}";
-    }
-    if (Platform.isAndroid) return "torrserver-android-$_androidAbi";
-    return "torrserver-linux-${_isArm ? "arm64" : "amd64"}";
   }
 
   bool get _isArm =>
@@ -478,51 +466,48 @@ class TorrServerAddon extends Addon {
 
   Future<void> _download() async {
     final url =
-        "https://github.com/$_owner/$_repo/releases/download/$_version/$_archiveName";
+        "https://github.com/$_owner/$_repo/releases/download/$_version/$_assetName";
 
-    final request = http.Request("GET", Uri.parse(url));
-    final response = await _client.send(request);
+    final client = http.Client();
+    try {
+      final request = http.Request("GET", Uri.parse(url));
+      final response = await client.send(request);
 
-    if (response.statusCode != 200) {
-      throw Exception("Failed to download TorrServer (${response.statusCode})");
-    }
-
-    final dir = await _directory;
-    final archiveFile = File(p.join(dir.path, _archiveName));
-
-    final sink = archiveFile.openWrite();
-    int received = 0;
-    final total = response.contentLength ?? 0;
-
-    await for (final chunk in response.stream) {
-      sink.add(chunk);
-      received += chunk.length;
-      if (total > 0) {
-        progress.value = received / total;
+      if (response.statusCode != 200) {
+        throw Exception("Failed to download TorrServer (${response.statusCode})");
       }
+
+      final binary = await _binaryFile;
+      final sink = binary.openWrite();
+      int received = 0;
+      final total = response.contentLength ?? 0;
+
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) {
+          progress.value = received / total;
+        }
+      }
+
+      await sink.flush();
+      await sink.close();
+
+      if (!Platform.isWindows) {
+        await Process.run("chmod", ["755", binary.path]);
+      }
+
+      progress.value = 1;
+    } catch (_) {
+      try {
+        final binary = await _binaryFile;
+        if (await binary.exists()) {
+          await binary.delete();
+        }
+      } catch (_) {}
+      rethrow;
+    } finally {
+      client.close();
     }
-
-    await sink.flush();
-    await sink.close();
-
-    final bytes = await archiveFile.readAsBytes();
-    final archive = _archiveName.endsWith(".zip")
-        ? ZipDecoder().decodeBytes(bytes)
-        : TarDecoder().decodeBytes(const GZipDecoder().decodeBytes(bytes));
-
-    final entry = archive.files.firstWhere(
-      (f) => f.isFile && p.basename(f.name) == _entryName,
-      orElse: () => throw Exception("$_entryName not found in $_archiveName"),
-    );
-
-    final binary = await _binaryFile;
-    await binary.writeAsBytes(entry.content as List<int>);
-    await archiveFile.delete();
-
-    if (!Platform.isWindows) {
-      await Process.run("chmod", ["755", binary.path]);
-    }
-
-    progress.value = 1;
   }
 }

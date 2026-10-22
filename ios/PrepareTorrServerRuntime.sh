@@ -1,19 +1,19 @@
 #!/bin/sh
 # Vendors the prebuilt TorrServerKit.xcframework (a `gomobile bind` build of
-# github.com/ayman708-UX/torrserver_flutter's Go engine) for the iOS embedded
+# github.com/YouROK/TorrServer's own iOS release asset) for the iOS embedded
 # TorrServer controller. Unlike PrepareEmbeddedRuntime.sh's OpenJDK runtime,
 # this artifact needs no local build step - it's downloaded, checksum
 # verified, and unzipped into place as-is.
 set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-CACHE_DIR="${HOME}/Library/Caches/anymex_extension_bridge/torrserverkit-v0.0.6"
+CACHE_DIR="${HOME}/Library/Caches/anymex_extension_bridge/torrserverkit-MatriX.146.1"
 FRAMEWORKS_DIR="${SCRIPT_DIR}/anymex_extension_bridge/Frameworks"
 
-VERSION="0.0.6"
+VERSION="MatriX.146.1"
 XCFRAMEWORK_ZIP="${CACHE_DIR}/TorrServerKit.xcframework.zip"
-XCFRAMEWORK_URL="https://github.com/ayman708-UX/torrserver_flutter/releases/download/v${VERSION}/TorrServerKit.xcframework.zip"
-XCFRAMEWORK_SHA256="1d3d736517c48b7382852b206c897d41c149fe361419a4c5753615f427e588d0"
+XCFRAMEWORK_URL="https://github.com/YouROK/TorrServer/releases/download/${VERSION}/TorrServer-ios-TorrServerKit.xcframework.zip"
+XCFRAMEWORK_SHA256="20d0f1e705f72cc87209330570b058eb6368a8800a4ad7cc694802b11b9a2700"
 
 if [ -d "${FRAMEWORKS_DIR}/TorrServerKit.xcframework" ]; then
   exit 0

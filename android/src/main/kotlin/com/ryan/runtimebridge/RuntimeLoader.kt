@@ -11,6 +11,7 @@ import java.util.zip.ZipFile
 object RuntimeLoader {
 
     private const val TAG = "RuntimeLoader"
+    private val loadedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     @SuppressLint("UnsafeDynamicallyLoadedCode")
     private fun preloadNativeLibraries(context: Context, apkFile: File) {
@@ -102,43 +103,25 @@ object RuntimeLoader {
 
         preloadNativeLibraries(context, dst)
 
-        val classLoader = context.classLoader
-        val pathListField = BaseDexClassLoader::class.java.getDeclaredField("pathList").apply {
-            isAccessible = true
-        }
-        val pathList = pathListField.get(classLoader)
-        val dexElementsField = pathList.javaClass.getDeclaredField("dexElements").apply {
-            isAccessible = true
-        }
-        val beforeElements = dexElementsField.get(pathList) as? Array<*>
-        val beforeCount = beforeElements?.size ?: 0
-
-        val addDexPath = pathList.javaClass.getDeclaredMethod(
-            "addDexPath",
-            String::class.java,
-            File::class.java
-        ).apply {
-            isAccessible = true
-        }
-
-        addDexPath.invoke(pathList, dst.absolutePath, optimizedDir)
-
-        try {
-            val afterElements = dexElementsField.get(pathList) as? Array<*>
-            if (afterElements != null && afterElements.size > beforeCount && beforeElements != null) {
-                val newCount = afterElements.size - beforeCount
-                val reordered = java.lang.reflect.Array.newInstance(
-                    beforeElements.javaClass.componentType!!,
-                    afterElements.size
-                ) as Array<Any>
-                System.arraycopy(afterElements, beforeCount, reordered, 0, newCount)
-                System.arraycopy(afterElements, 0, reordered, newCount, beforeCount)
-                dexElementsField.set(pathList, reordered)
+        if (loadedPaths.add(dst.absolutePath)) {
+            val classLoader = context.classLoader
+            val pathListField = BaseDexClassLoader::class.java.getDeclaredField("pathList").apply {
+                isAccessible = true
             }
-        } catch (_: Exception) {
+            val pathList = pathListField.get(classLoader)
+
+            val addDexPath = pathList.javaClass.getDeclaredMethod(
+                "addDexPath",
+                String::class.java,
+                File::class.java
+            ).apply {
+                isAccessible = true
+            }
+
+            addDexPath.invoke(pathList, dst.absolutePath, optimizedDir)
         }
 
-        val clazz = classLoader.loadClass(className)
+        val clazz = context.classLoader.loadClass(className)
         val instance = try {
             clazz.getField("INSTANCE").get(null)
         } catch (_: Exception) {
