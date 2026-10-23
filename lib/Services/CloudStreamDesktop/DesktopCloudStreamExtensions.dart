@@ -37,7 +37,7 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
   String get id => 'cloudstream-desktop';
 
   @override
-  String get name => Platform.isIOS ? 'CloudStream' : 'CloudStream (Desktop)';
+  String get name => 'CloudStream';
 
   @override
   String get icon => 'https://static.everythingmoe.com/icons/cloudstream.png';

@@ -29,7 +29,7 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
   String get id => 'aniyomi-desktop';
 
   @override
-  String get name => Platform.isIOS ? 'Aniyomi' : 'Aniyomi (Desktop)';
+  String get name => 'Aniyomi';
 
   @override
   String get icon => 'https://aniyomi.org/img/logo-128px.png';

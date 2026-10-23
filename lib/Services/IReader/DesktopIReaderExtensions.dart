@@ -28,7 +28,7 @@ class DesktopIReaderExtensions extends DesktopExtensionBase
   String get id => 'ireader-desktop';
 
   @override
-  String get name => Platform.isIOS ? 'IReader' : 'IReader (Desktop)';
+  String get name => 'IReader';
 
   @override
   String get icon =>

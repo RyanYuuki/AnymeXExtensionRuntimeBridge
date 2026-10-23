@@ -28,7 +28,7 @@ class DesktopTsundokuExtensions extends DesktopExtensionBase
   String get id => 'tsundoku-desktop';
 
   @override
-  String get name => Platform.isIOS ? 'Tsundoku' : 'Tsundoku (Desktop)';
+  String get name => 'Tsundoku';
 
   @override
   String get icon =>
