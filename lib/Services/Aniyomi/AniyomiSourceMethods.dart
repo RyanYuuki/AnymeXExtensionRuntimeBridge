@@ -16,6 +16,22 @@ class AniyomiSourceMethods extends SourceMethods {
 
   bool get isAnime => source.itemType?.index == 1;
 
+  String _sanitizeUrl(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return '';
+    var u = raw.trim();
+    final base = (source.baseUrl ?? '').trim().replaceAll(RegExp(r'/+$'), '');
+    if (base.isNotEmpty && u.startsWith(base)) {
+      u = u.substring(base.length);
+    }
+    if (u.startsWith('http://') || u.startsWith('https://')) {
+      return u;
+    }
+    if (u.startsWith('//')) {
+      return 'https:$u';
+    }
+    return u;
+  }
+
   @override
   Future<DMedia> getDetail(DMedia media, {SourceParams? parameters}) async {
     final result = await platform.invokeMethod('getDetail', {
@@ -23,7 +39,7 @@ class AniyomiSourceMethods extends SourceMethods {
       'isAnime': isAnime,
       'media': {
         'title': media.title,
-        'url': media.url,
+        'url': _sanitizeUrl(media.url),
         'thumbnail_url': media.cover,
         'description': media.description,
         'author': media.author,
@@ -77,7 +93,7 @@ class AniyomiSourceMethods extends SourceMethods {
       'isAnime': isAnime,
       'episode': {
         'name': episode.name,
-        'url': episode.url,
+        'url': _sanitizeUrl(episode.url),
         'date_upload': episode.dateUpload,
         'description': episode.description,
         'episode_number': episode.episodeNumber,
@@ -113,7 +129,7 @@ class AniyomiSourceMethods extends SourceMethods {
       'isAnime': isAnime,
       'episode': {
         'name': episode.name,
-        'url': episode.url,
+        'url': _sanitizeUrl(episode.url),
         'date_upload': episode.dateUpload,
         'description': episode.description,
         'episode_number': episode.episodeNumber,

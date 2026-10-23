@@ -5,7 +5,6 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import dalvik.system.BaseDexClassLoader
-import dalvik.system.DexClassLoader
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -60,36 +59,6 @@ object RuntimeLoader {
         }
     }
 
-    private class RuntimeClassLoader(
-        dexPath: String,
-        optimizedDirectory: String?,
-        librarySearchPath: String?,
-        parent: ClassLoader
-    ) : DexClassLoader(dexPath, optimizedDirectory, librarySearchPath, parent) {
-
-        override fun loadClass(name: String, resolve: Boolean): Class<*> {
-            var c = findLoadedClass(name)
-            if (c != null) return c
-
-            if (name.startsWith("java.") ||
-                name.startsWith("javax.") ||
-                name.startsWith("android.") ||
-                name.startsWith("androidx.") ||
-                name.startsWith("kotlin.") ||
-                name.startsWith("io.flutter.") ||
-                name.startsWith("com.ryan.runtimebridge.")
-            ) {
-                return super.loadClass(name, resolve)
-            }
-
-            return try {
-                findClass(name).also { if (resolve) resolveClass(it) }
-            } catch (_: ClassNotFoundException) {
-                super.loadClass(name, resolve)
-            }
-        }
-    }
-
     @SuppressLint("SetWorldReadable")
     fun loadRuntime(
         context: Context,
@@ -111,6 +80,7 @@ object RuntimeLoader {
                 externalFile.lastModified() != dst.lastModified()
 
         if (shouldCopy) {
+            loadedPaths.remove(dst.absolutePath)
             val tmp = File(privateDir, "${externalFile.name}.tmp")
             externalFile.inputStream().use { input ->
                 tmp.outputStream().use { output ->
@@ -134,12 +104,17 @@ object RuntimeLoader {
 
         preloadNativeLibraries(context, dst)
 
+        val classLoader = context.classLoader
         if (loadedPaths.add(dst.absolutePath)) {
-            val classLoader = context.classLoader
             val pathListField = BaseDexClassLoader::class.java.getDeclaredField("pathList").apply {
                 isAccessible = true
             }
             val pathList = pathListField.get(classLoader)
+            val dexElementsField = pathList.javaClass.getDeclaredField("dexElements").apply {
+                isAccessible = true
+            }
+            val beforeElements = dexElementsField.get(pathList) as? Array<*>
+            val beforeCount = beforeElements?.size ?: 0
 
             val addDexPath = pathList.javaClass.getDeclaredMethod(
                 "addDexPath",
@@ -150,16 +125,24 @@ object RuntimeLoader {
             }
 
             addDexPath.invoke(pathList, dst.absolutePath, optimizedDir)
+
+            try {
+                val afterElements = dexElementsField.get(pathList) as? Array<*>
+                if (afterElements != null && afterElements.size > beforeCount && beforeElements != null) {
+                    val newCount = afterElements.size - beforeCount
+                    val reordered = java.lang.reflect.Array.newInstance(
+                        beforeElements.javaClass.componentType!!,
+                        afterElements.size
+                    ) as Array<Any>
+                    System.arraycopy(afterElements, beforeCount, reordered, 0, newCount)
+                    System.arraycopy(afterElements, 0, reordered, newCount, beforeCount)
+                    dexElementsField.set(pathList, reordered)
+                }
+            } catch (_: Exception) {
+            }
         }
 
-        val runtimeClassLoader = RuntimeClassLoader(
-            dst.absolutePath,
-            optimizedDir.absolutePath,
-            File(context.codeCacheDir, "plugin_libs").absolutePath,
-            context.classLoader
-        )
-
-        val clazz = runtimeClassLoader.loadClass(className)
+        val clazz = classLoader.loadClass(className)
         val instance = try {
             clazz.getField("INSTANCE").get(null)
         } catch (_: Exception) {
