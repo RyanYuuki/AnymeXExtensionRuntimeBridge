@@ -49,13 +49,4 @@ repositories {
 dependencies {
     compileOnly "io.flutter:flutter_embedding_debug:1.0.0-ef0cd000916d64fa0c5d09cc809fa7ad244a5767"
     implementation "com.google.code.gson:gson:2.11.0"
-    api "com.squareup.okio:okio:3.17.0"
-    api "com.squareup.okhttp3:okhttp:5.3.2"
-}
-
-configurations.all {
-    resolutionStrategy {
-        force 'com.squareup.okio:okio:3.17.0'
-        force 'com.squareup.okhttp3:okhttp:5.3.2'
-    }
 }

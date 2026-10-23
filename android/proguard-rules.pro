@@ -35,6 +35,10 @@
 -keep class androidx.preference.** { *; }
 -keep class androidx.fragment.** { *; }
 -keep class androidx.core.** { *; }
+-keep class androidx.savedstate.** { *; }
+-keep interface androidx.savedstate.** { *; }
+-keep class androidx.activity.** { *; }
+-keep interface androidx.activity.** { *; }
 
 -keep,allowoptimization class kotlin.** { public protected *; }
 -keep,allowoptimization class kotlinx.coroutines.** { public protected *; }

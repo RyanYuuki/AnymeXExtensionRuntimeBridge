@@ -41,11 +41,16 @@ object RuntimeLoader {
                         val libName = entry.name.substringAfterLast('/')
                         val out = File(outDir, libName)
                         if (!out.exists() || out.length() != entry.size) {
+                            if (out.exists()) {
+                                out.setWritable(true, false)
+                                out.delete()
+                            }
                             zip.getInputStream(entry).use { input ->
                                 out.outputStream().use(input::copyTo)
                             }
-                            out.setReadable(true)
-                            out.setExecutable(true)
+                            out.setReadable(true, false)
+                            out.setExecutable(true, false)
+                            out.setWritable(false, false)
                         }
 
                         try {
@@ -88,9 +93,22 @@ object RuntimeLoader {
                 }
             }
             tmp.setLastModified(externalFile.lastModified())
+            if (dst.exists()) {
+                dst.setWritable(true, false)
+                dst.delete()
+            }
             if (!tmp.renameTo(dst)) {
+                tmp.inputStream().use { input ->
+                    dst.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
                 tmp.delete()
-                throw IllegalStateException("Failed to replace runtime APK file")
+            }
+            val optimizedDir = File(context.codeCacheDir, "plugin_opt")
+            if (optimizedDir.exists()) {
+                optimizedDir.deleteRecursively()
+                optimizedDir.mkdirs()
             }
         }
 

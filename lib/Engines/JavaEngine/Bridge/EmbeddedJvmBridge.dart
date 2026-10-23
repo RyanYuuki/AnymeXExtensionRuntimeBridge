@@ -154,7 +154,7 @@ class EmbeddedJvmBridge {
   Future<dynamic> invokeMethod(
     String method,
     Map<String, dynamic> args, {
-    Duration timeout = const Duration(seconds: 60),
+    Duration timeout = const Duration(minutes: 2),
   }) async {
     if (!_loaded || _jarPath == null) {
       throw Exception('Embedded JVM bridge not initialized');

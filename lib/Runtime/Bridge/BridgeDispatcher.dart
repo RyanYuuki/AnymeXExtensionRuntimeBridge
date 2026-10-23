@@ -25,7 +25,7 @@ class BridgeDispatcher {
   Future<dynamic> invokeMethod(
     String method,
     Map<String, dynamic> args, {
-    Duration timeout = const Duration(seconds: 60),
+    Duration timeout = const Duration(minutes: 2),
   }) async {
     if (Platform.isIOS) {
       return await EmbeddedJvmBridge().invokeMethod(method, args, timeout: timeout);
