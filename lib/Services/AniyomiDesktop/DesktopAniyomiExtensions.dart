@@ -29,7 +29,7 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
   String get id => 'aniyomi-desktop';
 
   @override
-  String get name => 'Aniyomi (Desktop)';
+  String get name => Platform.isIOS ? 'Aniyomi' : 'Aniyomi (Desktop)';
 
   @override
   String get icon => 'https://aniyomi.org/img/logo-128px.png';
@@ -431,25 +431,34 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
           'unknown_ext';
 
       final extDir = await _getExtensionsPath();
-      final tempZipPath = p.join(extDir, '$pkgName.zip');
-      final tempExtractedPath = p.join(extDir, '${pkgName}_extracted');
+      final tempZipFile = File(p.join(
+          Directory.systemTemp.path,
+          '${pkgName}_${DateTime.now().millisecondsSinceEpoch}.apk'));
 
       final apkRes = await _client.get(Uri.parse(aSource.apkUrl!));
       if (apkRes.statusCode != 200) {
         throw Exception(
             'Failed to download extension APK: HTTP ${apkRes.statusCode}');
       }
-      File(tempZipPath).writeAsBytesSync(apkRes.bodyBytes);
+      await tempZipFile.writeAsBytes(apkRes.bodyBytes);
 
       final outJarPath = p.join(extDir, '$pkgName.jar');
       Logger.log("Converting Aniyomi APK to JAR via sidecar (embedded dex2jar)...");
 
-      // Delegate conversion to the sidecar which uses de.femtopedia.dex2jar library
-      // (same as Dartotsu) — produces correct bytecode for modern coroutine/lambda patterns
-      await BridgeDispatcher().invokeMethod('convertApk', {
-        'apkPath': tempZipPath,
-        'outJarPath': outJarPath,
-      });
+      try {
+        await BridgeDispatcher().invokeMethod('convertApk', {
+          'apkPath': tempZipFile.path,
+          'outJarPath': outJarPath,
+        });
+      } finally {
+        try {
+          if (await tempZipFile.exists()) await tempZipFile.delete();
+        } catch (_) {}
+      }
+
+      if (!File(outJarPath).existsSync()) {
+        throw Exception("Conversion finished but output JAR was not created at $outJarPath");
+      }
 
       if (aSource.iconUrl != null) {
         setVal('desktop_ext_icon_$pkgName', aSource.iconUrl);
@@ -457,15 +466,6 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
       final versionToSave = aSource.hasUpdate == true ? aSource.versionLast : aSource.version;
       if (versionToSave != null) {
         setVal('desktop_ext_version_$pkgName', versionToSave);
-      }
-
-      try {
-        if (File(tempZipPath).existsSync()) File(tempZipPath).deleteSync();
-        if (Directory(tempExtractedPath).existsSync()) {
-          Directory(tempExtractedPath).deleteSync(recursive: true);
-        }
-      } catch (e) {
-        Logger.log('Cleanup warning: $e');
       }
 
       final avail = getAvailableRx(aSource.itemType!);

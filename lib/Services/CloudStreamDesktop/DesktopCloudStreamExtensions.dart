@@ -37,7 +37,7 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
   String get id => 'cloudstream-desktop';
 
   @override
-  String get name => 'CloudStream (Desktop)';
+  String get name => Platform.isIOS ? 'CloudStream' : 'CloudStream (Desktop)';
 
   @override
   String get icon => 'https://static.everythingmoe.com/icons/cloudstream.png';
@@ -296,128 +296,115 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
         Logger.log(
             "Downloading CloudStream plugin for Desktop: ${source.name}");
         final extDir = await _getExtensionsPath();
-
-        final tempDir = Directory(
-            p.join(extDir, 'temp_${source.internalName ?? source.name}'));
-        if (await tempDir.exists()) await tempDir.delete(recursive: true);
-        await tempDir.create();
-
-        Logger.log("Fetching CS3 file $pluginUrl for processing...");
-        final cs3Res = await http.get(Uri.parse(pluginUrl!));
-        if (cs3Res.statusCode != 200) {
-          throw Exception("Failed to fetch .cs3 zip from $pluginUrl");
-        }
-
-        final cs3Path = p.join(tempDir.path, 'plugin.cs3');
-        await File(cs3Path).writeAsBytes(cs3Res.bodyBytes);
-
-        final cs3Bytes = await File(cs3Path).readAsBytes();
-        final cs3Archive = ZipDecoder().decodeBytes(cs3Bytes);
-        ArchiveFile? dexFile;
-        ArchiveFile? metadataFile;
-        bool isBridgeManifest = false;
-
-        for (final file in cs3Archive) {
-          if (file.name == 'classes.dex') dexFile = file;
-          if (file.name == 'plugins.manifest') {
-            metadataFile = file;
-            isBridgeManifest = false;
-          }
-          if (file.name == 'manifest.json' && metadataFile == null) {
-            metadataFile = file;
-            isBridgeManifest = true;
-          }
-        }
-
         final finalJarPath =
             p.join(extDir, '${source.internalName ?? source.name}.jar');
 
         if (jarUrl != null) {
-          Logger.log("Fetching JVM JAR file (Legacy)...");
+          Logger.log("Fetching JVM JAR file...");
           final jarRes = await http.get(Uri.parse(jarUrl));
           if (jarRes.statusCode != 200) {
-            throw Exception("Failed to fetch .jar from $jarUrl");
+            throw Exception("Failed to fetch .jar from $jarUrl: HTTP ${jarRes.statusCode}");
           }
-
-          final rawJarPath = p.join(tempDir.path, 'raw.jar');
-          await File(rawJarPath).writeAsBytes(jarRes.bodyBytes);
-
-          final jarBytes = await File(rawJarPath).readAsBytes();
-          final decodedArchive = ZipDecoder().decodeBytes(jarBytes);
-
-          final jarArchive = Archive();
-          for (final file in decodedArchive.files) {
-            if (file.name != 'manifest.json') {
-              jarArchive.addFile(file);
-            }
-          }
-
-          if (metadataFile != null) {
-            if (isBridgeManifest) {
-              jarArchive.addFile(ArchiveFile(
-                  'manifest.json', metadataFile.size, metadataFile.content));
-            } else {
-              final csJson =
-                  jsonDecode(utf8.decode(metadataFile.content as List<int>));
-              final bridgeJson = {
-                "pluginClassName": csJson['pluginClassName'] ?? "",
-                "name": source.name,
-                "version": source.version ?? "1.0.0",
-                "authors":
-                    (csJson['authors'] as List?)?.join(", ") ?? "Unknown",
-                "requires": 1
-              };
-              final encoded = utf8.encode(jsonEncode(bridgeJson));
-              jarArchive.addFile(
-                  ArchiveFile('manifest.json', encoded.length, encoded));
-            }
-          }
-
-          final patchedJarBytes = ZipEncoder().encode(jarArchive);
-          await File(finalJarPath).writeAsBytes(patchedJarBytes!);
+          await File(finalJarPath).writeAsBytes(jarRes.bodyBytes);
         } else {
-          if (dexFile == null || metadataFile == null) {
-            throw Exception(
-                "CS3 file missing required classes.dex or metadata (manifest.json/plugins.manifest)");
+          if (pluginUrl == null) {
+            throw Exception("Plugin URL missing for ${source.name}");
           }
+          final tempCs3File = File(p.join(
+              Directory.systemTemp.path,
+              'cs3_${source.internalName ?? source.name}_${DateTime.now().millisecondsSinceEpoch}.cs3'));
 
-          Logger.log("Converting .cs3 to JAR via dex2jar...");
-          final dexPath = p.join(tempDir.path, 'classes.dex');
-          await File(dexPath).writeAsBytes(dexFile.content as List<int>);
+          try {
+            Logger.log("Fetching CS3 file $pluginUrl for processing...");
+            final cs3Res = await http.get(Uri.parse(pluginUrl));
+            if (cs3Res.statusCode != 200) {
+              throw Exception("Failed to fetch .cs3 zip from $pluginUrl: HTTP ${cs3Res.statusCode}");
+            }
+            await tempCs3File.writeAsBytes(cs3Res.bodyBytes);
 
-          await RuntimeTools().runDex2Jar(dexPath, finalJarPath);
+            Logger.log("Converting .cs3 to JAR via bridge...");
+            try {
+              await BridgeDispatcher().invokeMethod('convertCs3', {
+                'cs3Path': tempCs3File.path,
+                'outJarPath': finalJarPath,
+              });
+            } catch (bridgeErr) {
+              Logger.log("convertCs3 failed, trying fallback: $bridgeErr");
+              final cs3Bytes = await tempCs3File.readAsBytes();
+              final cs3Archive = ZipDecoder().decodeBytes(cs3Bytes);
+              ArchiveFile? dexFile;
+              ArchiveFile? metadataFile;
+              bool isBridgeManifest = false;
 
-          final jarBytes = await File(finalJarPath).readAsBytes();
-          final jarArchive = ZipDecoder().decodeBytes(jarBytes);
-          final finalArchive = Archive();
-          for (final f in jarArchive.files) {
-            if (f.name != 'manifest.json') finalArchive.addFile(f);
+              for (final file in cs3Archive) {
+                if (file.name == 'classes.dex') dexFile = file;
+                if (file.name == 'plugins.manifest') {
+                  metadataFile = file;
+                  isBridgeManifest = false;
+                }
+                if (file.name == 'manifest.json' && metadataFile == null) {
+                  metadataFile = file;
+                  isBridgeManifest = true;
+                }
+              }
+
+              if (dexFile == null || metadataFile == null) {
+                throw Exception(
+                    "CS3 file missing required classes.dex or metadata: $bridgeErr");
+              }
+
+              final tempDexFile = File(p.join(
+                  Directory.systemTemp.path,
+                  'dex_${source.internalName ?? source.name}_${DateTime.now().millisecondsSinceEpoch}.dex'));
+              try {
+                await tempDexFile.writeAsBytes(dexFile.content as List<int>);
+                await RuntimeTools().runDex2Jar(tempDexFile.path, finalJarPath);
+
+                final jarBytes = await File(finalJarPath).readAsBytes();
+                final jarArchive = ZipDecoder().decodeBytes(jarBytes);
+                final finalArchive = Archive();
+                for (final f in jarArchive.files) {
+                  if (f.name != 'manifest.json') finalArchive.addFile(f);
+                }
+
+                final Map<String, dynamic> bridgeJson;
+                if (isBridgeManifest) {
+                  bridgeJson =
+                      jsonDecode(utf8.decode(metadataFile.content as List<int>));
+                } else {
+                  final csJson =
+                      jsonDecode(utf8.decode(metadataFile.content as List<int>));
+                  bridgeJson = {
+                    "pluginClassName": csJson['pluginClassName'] ?? "",
+                    "name": source.name,
+                    "version": source.version ?? "1.0.0",
+                    "authors":
+                        (csJson['authors'] as List?)?.join(", ") ?? "Unknown",
+                    "requires": 1
+                  };
+                }
+                final encoded = utf8.encode(jsonEncode(bridgeJson));
+                finalArchive.addFile(
+                    ArchiveFile('manifest.json', encoded.length, encoded));
+
+                final finalJarBytes = ZipEncoder().encode(finalArchive);
+                await File(finalJarPath).writeAsBytes(finalJarBytes!);
+              } finally {
+                try {
+                  if (await tempDexFile.exists()) await tempDexFile.delete();
+                } catch (_) {}
+              }
+            }
+          } finally {
+            try {
+              if (await tempCs3File.exists()) await tempCs3File.delete();
+            } catch (_) {}
           }
-
-          final Map<String, dynamic> bridgeJson;
-          if (isBridgeManifest) {
-            bridgeJson =
-                jsonDecode(utf8.decode(metadataFile.content as List<int>));
-          } else {
-            final csJson =
-                jsonDecode(utf8.decode(metadataFile.content as List<int>));
-            bridgeJson = {
-              "pluginClassName": csJson['pluginClassName'] ?? "",
-              "name": source.name,
-              "version": source.version ?? "1.0.0",
-              "authors": (csJson['authors'] as List?)?.join(", ") ?? "Unknown",
-              "requires": 1
-            };
-          }
-          final encoded = utf8.encode(jsonEncode(bridgeJson));
-          finalArchive
-              .addFile(ArchiveFile('manifest.json', encoded.length, encoded));
-
-          final finalJarBytes = ZipEncoder().encode(finalArchive);
-          await File(finalJarPath).writeAsBytes(finalJarBytes!);
         }
 
-        await tempDir.delete(recursive: true);
+        if (!File(finalJarPath).existsSync()) {
+          throw Exception("Installation failed: output JAR not created at $finalJarPath");
+        }
 
         Logger.log(
             "Successfully installed CloudStream plugin: ${source.name} to $finalJarPath");
@@ -436,6 +423,10 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
         setVal('desktop_cs_meta_$norm', encodedMeta);
         setVal('desktop_cs_meta_${source.internalName ?? source.name}',
             encodedMeta);
+
+        availableAnimeExtensions.value = availableAnimeExtensions.value
+            .where((e) => e.id != source.id)
+            .toList();
 
         await fetchInstalledAnimeExtensions();
         await fetchAnimeExtensions();
@@ -507,20 +498,22 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
 
   List<Repo> _loadRepos() {
     final key = 'desktopCloudstreamAnimeRepos';
-    final encoded = getVal<List<String>>(key);
+    final encoded =
+        getVal<List<String>>(key) ?? getVal<List<String>>('cloudstreamAnimeRepos');
     if (encoded == null) return [];
     return encoded.map((e) => Repo.fromJson(jsonDecode(e))).toList();
   }
 
   void _saveRepos(List<Repo> repos) {
-    final key = 'desktopCloudstreamAnimeRepos';
-    setVal(key, repos.map((e) => jsonEncode(e.toJson())).toList());
+    final encoded = repos.map((e) => jsonEncode(e.toJson())).toList();
+    setVal('desktopCloudstreamAnimeRepos', encoded);
+    setVal('cloudstreamAnimeRepos', encoded);
   }
 
   @override
   Rx<List<Repo>> getReposRx(ItemType type) {
-    final repos = _loadRepos();
-    final rx = Rx<List<Repo>>(repos);
+    final rx = super.getReposRx(type);
+    rx.value = _loadRepos();
     return rx;
   }
 

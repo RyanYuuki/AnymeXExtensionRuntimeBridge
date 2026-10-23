@@ -8,7 +8,8 @@ class ChildFirstURLClassLoader(
     parent: ClassLoader
 ) : URLClassLoader(urls, parent) {
 
-    private val systemClassLoader: ClassLoader? = getSystemClassLoader()
+    private val systemClassLoader: ClassLoader? =
+        ChildFirstURLClassLoader::class.java.classLoader ?: getSystemClassLoader()
 
     private fun shouldDelegateToParent(name: String?): Boolean {
         if (name == null) return false
@@ -19,8 +20,9 @@ class ChildFirstURLClassLoader(
                name.startsWith("androidx.") ||
                name.startsWith("android.") ||
                name.startsWith("com.anymex.") ||
-               name.startsWith("eu.kanade.tachiyomi.network.") ||
-               name.startsWith("eu.kanade.tachiyomi.PreferenceScreen")
+               name.startsWith("com.lagradost.cloudstream3.") ||
+               name.startsWith("com.google.gson.") ||
+               name.startsWith("eu.kanade.tachiyomi.")
     }
 
     override fun loadClass(name: String?, resolve: Boolean): Class<*> {

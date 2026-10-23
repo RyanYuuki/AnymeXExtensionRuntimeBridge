@@ -35,6 +35,8 @@ object CloudStreamExtensionLoader {
         
         try {
             val context = Application()
+            com.lagradost.cloudstream3.CloudStreamApp.context = context
+            try { com.lagradost.cloudstream3.utils.DataStore.init(context) } catch (_: Throwable) {}
             
             try { Injekt.addSingletonFactory<Application> { context } } catch (_: Throwable) {}
             try { Injekt.addSingletonFactory<Context> { context } } catch (_: Throwable) {}

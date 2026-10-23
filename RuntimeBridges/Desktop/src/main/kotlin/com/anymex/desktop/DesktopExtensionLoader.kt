@@ -107,6 +107,12 @@ object DesktopExtensionLoader {
                 ApkConverter.convertApkToJar(apkPath, outJarPath)
                 mapOf("success" to true, "outJarPath" to outJarPath)
             }
+            "convertCs3" -> {
+                val cs3Path = getSafeString("cs3Path")
+                val outJarPath = getSafeString("outJarPath")
+                ApkConverter.convertCs3ToJar(cs3Path, outJarPath)
+                mapOf("success" to true, "outJarPath" to outJarPath)
+            }
             "dex2jar" -> {
                 val dexPath = getSafeString("dexPath")
                 val outJarPath = getSafeString("outJarPath")
