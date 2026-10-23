@@ -28,6 +28,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
 import eu.kanade.tachiyomi.network.normalizeUrl
+import eu.kanade.tachiyomi.network.normalizeMediaUrl
 object AniyomiSourceMethods {
     val chapterMemoCache = ConcurrentHashMap<String, JsonObject>()
     private val gson = Gson()
@@ -43,7 +44,7 @@ object AniyomiSourceMethods {
 
     private fun SAnime.toDetailsMap() = mapOf<String, Any>(
         "title" to safe({ title }, ""),
-        "url" to safe({ url }, ""),
+        "url" to normalizeMediaUrl(safe({ url }, "")),
         "cover" to safe({ thumbnail_url }, ""),
         "description" to safe({ description }, ""),
         "author" to safe({ author }, ""),
@@ -59,7 +60,7 @@ object AniyomiSourceMethods {
 
     private fun SManga.toDetailsMap() = mapOf<String, Any>(
         "title" to safe({ title }, ""),
-        "url" to safe({ url }, ""),
+        "url" to normalizeMediaUrl(safe({ url }, "")),
         "cover" to safe({ thumbnail_url }, ""),
         "description" to safe({ description }, ""),
         "author" to safe({ author }, ""),
@@ -374,7 +375,8 @@ object AniyomiSourceMethods {
                         return "{}"
                     }
                 val animeObj = SAnime.create().apply {
-                    this.url = url
+                    val bUrl = (source as? AnimeHttpSource)?.baseUrl
+                    this.url = normalizeMediaUrl(url, bUrl)
                     this.title = title
                     this.thumbnail_url = cover.takeIf { it.isNotBlank() }?.normalizeUrl()
                 }
@@ -412,28 +414,32 @@ object AniyomiSourceMethods {
                         return "{}"
                     }
                 val manga = SManga.create().apply {
-                    this.url = url
+                    val bUrl = (source as? HttpSource)?.baseUrl
+                    this.url = normalizeMediaUrl(url, bUrl)
                     this.title = title
                     this.thumbnail_url = cover.takeIf { it.isNotBlank() }?.normalizeUrl()
                 }
                 var details: SManga? = null
                 var chapters: List<SChapter>? = null
                 try {
-                    details = source.getMangaDetails(manga)
-                } catch (e: Throwable) {
-                    if (e is UnsupportedOperationException || e is IllegalStateException) {
-                        val update = source.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true)
+                    val update = source.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true)
+                    if (update.manga != manga && update.manga.initialized) {
                         details = update.manga
                         chapters = update.chapters
-                    } else {
+                    }
+                } catch (e: Throwable) {
+                    if (e !is UnsupportedOperationException && e !is IllegalStateException && e !is AbstractMethodError && e !is NoSuchMethodError) {
                         throw e
                     }
+                }
+                if (details == null) {
+                    details = source.getMangaDetails(manga)
                 }
                 if (chapters == null) {
                     chapters = try {
                         source.getChapterList(manga)
                     } catch (e: Throwable) {
-                        if (e is UnsupportedOperationException || e is IllegalStateException) {
+                        if (e is UnsupportedOperationException || e is IllegalStateException || e is AbstractMethodError || e is NoSuchMethodError) {
                             val update = source.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
                             update.chapters
                         } else {
@@ -490,7 +496,8 @@ object AniyomiSourceMethods {
                     return "[]"
                 }
             val episode = SEpisode.create().apply {
-                this.url = url
+                val bUrl = (source as? AnimeHttpSource)?.baseUrl
+                this.url = normalizeMediaUrl(url, bUrl)
                 this.name = name
             }
             val hasHosters = checkHasHosters(source)
@@ -612,7 +619,8 @@ object AniyomiSourceMethods {
                     return "[]"
                 }
             val chapter = SChapter.create().apply {
-                this.url = url
+                val bUrl = (source as? HttpSource)?.baseUrl
+                this.url = normalizeMediaUrl(url, bUrl)
                 this.name = name
                 var restoredMemo: JsonObject? = null
                 if (!rawMemo.isNullOrBlank()) {

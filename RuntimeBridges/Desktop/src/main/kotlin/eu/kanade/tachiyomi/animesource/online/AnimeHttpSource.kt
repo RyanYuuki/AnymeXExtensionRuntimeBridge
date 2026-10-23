@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.network.ProgressListener
 import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.newCachelessCallWithProgress
+import eu.kanade.tachiyomi.network.resolveUrl
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -124,7 +125,7 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     open fun animeDetailsRequest(anime: SAnime): Request {
-        return GET(baseUrl + anime.url, headers)
+        return GET(resolveUrl(baseUrl, anime.url), headers)
     }
 
     protected open fun animeDetailsParse(response: Response): SAnime = throw UnsupportedOperationException()
@@ -144,7 +145,7 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     protected open fun episodeListRequest(anime: SAnime): Request {
-        return GET(baseUrl + anime.url, headers)
+        return GET(resolveUrl(baseUrl, anime.url), headers)
     }
 
     protected open fun episodeListParse(response: Response): List<SEpisode> = throw UnsupportedOperationException()
@@ -162,7 +163,7 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     protected open fun seasonListRequest(anime: SAnime): Request {
-        return GET(baseUrl + anime.url, headers)
+        return GET(resolveUrl(baseUrl, anime.url), headers)
     }
 
     protected open fun seasonListParse(response: Response): List<SAnime> = throw UnsupportedOperationException()
@@ -322,13 +323,16 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
 
     private fun getUrlWithoutDomain(orig: String): String {
         return try {
-            val uri = URI(orig)
+            val uri = URI(orig.replace(" ", "%20"))
             var out = uri.path
             if (uri.query != null) {
                 out += "?" + uri.query
             }
             if (uri.fragment != null) {
                 out += "#" + uri.fragment
+            }
+            if (out.isNotBlank() && !out.startsWith("/")) {
+                out = "/$out"
             }
             out
         } catch (_: URISyntaxException) {

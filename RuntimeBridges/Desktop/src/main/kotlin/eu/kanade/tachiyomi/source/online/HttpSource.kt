@@ -6,6 +6,7 @@ import eu.kanade.tachiyomi.network.NetworkHelper.Companion.defaultUserAgentProvi
 import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.newCachelessCallWithProgress
+import eu.kanade.tachiyomi.network.resolveUrl
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -232,7 +233,7 @@ abstract class HttpSource : CatalogueSource {
      * @param manga the manga to be updated.
      */
     open fun mangaDetailsRequest(manga: SManga): Request {
-        return GET(baseUrl + manga.url, headers)
+        return GET(resolveUrl(baseUrl, manga.url), headers)
     }
 
     /**
@@ -303,7 +304,7 @@ abstract class HttpSource : CatalogueSource {
      * @param manga the manga to look for chapters.
      */
     protected open fun chapterListRequest(manga: SManga): Request {
-        return GET(baseUrl + manga.url, headers)
+        return GET(resolveUrl(baseUrl, manga.url), headers)
     }
 
     /**
@@ -348,7 +349,7 @@ abstract class HttpSource : CatalogueSource {
      * @param chapter the chapter whose page list has to be fetched.
      */
     protected open fun pageListRequest(chapter: SChapter): Request {
-        return GET(baseUrl + chapter.url, headers)
+        return GET(resolveUrl(baseUrl, chapter.url), headers)
     }
 
     /**
@@ -450,6 +451,9 @@ abstract class HttpSource : CatalogueSource {
             }
             if (uri.fragment != null) {
                 out += "#" + uri.fragment
+            }
+            if (out.isNotBlank() && !out.startsWith("/")) {
+                out = "/$out"
             }
             out
         } catch (e: URISyntaxException) {

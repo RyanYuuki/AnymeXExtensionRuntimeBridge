@@ -22,6 +22,7 @@ import uy.kohesive.injekt.api.get
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 import eu.kanade.tachiyomi.network.normalizeUrl
+import eu.kanade.tachiyomi.network.normalizeMediaUrl
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -127,11 +128,15 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
         val smanga = media.toSManga()
         try {
             val details = try {
-                source.getMangaDetails(smanga)
+                val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = true, fetchChapters = false)
+                if (update.manga != smanga && update.manga.initialized) {
+                    update.manga
+                } else {
+                    source.getMangaDetails(smanga)
+                }
             } catch (e: Throwable) {
                 if (e is UnsupportedOperationException || e is IllegalStateException || e is AbstractMethodError || e is NoSuchMethodError) {
-                    val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = true, fetchChapters = false)
-                    update.manga
+                    source.getMangaDetails(smanga)
                 } else {
                     throw e
                 }
@@ -147,11 +152,15 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     override suspend fun getChapterList(media: SAnime): List<SEpisode> {
         val smanga = media.toSManga()
         val chapters = try {
-            source.getChapterList(smanga)
+            val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = false, fetchChapters = true)
+            if (update.chapters.isNotEmpty()) {
+                update.chapters
+            } else {
+                source.getChapterList(smanga)
+            }
         } catch (e: Throwable) {
             if (e is UnsupportedOperationException || e is IllegalStateException || e is AbstractMethodError || e is NoSuchMethodError) {
-                val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = false, fetchChapters = true)
-                update.chapters
+                source.getChapterList(smanga)
             } else {
                 throw e
             }
@@ -221,7 +230,7 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     fun SChapter.toSEpisode(): SEpisode {
         val chapter = this
         return SEpisode.create().apply {
-            url = chapter.url
+            url = normalizeMediaUrl(chapter.url, baseUrl)
             name = chapter.name
             date_upload = chapter.date_upload
             episode_number = if (chapter.chapter_number >= 0f) chapter.chapter_number else findChapterNumber(chapter.name) ?: chapter.chapter_number
@@ -235,7 +244,7 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     fun SAnime.toSManga(): SManga {
         val anime = this
         return SManga.create().apply {
-            url = anime.url
+            url = normalizeMediaUrl(anime.url, baseUrl)
             title = anime.title
             artist = anime.artist
             author = anime.author
@@ -252,8 +261,8 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
         val manga = this
 
         return SAnime.create().apply {
-            url = runCatching { manga.url }.getOrNull()?.takeIf { it.isNotBlank() }
-                ?: fallbackUrl
+            url = runCatching { manga.url }.getOrNull()?.takeIf { it.isNotBlank() }?.let { normalizeMediaUrl(it, baseUrl) }
+                ?: fallbackUrl?.let { normalizeMediaUrl(it, baseUrl) }
                 ?: ""
             title = runCatching { manga.title }.getOrElse { "" }
             artist = runCatching { manga.artist }.getOrNull()

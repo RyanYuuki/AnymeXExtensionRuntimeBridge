@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
+import eu.kanade.tachiyomi.network.normalizeMediaUrl
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -38,10 +39,17 @@ class AnimeSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     override var baseUrl = (source as? AnimeHttpSource)?.baseUrl
     override var parameters: Map<String, Any?>? = null
 
-    override suspend fun getPopular(page: Int): AnimesPage = source.getPopularAnime(page)
+    override suspend fun getPopular(page: Int): AnimesPage {
+        val result = source.getPopularAnime(page)
+        result.animes.forEach { it.url = normalizeMediaUrl(it.url, baseUrl) }
+        return result
+    }
 
-    override suspend fun getLatestUpdates(page: Int): AnimesPage = source.getLatestUpdates(page)
-
+    override suspend fun getLatestUpdates(page: Int): AnimesPage {
+        val result = source.getLatestUpdates(page)
+        result.animes.forEach { it.url = normalizeMediaUrl(it.url, baseUrl) }
+        return result
+    }
 
     override suspend fun getSearchResults(query: String, page: Int): AnimesPage {
         val filterList = source.getFilterList()
@@ -50,11 +58,13 @@ class AnimeSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
         if (filtersData != null) {
             applyAnimeFilters(filterList, filtersData)
         }
-        return source.getSearchAnime(
+        val result = source.getSearchAnime(
             page = page,
             query = query,
             filters = filterList
         )
+        result.animes.forEach { it.url = normalizeMediaUrl(it.url, baseUrl) }
+        return result
     }
 
     private fun applyAnimeFilters(filterList: eu.kanade.tachiyomi.animesource.model.AnimeFilterList, filtersData: List<Map<String, Any?>>) {
@@ -106,19 +116,25 @@ class AnimeSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     }
 
     override suspend fun getDetails(media: SAnime): SAnime {
-        return try {
+        media.url = normalizeMediaUrl(media.url, baseUrl)
+        val details = try {
             source.getAnimeDetails(media)
         } catch (e: UnsupportedOperationException) {
             source.getAnimeEpisodeUpdate(media, emptyList(), fetchDetails = true, fetchEpisodes = false).anime
         }
+        details.url = normalizeMediaUrl(details.url, baseUrl)
+        return details
     }
 
     override suspend fun getEpisodeList(media: SAnime): List<SEpisode> {
-        return try {
+        media.url = normalizeMediaUrl(media.url, baseUrl)
+        val episodes = try {
             source.getEpisodeList(media)
         } catch (e: UnsupportedOperationException) {
             source.getAnimeEpisodeUpdate(media, emptyList(), fetchDetails = false, fetchEpisodes = true).episodes
         }
+        episodes.forEach { it.url = normalizeMediaUrl(it.url, baseUrl) }
+        return episodes
     }
 
     private fun checkHasHosters(src: AnimeSource): Boolean {
@@ -143,6 +159,7 @@ class AnimeSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     }
 
     override suspend fun getVideoList(episode: SEpisode): List<Video> {
+        episode.url = normalizeMediaUrl(episode.url, baseUrl)
         val hasHosters = checkHasHosters(source)
 
         if (hasHosters) {

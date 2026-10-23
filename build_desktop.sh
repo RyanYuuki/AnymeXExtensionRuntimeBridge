@@ -11,8 +11,12 @@ echo " AnymeX Desktop Bridge Builder"
 echo "=============================="
 echo
 
-export JAVA_HOME="/opt/android-studio/jbr"
-export PATH="$JAVA_HOME/bin:$PATH"
+if [[ -d "/opt/android-studio/jbr" ]]; then
+    export JAVA_HOME="/opt/android-studio/jbr"
+elif [[ -d "$HOME/.gradle/jdks/amazon_com_inc_-21-amd64-linux.2" ]]; then
+    export JAVA_HOME="$HOME/.gradle/jdks/amazon_com_inc_-21-amd64-linux.2"
+fi
+export PATH="${JAVA_HOME:+$JAVA_HOME/bin:}$PATH"
 
 echo "☕ Java: $(java -version 2>&1 | head -1)"
 echo

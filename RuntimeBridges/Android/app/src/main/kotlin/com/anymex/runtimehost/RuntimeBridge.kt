@@ -49,6 +49,7 @@ import uy.kohesive.injekt.api.get
 import java.io.File
 import java.security.MessageDigest
 import eu.kanade.tachiyomi.network.normalizeUrl
+import eu.kanade.tachiyomi.network.normalizeMediaUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 
@@ -475,17 +476,18 @@ object RuntimeBridge {
     ): Map<String, Any?> {
         val token = parameters?.get("token") as? String
         val job = scope.async {
+            val m = media(context, sourceId, isAnime)
+            m.parameters = parameters
+            val rawUrl = mediaMap["url"] as? String ?: ""
             val anime = SAnime.create().apply {
                 title = mediaMap["title"] as? String ?: ""
-                url = mediaMap["url"] as? String ?: ""
+                url = normalizeMediaUrl(rawUrl, m.baseUrl)
                 thumbnail_url = (mediaMap["thumbnail_url"] as? String)?.takeIf { it.isNotBlank() }?.normalizeUrl()
                 description = mediaMap["description"] as? String
                 artist = mediaMap["artist"] as? String
                 author = mediaMap["author"] as? String
                 genre = mediaMap["genre"] as? String
             }
-            val m = media(context, sourceId, isAnime)
-            m.parameters = parameters
             
             val details = m.getDetails(anime)
             val eps = if (isAnime) m.getEpisodeList(anime) else m.getChapterList(anime)
@@ -544,14 +546,15 @@ object RuntimeBridge {
     ): List<Map<String, Any?>> {
         val token = parameters?.get("token") as? String
         val job = scope.async {
+            val m = media(context, sourceId, isAnime)
+            m.parameters = parameters
+            val rawEpisodeUrl = episodeMap["url"] as? String ?: ""
             val ep = SEpisode.create().apply {
                 name = episodeMap["name"] as? String ?: ""
-                url = episodeMap["url"] as? String ?: ""
+                url = normalizeMediaUrl(rawEpisodeUrl, m.baseUrl)
                 episode_number = (episodeMap["episode_number"] as? Number)?.toFloat() ?: 0f
                 scanlator = episodeMap["scanlator"] as? String
             }
-            val m = media(context, sourceId, isAnime)
-            m.parameters = parameters
             m.getVideoList(ep).map { videoToMap(it) }
         }
         if (token != null) activeRequests[token] = job
@@ -636,9 +639,12 @@ object RuntimeBridge {
     ): List<Map<String, Any?>> {
         val token = parameters?.get("token") as? String
         val job = scope.async {
+            val m = media(context, sourceId, isAnime)
+            m.parameters = parameters
+            val rawChapterUrl = chapterMap["url"] as? String ?: ""
             val chapter = SChapter.create().apply {
                 name = chapterMap["name"] as? String ?: ""
-                url = chapterMap["url"] as? String ?: ""
+                url = normalizeMediaUrl(rawChapterUrl, m.baseUrl)
                 val rawMemo = (chapterMap["memo"] as? String)
                     ?: (chapterMap["description"] as? String)
                     ?: (chapterMap["extra"] as? String)
@@ -648,8 +654,6 @@ object RuntimeBridge {
                     } catch (_: Exception) {}
                 }
             }
-            val m = media(context, sourceId, isAnime)
-            m.parameters = parameters
             
             val pages = m.getPageList(chapter)
             val httpSource = m.getHttpSource() as? HttpSource

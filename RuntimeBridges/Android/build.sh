@@ -11,8 +11,12 @@ echo
 echo "Script directory: $SCRIPT_DIR"
 echo
 
-export JAVA_HOME="/opt/android-studio/jbr"
-export PATH="$JAVA_HOME/bin:$PATH"
+if [[ -d "/opt/android-studio/jbr" ]]; then
+    export JAVA_HOME="/opt/android-studio/jbr"
+elif [[ -d "$HOME/.gradle/jdks/amazon_com_inc_-21-amd64-linux.2" ]]; then
+    export JAVA_HOME="$HOME/.gradle/jdks/amazon_com_inc_-21-amd64-linux.2"
+fi
+export PATH="${JAVA_HOME:+$JAVA_HOME/bin:}$PATH"
 
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/tools:$PATH"
