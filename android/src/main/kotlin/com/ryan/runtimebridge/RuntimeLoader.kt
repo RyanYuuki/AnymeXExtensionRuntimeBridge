@@ -4,14 +4,63 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import dalvik.system.BaseDexClassLoader
+import dalvik.system.DexClassLoader
 import java.io.File
 import java.util.zip.ZipFile
 
 object RuntimeLoader {
 
     private const val TAG = "RuntimeLoader"
-    private val loadedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private class ChildFirstClassLoader(
+        dexPath: String,
+        optimizedDirectory: String?,
+        librarySearchPath: String?,
+        parent: ClassLoader
+    ) : DexClassLoader(dexPath, optimizedDirectory, librarySearchPath, parent) {
+
+        private val systemClassLoader: ClassLoader? = getSystemClassLoader()
+
+        private fun shouldDelegateToParent(name: String?): Boolean {
+            if (name == null) return false
+            return name.startsWith("android.") ||
+                name.startsWith("androidx.") ||
+                name.startsWith("java.") ||
+                name.startsWith("javax.") ||
+                name.startsWith("io.flutter.") ||
+                name.startsWith("com.ryan.runtimebridge.")
+        }
+
+        override fun loadClass(name: String?, resolve: Boolean): Class<*> {
+            var c = findLoadedClass(name)
+
+            if (c == null && systemClassLoader != null) {
+                try {
+                    c = systemClassLoader.loadClass(name)
+                } catch (_: ClassNotFoundException) {}
+            }
+
+            if (c == null && shouldDelegateToParent(name)) {
+                try {
+                    c = parent.loadClass(name)
+                } catch (_: ClassNotFoundException) {}
+            }
+
+            if (c == null) {
+                try {
+                    c = findClass(name)
+                } catch (_: ClassNotFoundException) {
+                    c = super.loadClass(name, resolve)
+                }
+            }
+
+            if (resolve) {
+                resolveClass(c)
+            }
+
+            return c
+        }
+    }
 
     @SuppressLint("UnsafeDynamicallyLoadedCode")
     private fun preloadNativeLibraries(context: Context, apkFile: File) {
@@ -85,7 +134,6 @@ object RuntimeLoader {
                 externalFile.lastModified() != dst.lastModified()
 
         if (shouldCopy) {
-            loadedPaths.remove(dst.absolutePath)
             val tmp = File(privateDir, "${externalFile.name}.tmp")
             externalFile.inputStream().use { input ->
                 tmp.outputStream().use { output ->
@@ -122,25 +170,15 @@ object RuntimeLoader {
 
         preloadNativeLibraries(context, dst)
 
-        val classLoader = context.classLoader
-        if (loadedPaths.add(dst.absolutePath)) {
-            val pathListField = BaseDexClassLoader::class.java.getDeclaredField("pathList").apply {
-                isAccessible = true
-            }
-            val pathList = pathListField.get(classLoader)
+        val nativeLibsDir = File(context.codeCacheDir, "plugin_libs")
+        val loader = ChildFirstClassLoader(
+            dst.absolutePath,
+            optimizedDir.absolutePath,
+            nativeLibsDir.absolutePath,
+            context.classLoader
+        )
 
-            val addDexPath = pathList.javaClass.getDeclaredMethod(
-                "addDexPath",
-                String::class.java,
-                File::class.java
-            ).apply {
-                isAccessible = true
-            }
-
-            addDexPath.invoke(pathList, dst.absolutePath, optimizedDir)
-        }
-
-        val clazz = classLoader.loadClass(className)
+        val clazz = loader.loadClass(className)
         val instance = try {
             clazz.getField("INSTANCE").get(null)
         } catch (_: Exception) {
