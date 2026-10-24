@@ -128,11 +128,6 @@ object RuntimeLoader {
                 isAccessible = true
             }
             val pathList = pathListField.get(classLoader)
-            val dexElementsField = pathList.javaClass.getDeclaredField("dexElements").apply {
-                isAccessible = true
-            }
-            val beforeElements = dexElementsField.get(pathList) as? Array<*>
-            val beforeCount = beforeElements?.size ?: 0
 
             val addDexPath = pathList.javaClass.getDeclaredMethod(
                 "addDexPath",
@@ -143,21 +138,6 @@ object RuntimeLoader {
             }
 
             addDexPath.invoke(pathList, dst.absolutePath, optimizedDir)
-
-            try {
-                val afterElements = dexElementsField.get(pathList) as? Array<*>
-                if (afterElements != null && afterElements.size > beforeCount && beforeElements != null) {
-                    val newCount = afterElements.size - beforeCount
-                    val reordered = java.lang.reflect.Array.newInstance(
-                        beforeElements.javaClass.componentType!!,
-                        afterElements.size
-                    ) as Array<Any>
-                    System.arraycopy(afterElements, beforeCount, reordered, 0, newCount)
-                    System.arraycopy(afterElements, 0, reordered, newCount, beforeCount)
-                    dexElementsField.set(pathList, reordered)
-                }
-            } catch (_: Exception) {
-            }
         }
 
         val clazz = classLoader.loadClass(className)
