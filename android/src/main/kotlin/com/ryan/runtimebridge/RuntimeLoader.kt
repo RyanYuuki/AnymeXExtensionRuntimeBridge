@@ -15,7 +15,7 @@ object RuntimeLoader {
     private class ChildFirstClassLoader(
         dexPath: String,
         optimizedDirectory: String?,
-        librarySearchPath: String?,
+        private val librarySearchPath: String?,
         parent: ClassLoader
     ) : DexClassLoader(dexPath, optimizedDirectory, librarySearchPath, parent) {
 
@@ -60,10 +60,19 @@ object RuntimeLoader {
 
             return c
         }
+
+        override fun findLibrary(name: String?): String? {
+            if (name != null && librarySearchPath != null) {
+                val direct = File(librarySearchPath, "lib$name.so")
+                if (direct.exists()) {
+                    return direct.absolutePath
+                }
+            }
+            return super.findLibrary(name)
+        }
     }
 
-    @SuppressLint("UnsafeDynamicallyLoadedCode")
-    private fun preloadNativeLibraries(context: Context, apkFile: File) {
+    private fun extractNativeLibraries(context: Context, apkFile: File) {
         val abiList = Build.SUPPORTED_ABIS
         val outDir = File(context.codeCacheDir, "plugin_libs").apply {
             mkdirs()
@@ -100,13 +109,6 @@ object RuntimeLoader {
                             out.setReadable(true, false)
                             out.setExecutable(true, false)
                             out.setWritable(false, false)
-                        }
-
-                        try {
-                            System.load(out.absolutePath)
-                            Log.i(TAG, "Loaded native library: ${out.name}")
-                        } catch (e: UnsatisfiedLinkError) {
-                            Log.w(TAG, "Native library already loaded or failed: ${out.name}")
                         }
                     }
             }
@@ -168,7 +170,7 @@ object RuntimeLoader {
             if (!exists()) mkdirs()
         }
 
-        preloadNativeLibraries(context, dst)
+        extractNativeLibraries(context, dst)
 
         val nativeLibsDir = File(context.codeCacheDir, "plugin_libs")
         val loader = ChildFirstClassLoader(
