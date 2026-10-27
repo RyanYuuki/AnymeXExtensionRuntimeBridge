@@ -20,8 +20,44 @@ class TorrServerAddon extends Addon {
 
   TorrServerController? _controller;
   String? _activeHash;
+  TorrentInfo? _activeTorrent;
+  TorrentFileStat? _activeFile;
 
   TorrServerAddon();
+
+  String? get activeHash => _activeHash;
+  TorrentInfo? get activeTorrent => _activeTorrent;
+  TorrentFileStat? get activeFile => _activeFile;
+
+  void setActiveFile(TorrentFileStat file) {
+    _activeFile = file;
+  }
+
+  void switchStreamFile(int fileIndex) {
+    final torrent = _activeTorrent;
+    if (torrent != null) {
+      for (final file in torrent.fileStats) {
+        if (file.id == fileIndex) {
+          _activeFile = file;
+          break;
+        }
+      }
+    }
+  }
+
+  Future<TorrentInfo?> refreshActiveTorrent() async {
+    final hash = _activeHash;
+    if (hash == null) return null;
+    try {
+      final info = await _controller?.getTorrent(hash);
+      if (info != null) {
+        _activeTorrent = info;
+      }
+      return info;
+    } catch (_) {
+      return _activeTorrent;
+    }
+  }
 
   static const _streamableExtensions = {
     '.mp4',
@@ -60,6 +96,8 @@ class TorrServerAddon extends Addon {
     await _controller?.stop();
     _controller = null;
     _activeHash = null;
+    _activeTorrent = null;
+    _activeFile = null;
   }
 
   Future<String>? _startStreamFuture;
@@ -182,12 +220,17 @@ class TorrServerAddon extends Addon {
       throw Exception("No streamable file found in torrent.");
     }
 
+    _activeTorrent = info;
+    _activeFile = selected;
+
     return controller.streamUrl(info.hash, fileIndex: selected.id).toString();
   }
 
   Future<void> stopStream() async {
     final hash = _activeHash;
     _activeHash = null;
+    _activeTorrent = null;
+    _activeFile = null;
     if (hash == null) return;
 
     try {
