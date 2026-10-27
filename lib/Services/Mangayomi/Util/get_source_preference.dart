@@ -3,5 +3,5 @@ import '../Models/Source.dart';
 import 'lib.dart';
 
 List<SourcePreference> getSourcePreference({required MSource source}) {
-  return getExtensionService(source).getSourcePreferences();
+  return getCachedExtensionService(source).getSourcePreferences();
 }

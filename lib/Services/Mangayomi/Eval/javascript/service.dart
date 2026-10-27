@@ -82,6 +82,11 @@ async function jsonStringify(fn) {
     return JSON.stringify(await fn());
 }
 ''');
+    if (source.sourceCode == null || source.sourceCode!.isEmpty) {
+      throw Exception(
+        'Source "${source.name ?? "unknown"}" has no source code to evaluate.',
+      );
+    }
     _throwIfError(
       runtime.evaluate('''${source.sourceCode}
 var extention = new DefaultExtension();

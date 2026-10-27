@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:convert/convert.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:webview_all/webview_all.dart';
 import 'package:html/dom.dart' hide Text;
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
@@ -583,52 +586,99 @@ class MBridge {
     }
   }
 
+  static String decryptAESGCM(
+    String encrypted,
+    String keyHex,
+    String ivHex,
+    String tagHex,
+  ) {
+    try {
+      final key = encrypt.Key(Uint8List.fromList(hex.decode(keyHex)));
+      final iv = encrypt.IV(Uint8List.fromList(hex.decode(ivHex)));
+      final dataWithTag = Uint8List.fromList([
+        ...base64.decode(encrypted),
+        ...hex.decode(tagHex),
+      ]);
+      final encrypter = encrypt.Encrypter(
+        encrypt.AES(key, mode: encrypt.AESMode.gcm),
+      );
+      return encrypter.decrypt(encrypt.Encrypted(dataWithTag), iv: iv);
+    } catch (_) {
+      return encrypted;
+    }
+  }
+
+  static const _handlerShim = """
+(function () {
+  window.flutter_inappwebview = {
+    callHandler: function (name) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      FlutterBridge.postMessage(JSON.stringify([name, args]));
+      return Promise.resolve();
+    },
+  };
+})();
+""";
+
   static Future<String> evaluateJavascriptViaWebview(
     String url,
     Map<String, String> headers,
     List<String> scripts, {
     int time = 30,
   }) async {
-    int t = 0;
-    bool timeOut = false;
-    bool isOk = false;
-    String response = "";
-    HeadlessInAppWebView? headlessWebView;
-    headlessWebView = HeadlessInAppWebView(
-      webViewEnvironment: AnymeXExtensionBridge.context.webViewEnvironment,
-      onWebViewCreated: (controller) {
-        controller.addJavaScriptHandler(
-          handlerName: 'setResponse',
-          callback: (args) {
-            response = args[0] as String;
-            isOk = true;
-          },
-        );
-      },
-      initialUrlRequest: URLRequest(url: WebUri(url), headers: headers),
-      onLoadStop: (controller, url) async {
-        for (var script in scripts) {
-          await controller.platform.evaluateJavascript(source: script);
-        }
-      },
-    );
-
-    headlessWebView.run();
-
-    await Future.doWhile(() async {
-      timeOut = time == t;
-      if (timeOut || isOk) {
-        return false;
-      }
-      await Future.delayed(const Duration(seconds: 1));
-      t++;
-      return true;
-    });
+    final response = Completer<String>();
+    OffscreenWebViewSession? session;
     try {
-      headlessWebView.dispose();
-    } catch (_) {}
-
-    return response;
+      session = await OffscreenWebViewSession.create();
+      final controller = session.controller;
+      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+      await controller.addJavaScriptChannel(
+        'FlutterBridge',
+        onMessageReceived: (message) {
+          try {
+            final data = jsonDecode(message.message) as List;
+            final args = data[1] as List;
+            if (data[0] == 'setResponse' &&
+                args.isNotEmpty &&
+                !response.isCompleted) {
+              final value = args.first;
+              response.complete(value is String ? value : jsonEncode(value));
+            }
+          } catch (_) {}
+        },
+      );
+      await controller.addJavaScriptChannel(
+        'setResponse',
+        onMessageReceived: (message) {
+          if (!response.isCompleted) {
+            response.complete(message.message);
+          }
+        },
+      );
+      await controller.setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) async {
+            try {
+              await controller.runJavaScript(_handlerShim);
+              for (final script in scripts) {
+                await controller.runJavaScript(script);
+              }
+            } catch (_) {}
+          },
+        ),
+      );
+      await controller.loadRequest(Uri.parse(url), headers: headers);
+      return await response.future.timeout(
+        Duration(seconds: time),
+        onTimeout: () => '',
+      );
+    } catch (_) {
+      return '';
+    } finally {
+      try {
+        await session?.close();
+      } catch (_) {}
+    }
   }
 }
 

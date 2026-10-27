@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:http_interceptor/http_interceptor.dart';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
@@ -14,7 +17,7 @@ import 'Models/Source.dart';
 import 'Util/lib.dart';
 
 class MangayomiExtensions extends Extension {
-  static final _client = MClient.init();
+  static InterceptedClient get _client => MClient.init();
 
   @override
   String get id => 'mangayomi';
@@ -74,6 +77,17 @@ class MangayomiExtensions extends Extension {
     return filtered;
   }
 
+  static List<int> _decompressIfGzipped(List<int> bytes) {
+    if (bytes.length >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B) {
+      try {
+        return gzip.decode(bytes);
+      } catch (_) {
+        return bytes;
+      }
+    }
+    return bytes;
+  }
+
   Future<List<Source>> _fetchRepoSources(Repo repo, ItemType type) async {
     try {
       final res = await _client.get(Uri.parse(repo.url));
@@ -81,9 +95,12 @@ class MangayomiExtensions extends Extension {
         throw Exception("Failed to fetch repo");
       }
 
+      final bytes = _decompressIfGzipped(res.bodyBytes);
+      final body = utf8.decode(bytes);
+
       final parsed = await compute(
         _parseExtensions,
-        (res.body, repo.url, type, id),
+        (body, repo.url, type, id),
       );
 
       return parsed;
@@ -140,10 +157,16 @@ class MangayomiExtensions extends Extension {
       final installed = MSource.fromJson(target.toJson())
         ..sourceCode = res.body
         ..hasUpdate = false
-        ..versionLast = null
-        ..headers = jsonEncode(
-          getExtensionService(target).getHeaders(),
+        ..versionLast = null;
+
+      try {
+        installed.headers = jsonEncode(
+          getExtensionService(installed).getHeaders(),
         );
+      } catch (e) {
+        Logger.log("Failed to get headers for ${installed.name}: $e");
+        installed.headers = jsonEncode({});
+      }
 
       final list = _loadInstalled(m.itemType!);
 
@@ -168,6 +191,7 @@ class MangayomiExtensions extends Extension {
 
     try {
       final type = s.itemType!;
+      evictCachedExtensionService(s.id ?? "");
       final installed = _loadInstalled(type);
 
       installed.removeWhere((e) => e.id == s.id);
@@ -241,9 +265,11 @@ class MangayomiExtensions extends Extension {
       final updatedRepos = List<Repo>.from(repos)..add(repo);
 
       _saveRepos(updatedRepos, type);
+      final bytes = _decompressIfGzipped(res.bodyBytes);
+      final body = utf8.decode(bytes);
       final parsed = await compute(
         _parseExtensions,
-        (res.body, repoUrl, type, id),
+        (body, repoUrl, type, id),
       );
 
       final rx = getAvailableRx(type);
@@ -266,18 +292,55 @@ class MangayomiExtensions extends Extension {
       (String body, String repoUrl, ItemType itemType, String managerId) args) {
     final (body, repoUrl, itemType, managerId) = args;
 
-    final decoded = jsonDecode(body);
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(body);
+    } catch (_) {
+      return const [];
+    }
 
-    if (decoded is! List) return const [];
+    List<dynamic> rawList = const [];
+    if (decoded is List) {
+      rawList = decoded;
+    } else if (decoded is Map<String, dynamic>) {
+      if (decoded["sources"] is List) {
+        rawList = decoded["sources"] as List;
+      } else if (decoded["extensionList"]?["extensions"] is List) {
+        rawList = decoded["extensionList"]["extensions"] as List;
+      } else if (decoded["data"] is List) {
+        rawList = decoded["data"] as List;
+      }
+    }
 
+    if (rawList.isEmpty) return const [];
+
+    final repoUri = Uri.tryParse(repoUrl);
     final sources = <Source>[];
 
-    for (final e in decoded) {
+    for (final e in rawList) {
+      if (e is! Map) continue;
       final ext = Map<String, dynamic>.from(e);
 
-      sources.add(
-        MSource.fromJson(ext)..repo = repoUrl..managerId = managerId,
-      );
+      try {
+        final src = MSource.fromJson(ext)
+          ..repo = repoUrl
+          ..managerId = managerId;
+
+        if (repoUri != null) {
+          if (src.sourceCodeUrl != null &&
+              src.sourceCodeUrl!.isNotEmpty &&
+              !src.sourceCodeUrl!.startsWith("http")) {
+            src.sourceCodeUrl = repoUri.resolve(src.sourceCodeUrl!).toString();
+          }
+          if (src.iconUrl != null &&
+              src.iconUrl!.isNotEmpty &&
+              !src.iconUrl!.startsWith("http")) {
+            src.iconUrl = repoUri.resolve(src.iconUrl!).toString();
+          }
+        }
+
+        sources.add(src);
+      } catch (_) {}
     }
 
     return sources.where((s) => s.itemType == itemType).toList(growable: false);

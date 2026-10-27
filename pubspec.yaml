@@ -21,7 +21,6 @@ dependencies:
     http_interceptor: ^2.0.0
     html: ^0.15.6
     intl: ^0.20.2
-    flutter_inappwebview: 6.2.0-beta.2
     pseudom: ^1.0.1
     encrypt: ^5.0.3
     xpath_selector_html_parser: ^3.0.1
@@ -41,6 +40,7 @@ dependencies:
     file_picker: ^8.1.7
     archive: ^4.0.9
     ffi: ^2.1.2
+    webview_all: ^1.4.7
 
 dev_dependencies:
     flutter_test:

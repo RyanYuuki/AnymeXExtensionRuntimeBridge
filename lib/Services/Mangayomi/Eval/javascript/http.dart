@@ -12,9 +12,14 @@ class JsHttpClient {
   JsHttpClient(this.runtime);
 
   void init() {
+    final clientCache = <String, InterceptedClient>{};
     InterceptedClient client(dynamic reqcopyWith) {
-      return MClient.init(
-        reqcopyWith: (reqcopyWith as Map?)?.toMapStringDynamic,
+      final map = (reqcopyWith as Map?)?.toMapStringDynamic;
+      return clientCache.putIfAbsent(
+        jsonEncode(map ?? const <String, dynamic>{}),
+        () => MClient.init(
+          reqcopyWith: map,
+        ),
       );
     }
 

@@ -21,7 +21,7 @@ import 'Models/Source.dart';
 import 'TsundokuSourceMethods.dart';
 
 class TsundokuExtensions extends Extension {
-  final http.Client _client = AnymeXExtensionBridge.context.http ?? http.Client();
+  http.Client get _client => AnymeXExtensionBridge.context.http ?? http.Client();
 
   @override
   String get id => 'tsundoku';

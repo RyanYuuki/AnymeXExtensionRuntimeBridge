@@ -16,7 +16,7 @@ import 'TorrServerControllerIos.dart';
 import 'TorrServerControllerSubprocess.dart';
 
 class TorrServerAddon extends Addon {
-  final http.Client _client = AnymeXExtensionBridge.context.http ?? http.Client();
+  http.Client get _client => AnymeXExtensionBridge.context.http ?? http.Client();
 
   TorrServerController? _controller;
   String? _activeHash;

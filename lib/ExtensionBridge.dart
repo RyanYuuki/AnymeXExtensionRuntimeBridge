@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart';
 import 'package:isar_community/isar.dart';
@@ -88,19 +87,21 @@ class AnymeXExtensionBridge {
 
     final isar = isarInstance ?? await _openIsar(getDirectory);
 
-    final webViewEnv =
-        Platform.isWindows ? await _createWebViewEnv(getDirectory) : null;
-
     context = BridgeContext(
       isar: isar,
       http: http,
-      webViewEnvironment: webViewEnv,
       getDirectory: getDirectory,
     );
 
     Get.lazyPut<ExtensionManager>(() => ExtensionManager());
     Get.lazyPut<AddonManager>(() => AddonManager());
     _initialized = true;
+  }
+
+  static void updateHttpClient(Client? newClient) {
+    if (_initialized) {
+      context = context.copyWith(http: newClient);
+    }
   }
 
   static Future<Isar> _openIsar(GetDirectory getDirectory) async {
@@ -130,29 +131,6 @@ class AnymeXExtensionBridge {
     return Isar.open(
       isarSchema,
       directory: dir.path,
-    );
-  }
-
-  static Future<WebViewEnvironment?> _createWebViewEnv(
-    GetDirectory getDirectory,
-  ) async {
-    final version = await WebViewEnvironment.getAvailableVersion();
-    if (version == null) return null;
-
-    final dir = await getDirectory(
-      subPath: 'webview',
-      useSystemPath: true,
-      useCustomPath: false,
-    );
-
-    if (dir == null) return null;
-    if (dir.path.trim().isEmpty) return null;
-    if (!p.isAbsolute(dir.path)) return null;
-
-    return WebViewEnvironment.create(
-      settings: WebViewEnvironmentSettings(
-        userDataFolder: dir.path,
-      ),
     );
   }
 
@@ -200,7 +178,7 @@ typedef GetDirectory = Future<Directory?> Function({
 class BridgeContext {
   final Isar isar;
   final Client? http;
-  final WebViewEnvironment? webViewEnvironment;
+  final dynamic webViewEnvironment;
   final GetDirectory getDirectory;
 
   const BridgeContext({
@@ -209,6 +187,20 @@ class BridgeContext {
     this.webViewEnvironment,
     required this.getDirectory,
   });
+
+  BridgeContext copyWith({
+    Isar? isar,
+    Client? http,
+    dynamic webViewEnvironment,
+    GetDirectory? getDirectory,
+  }) {
+    return BridgeContext(
+      isar: isar ?? this.isar,
+      http: http ?? this.http,
+      webViewEnvironment: webViewEnvironment ?? this.webViewEnvironment,
+      getDirectory: getDirectory ?? this.getDirectory,
+    );
+  }
 
   /// Only for android platform, dont calll this shit if you're on other platforms
   Future<Directory?> getCloudStreamPluginDirectory() async {

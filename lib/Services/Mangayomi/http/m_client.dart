@@ -3,14 +3,37 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:collection/collection.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart'
-    as flutter_inappwebview;
+import 'package:webview_all/webview_all.dart';
+import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:http_interceptor/http_interceptor.dart';
 
 import '../../../ExtensionBridge.dart';
 import '../../../AnymeXBridge.dart';
 import '../Eval/dart/model/m_source.dart';
+
+class SafeFallbackClient extends http.BaseClient {
+  final http.Client _primary;
+  SafeFallbackClient(this._primary);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    try {
+      return await _primary.send(request);
+    } catch (e) {
+      if (e.toString().contains('RhttpClientDisposedException') ||
+          e.toString().contains('Client is already disposed')) {
+        return await IOClient(HttpClient()).send(request);
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  void close() {
+    _primary.close();
+  }
+}
 
 class MClient {
   MClient();
@@ -19,7 +42,8 @@ class MClient {
     MSource? source,
     Map<String, dynamic>? reqcopyWith,
   }) {
-    final client = AnymeXExtensionBridge.context.http ?? IOClient(HttpClient());
+    final rawClient = AnymeXExtensionBridge.context.http ?? IOClient(HttpClient());
+    final client = SafeFallbackClient(rawClient);
     return InterceptedClient.build(
       client: client,
       interceptors: [
@@ -49,7 +73,7 @@ class MClient {
   static Future<void> setCookie(
     String url,
     String ua,
-    flutter_inappwebview.InAppWebViewController? webViewController, {
+    WebViewController? webViewController, {
     String? cookie,
   }) async {
     List<String> cookies = [];
@@ -60,25 +84,32 @@ class MClient {
               .toList() ??
           [];
     } else {
-      cookies = (await flutter_inappwebview.CookieManager.instance(
-        webViewEnvironment: AnymeXExtensionBridge.context.webViewEnvironment,
-      ).getCookies(
-        url: flutter_inappwebview.WebUri(url),
-        webViewController: webViewController,
-      ))
-          .map((e) => "${e.name}=${e.value}")
-          .toList();
+      try {
+        final cookieManager = WebViewCookieManager();
+        final list = await cookieManager.getCookies(domain: Uri.parse(url));
+        cookies = list.map((e) => "${e.name}=${e.value}").toList();
+      } catch (_) {}
+    }
+    if (cookies.isEmpty && webViewController != null) {
+      try {
+        final docCookie = await webViewController.runJavaScriptReturningResult('document.cookie');
+        final str = docCookie.toString();
+        if (str.isNotEmpty && str != 'null') {
+          final clean = str.startsWith('"') && str.endsWith('"') && str.length >= 2
+              ? str.substring(1, str.length - 1)
+              : str;
+          cookies = clean.split(';').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        }
+      } catch (_) {}
     }
     if (cookies.isNotEmpty) {
       final host = Uri.parse(url).host;
       final newCookie = cookies.join("; ");
-      final cookiesMap = {}; //loadData(PrefName.cookies);
+      final cookiesMap = {};
       cookiesMap.removeWhere((key, value) => key == host || host.contains(key));
       cookiesMap[host] = newCookie;
-      // saveData(PrefName.cookies, cookiesMap);
     }
     if (ua.isNotEmpty) {
-      //saveData(PrefName.userAgent, ua);
     }
   }
 

@@ -22,7 +22,7 @@ import 'IReaderSourceMethods.dart';
 
 class DesktopIReaderExtensions extends DesktopExtensionBase
     with TachiyomiJniDesktopExtension {
-  final http.Client _client = AnymeXExtensionBridge.context.http ?? http.Client();
+  http.Client get _client => AnymeXExtensionBridge.context.http ?? http.Client();
 
   @override
   String get id => 'ireader-desktop';

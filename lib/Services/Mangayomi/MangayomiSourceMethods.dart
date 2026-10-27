@@ -28,7 +28,7 @@ class MangayomiSourceMethods implements SourceMethods {
   @override
   Future<DMedia> getDetail(DMedia media, {SourceParams? parameters}) async {
     try {
-      final data = await getExtensionService(source).getDetail(media.url!);
+      final data = await getCachedExtensionService(source).getDetail(media.url!);
 
       DMedia createMediaData(Map<String, dynamic> args) {
         final media = args['media'] as DMedia;
@@ -74,14 +74,14 @@ class MangayomiSourceMethods implements SourceMethods {
 
   @override
   Future<Pages> getLatestUpdates(int page, {SourceParams? parameters}) async {
-    final data = await getExtensionService(source).getLatestUpdates(page);
+    final data = await getCachedExtensionService(source).getLatestUpdates(page);
 
     return Pages(hasNextPage: data.hasNextPage, list: _mapMediaList(data.list));
   }
 
   @override
   Future<Pages> getPopular(int page, {SourceParams? parameters}) async {
-    final data = await getExtensionService(source).getPopular(page);
+    final data = await getCachedExtensionService(source).getPopular(page);
 
     return Pages(hasNextPage: data.hasNextPage, list: _mapMediaList(data.list));
   }
@@ -92,14 +92,14 @@ class MangayomiSourceMethods implements SourceMethods {
     List<dynamic> activeFilters = filters;
     if (filters.isNotEmpty && filters.first is Map) {
       try {
-        final filterList = getExtensionService(source).getFilterList();
+        final filterList = getCachedExtensionService(source).getFilterList();
         _applyMangayomiFilters(filterList.filters, filters);
         activeFilters = filterList.filters;
       } catch (e) {
         Logger.log('MangayomiSourceMethods apply filters error: $e');
       }
     }
-    final data = await getExtensionService(source).search(query, page, activeFilters);
+    final data = await getCachedExtensionService(source).search(query, page, activeFilters);
 
     return Pages(hasNextPage: data.hasNextPage, list: _mapMediaList(data.list));
   }
@@ -107,7 +107,7 @@ class MangayomiSourceMethods implements SourceMethods {
   @override
   Future<List<dynamic>> getFilterList() async {
     try {
-      final filterList = getExtensionService(source).getFilterList();
+      final filterList = getCachedExtensionService(source).getFilterList();
       return filterList.filters.map((f) => _mapMangayomiFilter(f)).toList();
     } catch (e) {
       Logger.log('MangayomiSourceMethods getFilterList error: $e');
@@ -219,7 +219,7 @@ class MangayomiSourceMethods implements SourceMethods {
   Future<List<PageUrl>> getPageList(DEpisode episode,
       {SourceParams? parameters}) async {
     try {
-      final data = await getExtensionService(source).getPageList(episode.url!);
+      final data = await getCachedExtensionService(source).getPageList(episode.url!);
       return data.map((e) => PageUrl(e.url, headers: e.headers)).toList();
     } catch (e) {
       Logger.log("Mangayomi: getPageList failed: $e");
@@ -231,7 +231,7 @@ class MangayomiSourceMethods implements SourceMethods {
   Future<List<Video>> getVideoList(DEpisode episode,
       {SourceParams? parameters}) async {
     try {
-      final data = await getExtensionService(source).getVideoList(episode.url!);
+      final data = await getCachedExtensionService(source).getVideoList(episode.url!);
       return data.map((e) {
         return Video(
           e.quality,
@@ -252,7 +252,7 @@ class MangayomiSourceMethods implements SourceMethods {
   Future<String?> getNovelContent(String chapterTitle, String chapterId,
       {SourceParams? parameters}) async {
     try {
-      final service = getExtensionService(source);
+      final service = getCachedExtensionService(source);
       final data = await service.getHtmlContent(chapterTitle, chapterId);
       try {
         final cleaned = await service.cleanHtmlContent(data);

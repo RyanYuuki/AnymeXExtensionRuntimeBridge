@@ -78,6 +78,13 @@ class TorrServerControllerSubprocess implements TorrServerController {
     return _startFuture = future.whenComplete(() => _startFuture = null);
   }
 
+  static String get _androidLinker {
+    if (File('/system/bin/linker64').existsSync()) {
+      return '/system/bin/linker64';
+    }
+    return '/system/bin/linker';
+  }
+
   Future<void> _startImpl({
     int? port,
     TorrServerSettings? settings,
@@ -110,9 +117,11 @@ class TorrServerControllerSubprocess implements TorrServerController {
     _processLogs.clear();
 
     try {
+      final exe = Platform.isAndroid ? _androidLinker : binaryPath;
+      final exeArgs = Platform.isAndroid ? [binaryPath, ...args] : args;
       final process = await Process.start(
-        binaryPath,
-        args,
+        exe,
+        exeArgs,
         mode: ProcessStartMode.normal,
       );
 
@@ -462,6 +471,11 @@ class TorrServerControllerSubprocess implements TorrServerController {
   Future<String> _locateBinary({String? customBinaryPath}) async {
     if (customBinaryPath != null && customBinaryPath.isNotEmpty) {
       if (await File(customBinaryPath).exists()) {
+        if (!Platform.isWindows) {
+          try {
+            await Process.run("chmod", ["755", customBinaryPath]);
+          } catch (_) {}
+        }
         return customBinaryPath;
       }
       throw TorrServerBinaryNotFoundException(
