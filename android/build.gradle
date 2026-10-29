@@ -47,6 +47,6 @@ repositories {
 }
 
 dependencies {
-    compileOnly "io.flutter:flutter_embedding_debug:1.0.0-ef0cd000916d64fa0c5d09cc809fa7ad244a5767"
+    compileOnly "io.flutter:flutter_embedding_debug:1.0.0-cf636b1dfb818dd6a3ff16e390e93b1a036969c8"
     implementation "com.google.code.gson:gson:2.11.0"
 }
