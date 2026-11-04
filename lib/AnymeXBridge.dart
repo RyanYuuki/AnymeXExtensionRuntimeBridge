@@ -350,6 +350,48 @@ class AnymeXRuntimeBridge {
     }
   }
 
+  static Future<void> clearCookies([String? url]) async {
+    try {
+      if (url != null && url.isNotEmpty) {
+        final host = Uri.parse(url).host;
+        if (host.isNotEmpty) {
+          cookiesMap.remove(host);
+          cookiesMap.remove(host.replaceFirst('www.', ''));
+          userAgentMap.remove(host);
+          userAgentMap.remove(host.replaceFirst('www.', ''));
+        }
+      } else {
+        cookiesMap.clear();
+        userAgentMap.clear();
+      }
+    } catch (_) {}
+    if (!isSupportedPlatform) return;
+    if (Platform.isAndroid) {
+      try {
+        await _channel.invokeMethod<void>('clearCookies', {'url': url});
+      } catch (e) {
+        Logger.log('clearCookies failed: $e');
+      }
+    } else {
+      try {
+        await BridgeDispatcher().invokeMethod('clearCookies', {'url': url});
+      } catch (e) {
+        Logger.log('clearCookies (desktop) failed: $e');
+      }
+    }
+  }
+
+  static Future<void> clearCache() async {
+    if (!isSupportedPlatform) return;
+    if (Platform.isAndroid) {
+      try {
+        await _channel.invokeMethod<void>('clearCache');
+      } catch (e) {
+        Logger.log('clearCache failed: $e');
+      }
+    }
+  }
+
   static const _aniyomiChannel = MethodChannel('aniyomiExtensionBridge');
 
   static final Map<String, Uint8List> _imageBytesCache = {};

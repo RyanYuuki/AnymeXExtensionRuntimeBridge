@@ -268,6 +268,54 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                     result.error("UA_ERROR", e.message, null)
                 }
             }
+            "clearCookies" -> {
+                val url = call.argument<String>("url")
+                try {
+                    val mgr = android.webkit.CookieManager.getInstance()
+                    if (url.isNullOrBlank()) {
+                        mgr.removeAllCookies(null)
+                        mgr.flush()
+                    } else {
+                        val host = android.net.Uri.parse(url).host ?: url
+                        val hostUrl = if (url.startsWith("http")) url else "https://$host"
+                        listOf(hostUrl, "https://$host", "https://www.$host").forEach { targetUrl ->
+                            val cookies = mgr.getCookie(targetUrl)
+                            if (!cookies.isNullOrEmpty()) {
+                                cookies.split(";").map { it.trim() }.filter { it.isNotEmpty() }.forEach { cookie ->
+                                    val name = cookie.substringBefore("=").trim()
+                                    if (name.isNotEmpty()) {
+                                        mgr.setCookie(targetUrl, "$name=; Max-Age=0; path=/")
+                                        mgr.setCookie(targetUrl, "$name=; Max-Age=0; path=/; domain=.$host")
+                                        mgr.setCookie(targetUrl, "$name=; Max-Age=0; path=/; domain=$host")
+                                    }
+                                }
+                            }
+                        }
+                        mgr.flush()
+                        System.clearProperty("anymex.ua.$host")
+                        if (host.startsWith("www.")) {
+                            System.clearProperty("anymex.ua.${host.removePrefix("www.")}")
+                        }
+                    }
+                    result.success(null)
+                } catch (e: Exception) {
+                    Log.e(TAG, "clearCookies failed: ${e.message}")
+                    result.error("COOKIE_ERROR", e.message, null)
+                }
+            }
+            "clearCache" -> {
+                try {
+                    val ctx = effectiveContext() ?: context
+                    if (ctx != null) {
+                        File(ctx.externalCacheDir ?: ctx.cacheDir, "network_cache").deleteRecursively()
+                        File(ctx.cacheDir, "manga_pages_cache").deleteRecursively()
+                    }
+                    result.success(null)
+                } catch (e: Exception) {
+                    Log.e(TAG, "clearCache failed: ${e.message}")
+                    result.error("CACHE_ERROR", e.message, null)
+                }
+            }
             else -> result.notImplemented()
 
         }

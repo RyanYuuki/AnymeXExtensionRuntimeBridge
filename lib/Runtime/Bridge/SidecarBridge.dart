@@ -28,14 +28,14 @@ class SidecarBridge {
 
     final completer = Completer<void>();
 
-    print('Starting Sidecar Process: $javaPath -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -Xms256m -Xmx2048m -jar $bridgeJarPath');
+    print('Starting Sidecar Process: $javaPath -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -Xms256m -Xmx4096m -jar $bridgeJarPath');
     
     _process = await Process.start(javaPath, [
       '-Dfile.encoding=UTF-8',
       '-Dsun.stdout.encoding=UTF-8',
       '-Dsun.stderr.encoding=UTF-8',
       '-Xms256m',
-      '-Xmx2048m',
+      '-Xmx4096m',
       '-noverify',
       '-jar',
       bridgeJarPath

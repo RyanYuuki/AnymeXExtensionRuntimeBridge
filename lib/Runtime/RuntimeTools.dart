@@ -107,6 +107,7 @@ class RuntimeTools {
 
     env[pathKey] = '$javaBinDir$separator${env[pathKey] ?? ''}';
     env['JAVA_HOME'] = p.dirname(javaBinDir);
+    env['JAVA_TOOL_OPTIONS'] = '-Xmx4096m';
 
     final process = await Process.run(
       dex2jarPath,
