@@ -37,14 +37,14 @@ class CloudStreamSource extends Source {
           json['name']?.toString().toLowerCase() ??
           '',
       name: json['name'],
-      baseUrl: json['url'],
-      lang: (language == null || language.trim().isEmpty) ? 'ALL' : language,
+      baseUrl: json['baseUrl'] ?? json['url'],
+      lang: (language == null || language.trim().isEmpty) ? (json['lang'] ?? 'ALL') : language,
       iconUrl: json['iconUrl'],
       isNsfw: json['isNsfw'] ?? false,
       version: versionStr,
       versionLast: json['versionLast']?.toString() ?? versionStr,
       repo: json['repo'],
-      managerId: 'cloudstream',
+      managerId: json['managerId'] ?? 'cloudstream',
       hasUpdate: json['hasUpdate'] ?? false,
       supportsLatest: json['supportsLatest'] ?? false,
       supportsPopular: json['supportsPopular'] ?? false,
@@ -61,6 +61,9 @@ class CloudStreamSource extends Source {
     final map = super.toJson();
     map['internalName'] = internalName;
     map['plugin'] = pluginUrl;
+    map['pluginUrl'] = pluginUrl;
+    map['jarUrl'] = jarUrl;
+    map['hasSettings'] = hasSettings;
     return map;
   }
 

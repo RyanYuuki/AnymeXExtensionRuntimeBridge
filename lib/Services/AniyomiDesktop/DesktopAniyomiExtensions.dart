@@ -53,9 +53,13 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
   }
 
   @override
+  Source parseSourceJson(Map<String, dynamic> json) => ASource.fromJson(json);
+
+  @override
   Future<void> fetchInstalledAnimeExtensions() async {
     final list = await _loadInstalled(ItemType.anime);
     getInstalledRx(ItemType.anime).value = list;
+    _filterCachedAvailable(ItemType.anime);
     final available = getRawAvailableRx(ItemType.anime).value.whereType<ASource>().toList();
     if (available.isNotEmpty) {
       _detectUpdates(available, ItemType.anime);
@@ -66,9 +70,20 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
   Future<void> fetchInstalledMangaExtensions() async {
     final list = await _loadInstalled(ItemType.manga);
     getInstalledRx(ItemType.manga).value = list;
+    _filterCachedAvailable(ItemType.manga);
     final available = getRawAvailableRx(ItemType.manga).value.whereType<ASource>().toList();
     if (available.isNotEmpty) {
       _detectUpdates(available, ItemType.manga);
+    }
+  }
+
+  void _filterCachedAvailable(ItemType type) {
+    final raw = getRawAvailableRx(type).value;
+    if (raw.isNotEmpty) {
+      final installedIds = getInstalledRx(type).value.map((e) => e.id).toSet();
+      getAvailableRx(type).value = List.unmodifiable(
+        raw.where((s) => !installedIds.contains(s.id)),
+      );
     }
   }
 
@@ -145,12 +160,23 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
 
   Future<List<Source>> _fetchExtensions(ItemType type) async {
     final repos = _loadRepos(type);
-    if (repos.isEmpty) return const [];
+    if (repos.isEmpty) {
+      saveCachedSources(type, const [], raw: true);
+      saveCachedSources(type, const []);
+      getAvailableRx(type).value = const [];
+      getRawAvailableRx(type).value = const [];
+      return const [];
+    }
 
     getReposRx(type).value = repos;
 
     final results = await Future.wait(repos.map((r) => _fetchRepo(r, type)));
     final all = results.expand((e) => e).toList(growable: false);
+
+    if (repos.isNotEmpty && all.isEmpty) {
+      Logger.log("No sources fetched for $id ($type). Keeping cached sources.");
+      return getAvailableRx(type).value;
+    }
 
     final installed = getInstalledRx(type).value;
     final installedIds = installed.map((e) => e.id).toSet();
@@ -159,9 +185,14 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
 
     getRawAvailableRx(type).value = List.unmodifiable(all);
 
-    return List.unmodifiable(
+    final available = List<Source>.unmodifiable(
       all.where((s) => !installedIds.contains(s.id)),
     );
+
+    saveCachedSources(type, all, raw: true);
+    saveCachedSources(type, available);
+
+    return available;
   }
 
   Future<List<Source>> _fetchRepo(Repo repo, ItemType type) async {
@@ -470,6 +501,7 @@ class DesktopAniyomiExtensions extends DesktopExtensionBase {
 
       final avail = getAvailableRx(aSource.itemType!);
       avail.value = avail.value.where((e) => e.id != aSource.id).toList();
+      saveCachedSources(aSource.itemType!, avail.value);
 
       if (aSource.itemType == ItemType.anime) {
         await fetchInstalledAnimeExtensions();

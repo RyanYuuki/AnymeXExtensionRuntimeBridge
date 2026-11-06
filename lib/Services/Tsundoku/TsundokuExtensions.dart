@@ -45,6 +45,9 @@ class TsundokuExtensions extends Extension {
   @override
   bool get requiresPlugin => true;
 
+  @override
+  Source parseSourceJson(Map<String, dynamic> json) => TSource.fromJson(json);
+
   static const platform = MethodChannel('tsundokuExtensionBridge');
 
   @override
@@ -55,6 +58,12 @@ class TsundokuExtensions extends Extension {
   Future<void> fetchInstalledNovelExtensions() async {
     final list = await _loadInstalled('getInstalledNovelExtensions', ItemType.novel);
     getInstalledRx(ItemType.novel).value = list;
+    final raw = getRawAvailableRx(ItemType.novel).value;
+    if (raw.isNotEmpty) {
+      final installedIds = list.map((e) => e.id).toSet();
+      getAvailableRx(ItemType.novel).value =
+          raw.where((s) => !installedIds.contains(s.id)).toList();
+    }
     final available = getRawAvailableRx(ItemType.novel).value.whereType<TSource>().toList();
     if (available.isNotEmpty) {
       detectTachiyomiUpdates(this, available, ItemType.novel);
@@ -85,11 +94,20 @@ class TsundokuExtensions extends Extension {
       }
     }
 
+    if (repos.isNotEmpty && allSources.isEmpty) {
+      Logger.log("No Tsundoku sources fetched. Keeping cached sources.");
+      return;
+    }
+
     getRawAvailableRx(ItemType.novel).value = allSources;
 
     final installedIds = getInstalledRx(ItemType.novel).value.map((e) => e.id).toSet();
-    getAvailableRx(ItemType.novel).value =
+    final available =
         allSources.where((s) => !installedIds.contains(s.id)).toList();
+    getAvailableRx(ItemType.novel).value = available;
+
+    saveCachedSources(ItemType.novel, allSources, raw: true);
+    saveCachedSources(ItemType.novel, available);
 
     detectTachiyomiUpdates(this, allSources, ItemType.novel);
   }

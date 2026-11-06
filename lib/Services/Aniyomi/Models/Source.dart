@@ -40,13 +40,14 @@ class ASource extends Source {
       supportsPopular: json['supportsPopular'] ?? false,
       itemType: ItemType.values[json['itemType'] ?? 0],
       pkgName: json['pkgName'],
-      apkName: json['apkName'],
+      apkName: json['apkName'] ?? json['apkUrl'],
     );
   }
 
   @override
   Map<String, dynamic> toJson() {
     final map = super.toJson();
+    map['apkName'] = apkName;
     map['apkUrl'] = apkName;
     map['pkgName'] = pkgName;
     return map;

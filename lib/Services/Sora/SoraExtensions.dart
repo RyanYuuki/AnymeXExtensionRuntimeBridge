@@ -29,6 +29,9 @@ class SoraExtensions extends Extension {
   bool get supportsNovel => true;
 
   @override
+  Source parseSourceJson(Map<String, dynamic> json) => SSource.fromJson(json);
+
+  @override
   SourceMethods createSourceMethods(Source source) => SoraSourceMethods(source);
 
   @override
@@ -164,7 +167,11 @@ class SoraExtensions extends Extension {
 
   Future<List<Source>> _fetchExtensions(ItemType type) async {
     final repos = _loadRepos(type);
-    if (repos.isEmpty) return const [];
+    if (repos.isEmpty) {
+      saveCachedSources(type, const [], raw: true);
+      saveCachedSources(type, const []);
+      return const [];
+    }
 
     getReposRx(type).value = repos;
 
@@ -174,15 +181,25 @@ class SoraExtensions extends Extension {
 
     final allSources = results.expand((e) => e).toList(growable: false);
 
+    if (repos.isNotEmpty && allSources.isEmpty) {
+      Logger.log("No Sora sources fetched. Keeping cached sources.");
+      return getAvailableRx(type).value;
+    }
+
     final installed = getInstalledRx(type).value;
     final installedIds = installed.map((e) => e.id).toSet();
 
     _detectUpdates(allSources, type);
     getRawAvailableRx(type).value = List.unmodifiable(allSources);
 
-    return List.unmodifiable(
+    final available = List<Source>.unmodifiable(
       allSources.where((s) => !installedIds.contains(s.id)),
     );
+
+    saveCachedSources(type, allSources, raw: true);
+    saveCachedSources(type, available);
+
+    return available;
   }
 
   Future<List<Source>> _fetchRepo(Repo repo, ItemType type) async {

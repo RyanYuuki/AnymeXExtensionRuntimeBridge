@@ -72,6 +72,10 @@ class CloudStreamExtensions extends Extension {
   final Rx<List<Source>> availableAnimeExtensions = Rx([]);
 
   @override
+  Source parseSourceJson(Map<String, dynamic> json) =>
+      CloudStreamSource.fromJson(json);
+
+  @override
   bool get supportsNovel => false;
   @override
   bool get supportsManga => false;
@@ -193,6 +197,10 @@ class CloudStreamExtensions extends Extension {
           !installedNames.contains(normInternalName) &&
           !installedInternalNames.contains(normInternalName);
     }).toList();
+
+    getRawAvailableRx(ItemType.anime).value = allAvailable;
+    saveCachedSources(ItemType.anime, allAvailable, raw: true);
+    saveCachedSources(ItemType.anime, availableAnimeExtensions.value);
   }
 
   int _parseVersion(String? version) {

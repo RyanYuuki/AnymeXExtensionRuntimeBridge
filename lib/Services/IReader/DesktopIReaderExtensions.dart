@@ -47,6 +47,9 @@ class DesktopIReaderExtensions extends DesktopExtensionBase
   bool get requiresPlugin => true;
 
   @override
+  Source parseSourceJson(Map<String, dynamic> json) => IdSource.fromJson(json);
+
+  @override
   String get jniDataDir => 'ireader';
 
   @override
@@ -60,6 +63,12 @@ class DesktopIReaderExtensions extends DesktopExtensionBase
   Future<void> fetchInstalledNovelExtensions() async {
     final list = await _loadInstalled('getInstalledNovelExtensions', ItemType.novel);
     getInstalledRx(ItemType.novel).value = list;
+    final raw = getRawAvailableRx(ItemType.novel).value;
+    if (raw.isNotEmpty) {
+      final installedIds = list.map((e) => e.id).toSet();
+      getAvailableRx(ItemType.novel).value =
+          raw.where((s) => !installedIds.contains(s.id)).toList();
+    }
     final available = getRawAvailableRx(ItemType.novel).value.whereType<IdSource>().toList();
     if (available.isNotEmpty) {
       detectTachiyomiUpdates(this, available, ItemType.novel);
@@ -90,11 +99,20 @@ class DesktopIReaderExtensions extends DesktopExtensionBase
       }
     }
 
+    if (repos.isNotEmpty && allSources.isEmpty) {
+      Logger.log("No IReader sources fetched. Keeping cached sources.");
+      return;
+    }
+
     getRawAvailableRx(ItemType.novel).value = allSources;
 
     final installedIds = getInstalledRx(ItemType.novel).value.map((e) => e.id).toSet();
-    getAvailableRx(ItemType.novel).value =
+    final available =
         allSources.where((s) => !installedIds.contains(s.id)).toList();
+    getAvailableRx(ItemType.novel).value = available;
+
+    saveCachedSources(ItemType.novel, allSources, raw: true);
+    saveCachedSources(ItemType.novel, available);
 
     detectTachiyomiUpdates(this, allSources, ItemType.novel);
   }

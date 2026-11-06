@@ -55,6 +55,10 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
   final Rx<List<Source>> availableAnimeExtensions = Rx([]);
 
   @override
+  Source parseSourceJson(Map<String, dynamic> json) =>
+      CloudStreamSource.fromJson(json);
+
+  @override
   SourceMethods createSourceMethods(Source source) =>
       DesktopCloudStreamSourceMethods(source);
 
@@ -73,6 +77,31 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
     installedAnimeExtensions.refresh();
     Logger.log(
         "AnymeX Bridge: ${installed.length} CloudStream extensions loaded/updated.");
+
+    final raw = getRawAvailableRx(ItemType.anime).value;
+    if (raw.isNotEmpty) {
+      _applyRawSources(raw);
+    }
+  }
+
+  void _applyRawSources(List<Source> allAvailable) {
+    final installedNames =
+        installedAnimeExtensions.value.map((e) => _normalizeName(e.name)).toSet();
+    final installedInternalNames = installedAnimeExtensions.value
+        .map((e) => (e as CloudStreamSource).internalName)
+        .where((name) => name != null)
+        .map((name) => _normalizeName(name))
+        .toSet();
+
+    availableAnimeExtensions.value = allAvailable.where((s) {
+      final source = s as CloudStreamSource;
+      final normName = _normalizeName(source.name);
+      final normInternalName = _normalizeName(source.internalName);
+      return !installedNames.contains(normName) &&
+          !installedInternalNames.contains(normName) &&
+          !installedNames.contains(normInternalName) &&
+          !installedInternalNames.contains(normInternalName);
+    }).toList();
   }
 
   @override
@@ -164,23 +193,15 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
       }
     }
 
-    final installedNames =
-        installedAnimeExtensions.value.map((e) => _normalizeName(e.name)).toSet();
-    final installedInternalNames = installedAnimeExtensions.value
-        .map((e) => (e as CloudStreamSource).internalName)
-        .where((name) => name != null)
-        .map((name) => _normalizeName(name))
-        .toSet();
+    if (repos.isNotEmpty && allAvailable.isEmpty) {
+      Logger.log("No CloudStream sources fetched from repos. Keeping cached sources.");
+      return;
+    }
 
-    availableAnimeExtensions.value = allAvailable.where((s) {
-      final source = s as CloudStreamSource;
-      final normName = _normalizeName(source.name);
-      final normInternalName = _normalizeName(source.internalName);
-      return !installedNames.contains(normName) &&
-          !installedInternalNames.contains(normName) &&
-          !installedNames.contains(normInternalName) &&
-          !installedInternalNames.contains(normInternalName);
-    }).toList();
+    _applyRawSources(allAvailable);
+    getRawAvailableRx(ItemType.anime).value = allAvailable;
+    saveCachedSources(ItemType.anime, allAvailable, raw: true);
+    saveCachedSources(ItemType.anime, availableAnimeExtensions.value);
   }
 
   @override
@@ -427,6 +448,7 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
         availableAnimeExtensions.value = availableAnimeExtensions.value
             .where((e) => e.id != source.id)
             .toList();
+        saveCachedSources(ItemType.anime, availableAnimeExtensions.value);
 
         await fetchInstalledAnimeExtensions();
         await fetchAnimeExtensions();

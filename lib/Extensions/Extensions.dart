@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 
 import '../Models/Source.dart';
+import '../Settings/KvStore.dart';
 import 'SourceMethods.dart';
 
 abstract class Extension {
@@ -41,9 +43,54 @@ abstract class Extension {
     ItemType.novel: Rx<List<Repo>>([]),
   };
 
+  String _cacheKey(ItemType type, {bool raw = false}) =>
+      'ext_cache_${id}_${type.name}${raw ? '_raw' : ''}';
+
+  void saveCachedSources(ItemType type, List<Source> sources, {bool raw = false}) {
+    try {
+      final jsonList = sources.map((s) => s.toJson()).toList();
+      setVal(_cacheKey(type, raw: raw), jsonEncode(jsonList));
+    } catch (e) {
+      debugPrint('Failed to cache sources for $id ($type): $e');
+    }
+  }
+
+  List<Source> loadCachedSources(ItemType type, {bool raw = false}) {
+    try {
+      final rawStr = getVal<String>(_cacheKey(type, raw: raw));
+      if (rawStr == null || rawStr.isEmpty) return [];
+      final decoded = jsonDecode(rawStr);
+      if (decoded is! List) return [];
+      return decoded
+          .whereType<Map>()
+          .map((m) => parseSourceJson(Map<String, dynamic>.from(m)))
+          .toList();
+    } catch (e) {
+      debugPrint('Failed to load cached sources for $id ($type): $e');
+      return [];
+    }
+  }
+
+  Source parseSourceJson(Map<String, dynamic> json) => Source.fromJson(json);
+
+  void loadCachedAvailable() {
+    for (final type in ItemType.values) {
+      final cachedRaw = loadCachedSources(type, raw: true);
+      if (cachedRaw.isNotEmpty) {
+        getRawAvailableRx(type).value = cachedRaw;
+      }
+      final cached = loadCachedSources(type);
+      if (cached.isNotEmpty) {
+        getAvailableRx(type).value = cached;
+      }
+    }
+  }
+
   @mustCallSuper
   Future<void> initialize() async {
     try {
+      loadCachedAvailable();
+
       if (supportsAnime) {
         await fetchInstalledAnimeExtensions();
         unawaited(fetchAnimeExtensions());
