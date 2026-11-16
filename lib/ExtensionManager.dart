@@ -48,6 +48,8 @@ class ExtensionManager extends GetxController {
       MangayomiExtensions(),
       LegadoExtensions(),
       LnReaderExtensions(),
+      StremioExtensions(),
+      NuvioPluginExtensions(),
     ]);
 
     await onRuntimeBridgeInitialization();
@@ -279,12 +281,19 @@ class ExtensionManager extends GetxController {
     return result;
   }
 
-  Extension? findById(String id) =>
-      managers.firstWhereOrNull((m) => m.id == id);
+  Extension? findById(String id) => managers.firstWhereOrNull((m) =>
+      m.id == id ||
+      m.id.toLowerCase() == id.toLowerCase() ||
+      m.name.toLowerCase() == id.toLowerCase() ||
+      (id.toLowerCase().contains('nuvio') && m.id == 'nuvio') ||
+      (id.toLowerCase().contains('strem') && m.id == 'stremio'));
 
   Future<void> addRepo(String url, ItemType type, String managerId) async {
     final manager = findById(managerId);
-    if (manager != null) await manager.addRepo(url, type);
+    if (manager != null) {
+      await manager.addRepo(url, type);
+      _updateAggregatedLists(type);
+    }
   }
 
   Future<void> addRepos(
@@ -294,11 +303,15 @@ class ExtensionManager extends GetxController {
 
     final validUrls = urls.map((u) => u.trim()).where((u) => u.isNotEmpty);
     await Future.wait(validUrls.map((url) => manager.addRepo(url, type)));
+    _updateAggregatedLists(type);
   }
 
   Future<void> removeRepo(Repo repo, ItemType type) async {
     final manager = findById(repo.managerId ?? '');
-    if (manager != null) await manager.removeRepo(repo.url, type);
+    if (manager != null) {
+      await manager.removeRepo(repo.url, type);
+      _updateAggregatedLists(type);
+    }
   }
 
   List<Repo> getAllRepos(ItemType type) =>
@@ -313,7 +326,7 @@ class ExtensionManager extends GetxController {
     for (final type in ItemType.values) {
       for (final src in _getInstalledList(type)) {
         if (src.hasUpdate ?? false) {
-          updateTasks.add(src.update());
+          updateTasks.add(SourceExecution(src).update());
         }
       }
     }
@@ -355,6 +368,11 @@ extension SourceExecution on Source {
 Extension getSourceManager(Source source) {
   final em = Get.find<ExtensionManager>();
 
+  if (source.managerId != null && source.managerId!.isNotEmpty) {
+    final manager = em.findById(source.managerId!);
+    if (manager != null) return manager;
+  }
+
   if (source is ASource) {
     return em.findById('aniyomi') ?? em.findById('aniyomi-desktop')!;
   }
@@ -373,6 +391,30 @@ Extension getSourceManager(Source source) {
   }
   if (source is ISource) {
     return em.findById('ireader') ?? em.findById('ireader-desktop')!;
+  }
+
+  final repoUrl = (source.repo ?? source.baseUrl ?? '').toLowerCase();
+  if (repoUrl.contains('nuvio')) {
+    final m = em.findById('nuvio');
+    if (m != null) {
+      source.managerId ??= 'nuvio';
+      return m;
+    }
+  }
+  if (repoUrl.contains('strem') || repoUrl.contains('torrentio')) {
+    final m = em.findById('stremio');
+    if (m != null) {
+      source.managerId ??= 'stremio';
+      return m;
+    }
+  }
+
+  final nuvioMgr = em.findById('nuvio');
+  if (nuvioMgr is NuvioPluginExtensions) {
+    if (nuvioMgr.allInstalledScrapers.any((s) => s.id.toLowerCase() == (source.id ?? '').toLowerCase())) {
+      source.managerId ??= 'nuvio';
+      return nuvioMgr;
+    }
   }
 
   return em.findById('mangayomi')!;

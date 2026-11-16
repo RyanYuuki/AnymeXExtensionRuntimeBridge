@@ -30,6 +30,8 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import tachiyomi.core.util.lang.awaitSingle
 import okhttp3.Protocol
@@ -37,9 +39,9 @@ import kotlinx.coroutines.asContextElement
 
 object DesktopExtensionLoader {
     private val gson = Gson()
-    val loadedAnimeSources = mutableMapOf<String, AnimeSource>()
-    val loadedMangaSources = mutableMapOf<String, MangaSource>()
-    private val classLoaders = mutableMapOf<String, URLClassLoader>()
+    val loadedAnimeSources = ConcurrentHashMap<String, AnimeSource>()
+    val loadedMangaSources = ConcurrentHashMap<String, MangaSource>()
+    private val classLoaders = ConcurrentHashMap<String, URLClassLoader>()
     private var initialized = false
 
     private data class PrefHandlers(
@@ -47,7 +49,13 @@ object DesktopExtensionLoader {
         val click: Preference.OnPreferenceClickListener?,
         val change: Preference.OnPreferenceChangeListener?
     )
-    private val sourcePreferences = mutableMapOf<String, MutableMap<String, PrefHandlers>>()
+    private val sourcePreferences = ConcurrentHashMap<String, ConcurrentHashMap<String, PrefHandlers>>()
+    private val sourceLocks = ConcurrentHashMap<String, Mutex>()
+
+    suspend fun <T> withSourceLock(sourceId: String?, block: suspend () -> T): T {
+        if (sourceId.isNullOrEmpty()) return block()
+        return sourceLocks.getOrPut(sourceId) { Mutex() }.withLock { block() }
+    }
 
     fun handleRequest(requestJson: String): String {
         return try {
@@ -55,7 +63,7 @@ object DesktopExtensionLoader {
             val method = request.get("method")?.let { if (it.isJsonPrimitive) it.asString else null }
                 ?: return createErrorEnvelope("Missing method", null)
             val methodArgs = request.getAsJsonObject("args") ?: JsonObject()
-            val resultData = runBlocking(Dispatchers.IO) {
+            val resultData = runBlocking {
                 executeMethod(method, methodArgs, null)
             }
             createSuccessEnvelope(resultData)
@@ -91,6 +99,17 @@ object DesktopExtensionLoader {
         methodArgs: JsonObject,
         onPartialResponse: ((Any?) -> Unit)? = null
     ): Any? {
+        val sourceId = methodArgs.get("sourceId")?.let { if (it.isJsonPrimitive) it.asString else null }
+        return withSourceLock(sourceId) {
+            executeMethodInternal(method, methodArgs, onPartialResponse)
+        }
+    }
+
+    private suspend fun executeMethodInternal(
+        method: String,
+        methodArgs: JsonObject,
+        onPartialResponse: ((Any?) -> Unit)? = null
+    ): Any? {
         fun getSafeString(key: String): String =
             methodArgs.get(key)?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
 
@@ -122,8 +141,8 @@ object DesktopExtensionLoader {
                 PackageTools.dex2jar(dexFile, outJar)
                 mapOf("success" to true, "outJarPath" to outJarPath)
             }
-            "loadExtensions" -> {
-                val path = getSafeString("folderPath")
+            "loadExtensions", "getInstalledNovelExtensions" -> {
+                val path = if (methodArgs.has("folderPath")) getSafeString("folderPath") else getSafeString("path")
                 AniyomiSourceMethods.loadExtensions(path)
             }
             "getPopular" -> {
@@ -152,8 +171,10 @@ object DesktopExtensionLoader {
                 val url = media.get("url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
                 val title = media.get("title")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
                 val cover = media.get("thumbnail_url")?.let { if (it.isJsonPrimitive) it.asString else "" } ?: ""
+                val memo = media.get("memo")?.let { if (it.isJsonPrimitive) it.asString else it.toString() }
+                    ?: media.get("description")?.let { if (it.isJsonPrimitive) it.asString else it.toString() }
                 val isAnime = getSafeBoolean("isAnime", true)
-                AniyomiSourceMethods.fetchDetails(sourceId, url, title, cover, isAnime)
+                AniyomiSourceMethods.fetchDetails(sourceId, url, title, cover, isAnime, memo)
             }
             "getVideoList" -> {
                 val sourceId = getSafeString("sourceId")
@@ -179,6 +200,7 @@ object DesktopExtensionLoader {
             }
             "unloadExtension" -> {
                 val sourceId = getSafeString("sourceId")
+                sourceLocks.remove(sourceId)
                 AniyomiSourceMethods.unloadExtension(sourceId)
                 "null"
             }
@@ -354,10 +376,21 @@ fun main(args: Array<String>) = runBlocking {
         if (line.isBlank()) continue
 
         bridgeScope.launch {
+            var reqId: String? = null
             try {
                 val request = gson.fromJson(line, JsonObject::class.java)
-                val method = request.get("method")?.let { if (it.isJsonPrimitive) it.asString else null } ?: return@launch
                 val requestId = request.get("id")?.let { if (it.isJsonPrimitive) it.asString else null } ?: request.get("id")?.toString()?.replace("\"", "")
+                reqId = requestId
+                val method = request.get("method")?.let { if (it.isJsonPrimitive) it.asString else null }
+                if (method == null) {
+                    if (requestId != null) {
+                        val errObj = JsonObject()
+                        errObj.addProperty("id", requestId)
+                        errObj.addProperty("error", "Missing method")
+                        synchronized(outLock) { cleanOut.println(gson.toJson(errObj)) }
+                    }
+                    return@launch
+                }
                 val methodArgs = request.getAsJsonObject("args") ?: JsonObject()
 
                 fun getSafeString(key: String): String =
@@ -443,12 +476,16 @@ fun main(args: Array<String>) = runBlocking {
                     }
                 }
             } catch (e: CancellationException) {
-
+                if (reqId != null) activeJobs.remove(reqId)
             } catch (e: Throwable) {
+                if (reqId != null) activeJobs.remove(reqId)
                 System.err.println("[RPC] Error processing line: $line")
                 e.printStackTrace()
                 
                 val errorResponse = JsonObject()
+                if (reqId != null) {
+                    errorResponse.addProperty("id", reqId)
+                }
                 errorResponse.addProperty("error", e.message ?: e.toString())
                 
                 synchronized(outLock) {

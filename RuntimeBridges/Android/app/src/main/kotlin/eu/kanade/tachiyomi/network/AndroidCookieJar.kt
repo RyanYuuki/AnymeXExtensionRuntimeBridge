@@ -27,7 +27,7 @@ class AndroidCookieJar : CookieJar {
         val cookies = manager?.getCookie(url.toString())
 
         return if (!cookies.isNullOrEmpty()) {
-            cookies.split(";").mapNotNull { Cookie.parse(url, it) }
+            cookies.split(";").mapNotNull { Cookie.parse(url, it.trim()) }
         } else {
             emptyList()
         }

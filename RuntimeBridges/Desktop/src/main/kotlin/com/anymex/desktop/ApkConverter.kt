@@ -85,7 +85,6 @@ object ApkConverter {
 
         try {
             PackageTools.dex2jar(cs3File, tempJar)
-            com.anymex.desktop.util.BytecodeEditor.fixAndroidClasses(tempJar.toPath(), cs3File.toPath())
 
             val outFile = File(outJarPath)
             outFile.parentFile?.mkdirs()

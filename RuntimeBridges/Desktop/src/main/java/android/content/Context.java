@@ -1,6 +1,17 @@
 package android.content;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Map;
+import android.content.pm.PackageManager;
+import android.content.pm.ApplicationInfo;
+import android.content.res.Resources;
+import android.os.Looper;
 
 public class Context {
     public static final int MODE_PRIVATE = 0;
@@ -8,8 +19,19 @@ public class Context {
     public static final int MODE_MULTI_PROCESS = 4;
     public static final int BIND_AUTO_CREATE = 1;
 
-    private static final java.util.Map<String, SharedPreferences> prefsCache = new java.util.HashMap<>();
-    private static final android.content.pm.PackageManager packageManager = new android.content.pm.PackageManager();
+    public static final String ACTIVITY_SERVICE = "activity";
+    public static final String LAYOUT_INFLATER_SERVICE = "layout_inflater";
+    public static final String CONNECTIVITY_SERVICE = "connectivity";
+    public static final String WINDOW_SERVICE = "window";
+    public static final String INPUT_METHOD_SERVICE = "input_method";
+    public static final String KEYGUARD_SERVICE = "keyguard";
+    public static final String POWER_SERVICE = "power";
+    public static final String NOTIFICATION_SERVICE = "notification";
+    public static final String AUDIO_SERVICE = "audio";
+
+    private static final Map<String, SharedPreferences> prefsCache = new HashMap<>();
+    private static final PackageManager packageManager = new PackageManager();
+    private static android.app.Application sAppInstance;
 
     public SharedPreferences getSharedPreferences(String name, int mode) {
         synchronized (prefsCache) {
@@ -21,18 +43,21 @@ public class Context {
     }
 
     public Context getApplicationContext() {
-        return this;
+        if (sAppInstance == null) {
+            sAppInstance = new android.app.Application();
+        }
+        return sAppInstance;
     }
 
     public String getPackageName() {
         return "com.ryan.anymex";
     }
 
-    public android.content.pm.PackageManager getPackageManager() {
+    public PackageManager getPackageManager() {
         return packageManager;
     }
 
-    public android.content.pm.ApplicationInfo getApplicationInfo() {
+    public ApplicationInfo getApplicationInfo() {
         return packageManager.getApplicationInfo(getPackageName(), 0);
     }
 
@@ -41,8 +66,27 @@ public class Context {
         return cl != null ? cl : ClassLoader.getSystemClassLoader();
     }
 
+    public Resources getResources() {
+        return Resources.getSystem();
+    }
+
     public Object getSystemService(String name) {
+        if (ACTIVITY_SERVICE.equals(name)) {
+            return new android.app.ActivityManager();
+        }
         return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T getSystemService(Class<T> serviceClass) {
+        if (serviceClass != null && "android.app.ActivityManager".equals(serviceClass.getName())) {
+            return (T) new android.app.ActivityManager();
+        }
+        return null;
+    }
+
+    public Looper getMainLooper() {
+        return Looper.getMainLooper();
     }
 
     public Object getAssets() {
@@ -69,12 +113,16 @@ public class Context {
         return "";
     }
 
-    public java.io.InputStream openFileInput(String name) throws java.io.FileNotFoundException {
-        return new java.io.FileInputStream(new File(getFilesDir(), name));
+    public String getString(int resId, Object... formatArgs) {
+        return "";
     }
 
-    public java.io.OutputStream openFileOutput(String name, int mode) throws java.io.FileNotFoundException {
-        return new java.io.FileOutputStream(new File(getFilesDir(), name));
+    public InputStream openFileInput(String name) throws FileNotFoundException {
+        return new FileInputStream(new File(getFilesDir(), name));
+    }
+
+    public OutputStream openFileOutput(String name, int mode) throws FileNotFoundException {
+        return new FileOutputStream(new File(getFilesDir(), name));
     }
 
     public boolean deleteFile(String name) {

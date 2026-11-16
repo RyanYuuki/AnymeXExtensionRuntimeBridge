@@ -30,6 +30,9 @@ class MangayomiExtensions extends Extension {
       'https://raw.githubusercontent.com/kodjodevf/mangayomi/main/assets/app_icons/icon-red.png';
 
   @override
+  Source parseSourceJson(Map<String, dynamic> json) => MSource.fromJson(json);
+
+  @override
   SourceMethods createSourceMethods(Source source) =>
       MangayomiSourceMethods(source);
 
@@ -64,6 +67,11 @@ class MangayomiExtensions extends Extension {
       allSources.addAll(sources);
     }
 
+    if (repos.isNotEmpty && allSources.isEmpty) {
+      Logger.log("No Mangayomi sources fetched. Keeping cached sources.");
+      return getAvailableRx(type).value;
+    }
+
     final rawRx = getRawAvailableRx(type);
     rawRx.value = List.unmodifiable(allSources);
 
@@ -74,6 +82,8 @@ class MangayomiExtensions extends Extension {
         allSources.where((s) => !installedIds.contains(s.id)).toList();
 
     getAvailableRx(type).value = List.unmodifiable(filtered);
+    saveCachedSources(type, allSources, raw: true);
+    saveCachedSources(type, filtered);
     return filtered;
   }
 

@@ -87,7 +87,7 @@ object RuntimeBridge {
         Log.i(TAG, "Initializing Runtime Host - Version: 1.0.6")
 
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
-            val initialActivity = resolveAppCompatActivity(context)
+            val initialActivity = resolveAppCompatActivity(context) ?: resolveActivity(context)
             if (initialActivity != null) {
                 lastKnownActivity = WeakReference(initialActivity)
                 com.lagradost.cloudstream3.MainActivity.activity = initialActivity
@@ -122,17 +122,13 @@ object RuntimeBridge {
             (context.applicationContext as? Application)?.registerActivityLifecycleCallbacks(
                 object : Application.ActivityLifecycleCallbacks {
                     override fun onActivityResumed(activity: Activity) {
-                        if (isSubclassOfAppCompatActivity(activity.javaClass)) {
-                            lastKnownActivity = WeakReference(activity)
-                            com.lagradost.cloudstream3.MainActivity.activity = activity
-                            com.lagradost.cloudstream3.MainActivity.context = activity
-                        }
+                        lastKnownActivity = WeakReference(activity)
+                        com.lagradost.cloudstream3.MainActivity.activity = activity
+                        com.lagradost.cloudstream3.MainActivity.context = activity
                     }
                     override fun onActivityCreated(a: Activity, b: Bundle?) {
-                        if (isSubclassOfAppCompatActivity(a.javaClass)) {
-                            com.lagradost.cloudstream3.MainActivity.activity = a
-                            com.lagradost.cloudstream3.MainActivity.context = a
-                        }
+                        com.lagradost.cloudstream3.MainActivity.activity = a
+                        com.lagradost.cloudstream3.MainActivity.context = a
                     }
                     override fun onActivityStarted(a: Activity) {}
                     override fun onActivityPaused(a: Activity) {}
@@ -987,6 +983,17 @@ object RuntimeBridge {
         }
     }
 
+    fun resolveActivity(context: Context): Activity? {
+        var ctx: Context? = context
+        while (ctx != null) {
+            if (ctx is Activity) return ctx
+            ctx = if (ctx is ContextWrapper) ctx.baseContext else null
+        }
+        val cached = lastKnownActivity?.get()
+        if (cached is Activity) return cached
+        return null
+    }
+
     private fun isSubclassOfAppCompatActivity(cls: Class<*>): Boolean {
         var c: Class<*>? = cls
         while (c != null) {
@@ -997,17 +1004,9 @@ object RuntimeBridge {
     }
 
     fun resolveAppCompatActivity(context: Context): androidx.appcompat.app.AppCompatActivity? {
-        var ctx: Context? = context
-        while (ctx != null) {
-            if (isSubclassOfAppCompatActivity(ctx.javaClass)) {
-                val result = ctx as? androidx.appcompat.app.AppCompatActivity
-                if (result != null) return result
-            }
-            ctx = if (ctx is ContextWrapper) ctx.baseContext else null
-        }
-        val cached = lastKnownActivity?.get()
-        if (cached != null && isSubclassOfAppCompatActivity(cached.javaClass)) {
-            return cached as? androidx.appcompat.app.AppCompatActivity
+        val act = resolveActivity(context)
+        if (act != null && isSubclassOfAppCompatActivity(act.javaClass)) {
+            return act as? androidx.appcompat.app.AppCompatActivity
         }
         return null
     }
@@ -1018,21 +1017,22 @@ object RuntimeBridge {
         val plugin = pluginInstance as? com.lagradost.cloudstream3.plugins.Plugin ?: return false
         val openSettingsFn = plugin.openSettings ?: return false
 
-        val appCompatActivity = resolveAppCompatActivity(context) ?: AppCompatActivityWrapper(context)
+        val act = resolveAppCompatActivity(context)
+            ?: com.lagradost.cloudstream3.plugins.AppCompatActivityWrapper(resolveActivity(context) ?: context)
 
-        com.lagradost.cloudstream3.MainActivity.activity = appCompatActivity
-        com.lagradost.cloudstream3.MainActivity.context = appCompatActivity
+        com.lagradost.cloudstream3.MainActivity.activity = act
+        com.lagradost.cloudstream3.MainActivity.context = act
 
         try {
             val styleClass = Class.forName("com.google.android.material.R\$style")
             val field = styleClass.getField("Theme_MaterialComponents_DayNight_NoActionBar")
             val themeId = field.getInt(null)
-            appCompatActivity.setTheme(themeId)
+            act.setTheme(themeId)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to setTheme programmatically via reflection", e)
         }
 
-        openSettingsFn(appCompatActivity)
+        openSettingsFn(act)
         return true
     }
 

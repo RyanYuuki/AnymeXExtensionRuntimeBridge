@@ -4,6 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="$SCRIPT_DIR/output"
 
+if [[ -d "/opt/android-studio/jbr" ]]; then
+    export JAVA_HOME="/opt/android-studio/jbr"
+elif [[ -d "$HOME/.gradle/jdks/amazon_com_inc_-21-amd64-linux.2" ]]; then
+    export JAVA_HOME="$HOME/.gradle/jdks/amazon_com_inc_-21-amd64-linux.2"
+fi
+export PATH="${JAVA_HOME:+$JAVA_HOME/bin:}$PATH"
+
 usage() {
     echo "Usage: $0 [android|desktop|both|clean-android|clean-desktop|clean-both]"
     echo

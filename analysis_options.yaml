@@ -4,6 +4,13 @@ analyzer:
     constant_identifier_names: ignore
     deprecated_member_use: ignore
     library_prefixes: ignore
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - windows/**
+    - macos/**
+    - linux/**
 include: package:flutter_lints/flutter.yaml
 
 linter:

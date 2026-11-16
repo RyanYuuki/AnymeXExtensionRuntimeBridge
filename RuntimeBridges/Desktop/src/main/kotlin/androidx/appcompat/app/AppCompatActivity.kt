@@ -1,3 +1,5 @@
 package androidx.appcompat.app
 
-open class AppCompatActivity
+import androidx.fragment.app.FragmentActivity
+
+open class AppCompatActivity : FragmentActivity()

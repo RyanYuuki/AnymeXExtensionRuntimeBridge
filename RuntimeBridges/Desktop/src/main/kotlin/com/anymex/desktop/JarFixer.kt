@@ -24,7 +24,7 @@ import java.util.jar.JarOutputStream
 
 object JarFixer {
 
-    private const val FIX_MARKER = "META-INF/anymex-jarfixed-v2"
+    private const val FIX_MARKER = "META-INF/anymex-jarfixed-v3"
 
     fun isFixed(jar: File): Boolean = try {
         JarFile(jar).use { jf -> 
@@ -77,6 +77,7 @@ object JarFixer {
             classes.values.forEach { cn ->
                 fixWrongInitOwner(cn, needInit, classes)
             }
+            fixBogusInterceptors(classes)
 
             var changed = true
             while (changed) {
@@ -98,8 +99,10 @@ object JarFixer {
                                 else -> { m.instructions.add(VarInsnNode(Opcodes.ALOAD, slot)); slot++ }
                             }
                         }
-                        m.instructions.add(MethodInsnNode(Opcodes.INVOKESPECIAL, cn.superName, "<init>", desc, false))
+                        m.instructions.add(MethodInsnNode(Opcodes.INVOKESPECIAL, cn.superName ?: "java/lang/Object", "<init>", desc, false))
                         m.instructions.add(InsnNode(Opcodes.RETURN))
+                        m.maxStack = maxOf(1, slot)
+                        m.maxLocals = slot
                         cn.methods.add(m)
                         if (classes.containsKey(cn.superName + ".class")) {
                             needInit.add(cn.superName to desc)
@@ -234,6 +237,107 @@ object JarFixer {
                     }
                 }
                 i++
+            }
+        }
+    }
+
+    private fun fixBogusInterceptors(classes: Map<String, ClassNode>) {
+        val instantiated = HashSet<String>()
+        classes.values.forEach { cn ->
+            cn.methods.forEach { mn ->
+                val insns = mn.instructions
+                for (idx in 0 until insns.size()) {
+                    val insn = insns[idx]
+                    if (insn is TypeInsnNode && insn.opcode == Opcodes.NEW) {
+                        instantiated.add(insn.desc)
+                    }
+                }
+            }
+        }
+
+        val uninstantiatedInterceptors = ArrayDeque<String>()
+        classes.values.forEach { cn ->
+            if ((cn.access and Opcodes.ACC_INTERFACE) == 0 && (cn.access and Opcodes.ACC_ABSTRACT) == 0) {
+                if (cn.interfaces != null && cn.interfaces.contains("okhttp3/Interceptor")) {
+                    val hasInit = cn.methods.any { it.name == "<init>" }
+                    if (!hasInit) {
+                        val m = MethodNode(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null)
+                        m.maxStack = 1
+                        m.maxLocals = 1
+                        m.instructions.add(VarInsnNode(Opcodes.ALOAD, 0))
+                        m.instructions.add(MethodInsnNode(Opcodes.INVOKESPECIAL, cn.superName ?: "java/lang/Object", "<init>", "()V", false))
+                        m.instructions.add(InsnNode(Opcodes.RETURN))
+                        cn.methods.add(m)
+                    }
+                    if (!instantiated.contains(cn.name)) {
+                        uninstantiatedInterceptors.add(cn.name)
+                    }
+                }
+            }
+        }
+
+        classes.values.forEach { cn ->
+            cn.methods.forEach { mn ->
+                val insns = mn.instructions
+                var i = 0
+                while (i < insns.size()) {
+                    val insn = insns[i]
+                    if (insn is MethodInsnNode &&
+                        (insn.owner == "okhttp3/OkHttpClient\$Builder" || insn.owner == "okhttp3/OkHttpClient") &&
+                        (insn.name == "addInterceptor" || insn.name == "addNetworkInterceptor")
+                    ) {
+                        var prev = insn.previous
+                        while (prev is LabelNode || prev is LineNumberNode || prev is FrameNode) {
+                            prev = prev?.previous
+                        }
+                        if (prev is MethodInsnNode && prev.owner == "java/lang/Object" && prev.name == "<init>") {
+                            var dup = prev.previous
+                            while (dup is LabelNode || dup is LineNumberNode || dup is FrameNode) {
+                                dup = dup?.previous
+                            }
+                            if (dup != null && dup.opcode == Opcodes.DUP) {
+                                var newInsn = dup.previous
+                                while (newInsn is LabelNode || newInsn is LineNumberNode || newInsn is FrameNode) {
+                                    newInsn = newInsn?.previous
+                                }
+                                if (newInsn is TypeInsnNode && newInsn.opcode == Opcodes.NEW && newInsn.desc == "java/lang/Object") {
+                                    val target = if (uninstantiatedInterceptors.isNotEmpty()) uninstantiatedInterceptors.removeFirst() else null
+                                    if (target != null) {
+                                        newInsn.desc = target
+                                        prev.owner = target
+                                    } else {
+                                        var builderLoad = newInsn.previous
+                                        while (builderLoad is LabelNode || builderLoad is LineNumberNode || builderLoad is FrameNode) {
+                                            builderLoad = builderLoad?.previous
+                                        }
+                                        var next = insn.next
+                                        while (next is LabelNode || next is LineNumberNode || next is FrameNode) {
+                                            next = next?.next
+                                        }
+                                        if (next != null && next.opcode == Opcodes.POP && builderLoad != null) {
+                                            insns.remove(builderLoad)
+                                            insns.remove(newInsn)
+                                            insns.remove(dup)
+                                            insns.remove(prev)
+                                            insns.remove(insn)
+                                            insns.remove(next)
+                                            i = 0
+                                            continue
+                                        } else {
+                                            insns.remove(newInsn)
+                                            insns.remove(dup)
+                                            insns.remove(prev)
+                                            insns.remove(insn)
+                                            i = 0
+                                            continue
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    i++
+                }
             }
         }
     }

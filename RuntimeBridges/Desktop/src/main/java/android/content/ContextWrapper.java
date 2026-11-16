@@ -1,6 +1,7 @@
 package android.content;
 
 import java.io.File;
+import android.content.res.Resources;
 
 public class ContextWrapper extends Context {
     private Context mBase;
@@ -49,8 +50,18 @@ public class ContextWrapper extends Context {
     }
 
     @Override
+    public Resources getResources() {
+        return mBase != null ? mBase.getResources() : super.getResources();
+    }
+
+    @Override
     public Object getSystemService(String name) {
         return mBase != null ? mBase.getSystemService(name) : super.getSystemService(name);
+    }
+
+    @Override
+    public <T> T getSystemService(Class<T> serviceClass) {
+        return mBase != null ? mBase.getSystemService(serviceClass) : super.getSystemService(serviceClass);
     }
 
     @Override
@@ -81,6 +92,11 @@ public class ContextWrapper extends Context {
     @Override
     public String getString(int resId) {
         return mBase != null ? mBase.getString(resId) : super.getString(resId);
+    }
+
+    @Override
+    public String getString(int resId, Object... formatArgs) {
+        return mBase != null ? mBase.getString(resId, formatArgs) : super.getString(resId, formatArgs);
     }
 
     @Override

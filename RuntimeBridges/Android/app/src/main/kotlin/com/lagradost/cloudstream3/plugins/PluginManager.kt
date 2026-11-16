@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream3.plugins
 
+import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.util.Log
@@ -215,13 +216,9 @@ object PluginManager {
                     Log.e(PLUGIN_TAG, "Failed to load resources for plugin $filePath", e)
                 }
 
-                val loadContext = if (context is AppCompatActivity) {
-                    context
-                } else {
-                    withContext(Dispatchers.Main) {
-                        AppCompatActivityWrapper(context)
-                    }
-                }
+                val loadContext = (context as? AppCompatActivity)
+                    ?: com.anymex.runtimehost.RuntimeBridge.resolveAppCompatActivity(context)
+                    ?: context
                 pluginInstance.load(loadContext)
             } else {
                 pluginInstance.load() // For BasePlugin
@@ -294,6 +291,18 @@ class AppCompatActivityWrapper(base: Context) : AppCompatActivity() {
             return hostActivity.supportFragmentManager
         }
         return super.getSupportFragmentManager()
+    }
+
+    override fun isFinishing(): Boolean {
+        val hostActivity = (baseContext as? Activity)
+            ?: (baseContext as? ContextWrapper)?.baseContext as? Activity
+        return hostActivity?.isFinishing ?: super.isFinishing()
+    }
+
+    override fun isDestroyed(): Boolean {
+        val hostActivity = (baseContext as? Activity)
+            ?: (baseContext as? ContextWrapper)?.baseContext as? Activity
+        return hostActivity?.isDestroyed ?: super.isDestroyed()
     }
 
     override fun getApplicationContext(): Context {

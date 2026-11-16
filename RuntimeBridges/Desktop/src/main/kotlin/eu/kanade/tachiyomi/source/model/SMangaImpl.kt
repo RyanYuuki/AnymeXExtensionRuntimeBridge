@@ -24,5 +24,11 @@ class SMangaImpl : SManga {
 
     override var initialized: Boolean = false
 
-    override var memo: kotlinx.serialization.json.JsonObject? = null
+    private var _memo: kotlinx.serialization.json.JsonObject? = kotlinx.serialization.json.JsonObject(emptyMap())
+
+    override var memo: kotlinx.serialization.json.JsonObject?
+        get() = _memo ?: kotlinx.serialization.json.JsonObject(emptyMap())
+        set(value) {
+            _memo = value ?: kotlinx.serialization.json.JsonObject(emptyMap())
+        }
 }

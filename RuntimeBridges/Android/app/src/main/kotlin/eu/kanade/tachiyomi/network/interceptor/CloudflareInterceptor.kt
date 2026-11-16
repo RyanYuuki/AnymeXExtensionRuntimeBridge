@@ -30,7 +30,11 @@ class CloudflareInterceptor(
     private val executor = ContextCompat.getMainExecutor(context)
 
     override fun shouldIntercept(response: Response): Boolean {
-        return response.header("cf-mitigated") == "challenge" && response.header("Server") in SERVER_CHECK
+        val server = response.header("Server")
+        val isCloudflareServer = server in SERVER_CHECK || (server != null && SERVER_CHECK.any { server.contains(it, ignoreCase = true) })
+        val isChallenge = response.header("cf-mitigated") == "challenge" ||
+            ((response.code == 403 || response.code == 503) && response.header("cf-ray") != null)
+        return isChallenge && isCloudflareServer
     }
 
     override fun intercept(
@@ -40,6 +44,24 @@ class CloudflareInterceptor(
     ): Response {
         try {
             response.close()
+            val hostUrl = "${request.url.scheme}://${request.url.host}"
+            val existingCookie = cookieManager.get(request.url)
+                .firstOrNull { it.name == "cf_clearance" }
+            val webViewCookies = try {
+                android.webkit.CookieManager.getInstance().getCookie(request.url.toString())
+                    ?: android.webkit.CookieManager.getInstance().getCookie(hostUrl)
+            } catch (_: Throwable) {
+                null
+            }
+            val requestCookie = request.header("Cookie")
+            val hasClearance = existingCookie != null ||
+                (webViewCookies?.contains("cf_clearance=") == true) ||
+                (requestCookie?.contains("cf_clearance=") == true)
+
+            if (hasClearance) {
+                throw IOException("Cloudflare challenge required. Please solve Cloudflare in WebView")
+            }
+
             cookieManager.remove(request.url, COOKIE_NAMES, 0)
             val oldCookie = cookieManager.get(request.url)
                 .firstOrNull { it.name == "cf_clearance" }

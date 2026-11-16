@@ -59,7 +59,13 @@ class NetworkHelper(
     }
 
     var client: OkHttpClient = run {
+        val dispatcher = okhttp3.Dispatcher().apply {
+            maxRequests = 128
+            maxRequestsPerHost = 32
+        }
         val builder = OkHttpClient.Builder()
+            .dispatcher(dispatcher)
+            .connectionPool(okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES))
             .cookieJar(cookieJar)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

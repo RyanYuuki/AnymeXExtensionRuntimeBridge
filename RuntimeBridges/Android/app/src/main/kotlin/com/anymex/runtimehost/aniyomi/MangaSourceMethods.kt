@@ -127,21 +127,27 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
     override suspend fun getDetails(media: SAnime): SAnime {
         val smanga = media.toSManga()
         try {
-            val details = try {
-                val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = true, fetchChapters = false)
-                if (update.manga != smanga && update.manga.initialized) {
-                    update.manga
-                } else {
-                    source.getMangaDetails(smanga)
-                }
+            val update = try {
+                source.getMangaUpdate(smanga, emptyList(), fetchDetails = true, fetchChapters = true)
             } catch (e: Throwable) {
                 if (e is UnsupportedOperationException || e is IllegalStateException || e is AbstractMethodError || e is NoSuchMethodError) {
-                    source.getMangaDetails(smanga)
+                    val d = source.getMangaDetails(smanga)
+                    val c = try { source.getChapterList(smanga) } catch (_: Throwable) { emptyList() }
+                    eu.kanade.tachiyomi.source.model.SMangaUpdate(d, c)
                 } else {
                     throw e
                 }
             }
-            return details.toSAnime(smanga.url)
+            if (update.chapters.isNotEmpty()) {
+                cachedChapters[smanga.url] = update.chapters
+                update.chapters.forEach { ch ->
+                    val memo = ch.memo
+                    if (memo != null && memo.isNotEmpty()) {
+                        chapterMemoCache[ch.url] = memo
+                    }
+                }
+            }
+            return update.manga.toSAnime(smanga.url)
         } catch (e: Throwable) {
             Logger.log("getDetails failed: message=${e.message}")
             e.printStackTrace()
@@ -151,18 +157,23 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
 
     override suspend fun getChapterList(media: SAnime): List<SEpisode> {
         val smanga = media.toSManga()
-        val chapters = try {
-            val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = false, fetchChapters = true)
-            if (update.chapters.isNotEmpty()) {
-                update.chapters
-            } else {
-                source.getChapterList(smanga)
-            }
-        } catch (e: Throwable) {
-            if (e is UnsupportedOperationException || e is IllegalStateException || e is AbstractMethodError || e is NoSuchMethodError) {
-                source.getChapterList(smanga)
-            } else {
-                throw e
+        val cached = cachedChapters.remove(smanga.url)
+        val chapters = if (!cached.isNullOrEmpty()) {
+            cached
+        } else {
+            try {
+                val update = source.getMangaUpdate(smanga, emptyList(), fetchDetails = false, fetchChapters = true)
+                if (update.chapters.isNotEmpty()) {
+                    update.chapters
+                } else {
+                    source.getChapterList(smanga)
+                }
+            } catch (e: Throwable) {
+                if (e is UnsupportedOperationException || e is IllegalStateException || e is AbstractMethodError || e is NoSuchMethodError) {
+                    source.getChapterList(smanga)
+                } else {
+                    throw e
+                }
             }
         }
         chapters.forEach { ch ->
@@ -310,5 +321,6 @@ class MangaSourceMethods(sourceID: String, langIndex: Int = 0) : AniyomiSourceMe
 
     companion object {
         val chapterMemoCache = ConcurrentHashMap<String, JsonObject>()
+        val cachedChapters = ConcurrentHashMap<String, List<SChapter>>()
     }
 }

@@ -67,19 +67,6 @@ class NetworkHelper(
                     }
                 }
             })
-            .addInterceptor(CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider))
-            .addInterceptor(object : Interceptor {
-                override fun intercept(chain: Interceptor.Chain): Response {
-                    return try {
-                        BrotliInterceptor.intercept(chain)
-                    } catch (_: Throwable) {
-                        chain.proceed(chain.request())
-                    }
-                }
-            })
-            .addInterceptor(IgnoreGzipInterceptor())
-            .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
-            // Per-host User-Agent override — explicit class to avoid SAM cast across classloaders
             .addInterceptor(object : Interceptor {
                 override fun intercept(chain: Interceptor.Chain): Response {
                     val request = chain.request()
@@ -92,16 +79,40 @@ class NetworkHelper(
                             customUa = System.getProperty("anymex.ua.$parentDomain")
                         }
                     }
-                    return if (!customUa.isNullOrEmpty()) {
-                        val newRequest = request.newBuilder()
-                            .header("User-Agent", customUa)
-                            .build()
-                        chain.proceed(newRequest)
+                    val builder = request.newBuilder()
+                    var modified = false
+                    if (!customUa.isNullOrEmpty()) {
+                        builder.header("User-Agent", customUa)
+                        modified = true
+                    }
+                    if (request.header("Cookie").isNullOrBlank()) {
+                        val hostUrl = "${request.url.scheme}://${request.url.host}"
+                        val cookies = cookieJar.manager?.getCookie(request.url.toString())
+                            ?: cookieJar.manager?.getCookie(hostUrl)
+                        if (!cookies.isNullOrBlank()) {
+                            builder.header("Cookie", cookies)
+                            modified = true
+                        }
+                    }
+                    return if (modified) {
+                        chain.proceed(builder.build())
                     } else {
                         chain.proceed(request)
                     }
                 }
             })
+            .addInterceptor(CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider))
+            .addInterceptor(object : Interceptor {
+                override fun intercept(chain: Interceptor.Chain): Response {
+                    return try {
+                        BrotliInterceptor.intercept(chain)
+                    } catch (_: Throwable) {
+                        chain.proceed(chain.request())
+                    }
+                }
+            })
+            .addInterceptor(IgnoreGzipInterceptor())
+            .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
         builder.build()
     }
 

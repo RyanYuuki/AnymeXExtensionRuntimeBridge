@@ -19,6 +19,8 @@ fi
 export PATH="${JAVA_HOME:+$JAVA_HOME/bin:}$PATH"
 
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+export ANDROID_USER_HOME="${ANDROID_USER_HOME:-/tmp/.android}"
+mkdir -p "$ANDROID_USER_HOME"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/tools:$PATH"
 
 echo "☕ Java: $(java -version 2>&1 | head -1)"

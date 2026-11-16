@@ -13,12 +13,18 @@ class ChildFirstURLClassLoader(
 
     private fun shouldDelegateToParent(name: String?): Boolean {
         if (name == null) return false
+        if (name.startsWith("eu.kanade.tachiyomi.extension.") ||
+            name.startsWith("eu.kanade.tachiyomi.animeextension.") ||
+            name.startsWith("eu.kanade.tachiyomi.multisrc.")) {
+            return false
+        }
         return name.startsWith("kotlin.") ||
                name.startsWith("kotlinx.") ||
                name.startsWith("okhttp3.") ||
                name.startsWith("okio.") ||
                name.startsWith("androidx.") ||
                name.startsWith("android.") ||
+               name.startsWith("xyz.nulldev.") ||
                name.startsWith("com.anymex.") ||
                name.startsWith("com.lagradost.cloudstream3.") ||
                name.startsWith("com.google.gson.") ||
@@ -40,11 +46,15 @@ class ChildFirstURLClassLoader(
             } catch (_: ClassNotFoundException) {}
         }
 
-        if (c == null && name != null && !shouldDelegateToParent(name)) {
+        if (c == null && name != null) {
             try {
                 c = findClass(name)
             } catch (_: ClassNotFoundException) {
-                c = parent.loadClass(name)
+                if (!shouldDelegateToParent(name)) {
+                    try {
+                        c = parent.loadClass(name)
+                    } catch (_: ClassNotFoundException) {}
+                }
             }
         }
 

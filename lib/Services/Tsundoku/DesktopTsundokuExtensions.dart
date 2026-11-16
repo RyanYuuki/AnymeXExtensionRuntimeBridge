@@ -61,7 +61,7 @@ class DesktopTsundokuExtensions extends DesktopExtensionBase
 
   @override
   Future<void> fetchInstalledNovelExtensions() async {
-    final list = await _loadInstalled('getInstalledNovelExtensions', ItemType.novel);
+    final list = await _loadInstalled('loadExtensions', ItemType.novel);
     getInstalledRx(ItemType.novel).value = list;
     final raw = getRawAvailableRx(ItemType.novel).value;
     if (raw.isNotEmpty) {
@@ -123,7 +123,7 @@ class DesktopTsundokuExtensions extends DesktopExtensionBase
   @override
   Future<void> fetchMangaExtensions() async {}
 
-  Future<List<Source>> _loadInstalled(String method, ItemType type) async {
+  Future<List<Source>> _loadInstalled([String method = 'loadExtensions', ItemType type = ItemType.novel]) async {
     try {
       final root = await RuntimePaths().extensionsDir;
       final dir = Directory(p.join(root.path, jniDataDir, type.toString()));
@@ -133,14 +133,36 @@ class DesktopTsundokuExtensions extends DesktopExtensionBase
 
       final result = await BridgeDispatcher().invokeMethod(method, {
         'path': dir.path,
+        'folderPath': dir.path,
       });
 
       if (result == null) return [];
 
-      final List<dynamic> list = result is String ? jsonDecode(result) : result as List<dynamic>;
+      List<dynamic> list = [];
+      if (result is List) {
+        list = result;
+      } else if (result is String) {
+        try {
+          final decoded = jsonDecode(result);
+          if (decoded is List) {
+            list = decoded;
+          } else if (decoded is Map && decoded['data'] is List) {
+            list = decoded['data'] as List;
+          } else if (decoded is Map && decoded['sources'] is List) {
+            list = decoded['sources'] as List;
+          }
+        } catch (_) {}
+      } else if (result is Map) {
+        if (result['data'] is List) {
+          list = result['data'] as List;
+        } else if (result['sources'] is List) {
+          list = result['sources'] as List;
+        }
+      }
 
       return list
-          .map((e) => TdSource.fromJson(Map<String, dynamic>.from(e as Map))..managerId = id)
+          .whereType<Map>()
+          .map((e) => TdSource.fromJson(Map<String, dynamic>.from(e))..managerId = id)
           .where((s) => s.itemType == type)
           .toList(growable: false);
     } catch (e) {

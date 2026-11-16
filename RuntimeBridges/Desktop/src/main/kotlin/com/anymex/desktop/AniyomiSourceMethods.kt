@@ -38,38 +38,57 @@ object AniyomiSourceMethods {
         val click: Preference.OnPreferenceClickListener?,
         val change: Preference.OnPreferenceChangeListener?
     )
-    private val sourcePreferences = mutableMapOf<String, MutableMap<String, PrefHandlers>>()
+    private val sourcePreferences = ConcurrentHashMap<String, ConcurrentHashMap<String, PrefHandlers>>()
+    private val mangaMemoCache = ConcurrentHashMap<String, kotlinx.serialization.json.JsonObject>()
 
     private inline fun <T> safe(block: () -> T?, default: T): T = try { block() ?: default } catch (e: Exception) { default }
 
-    private fun SAnime.toDetailsMap() = mapOf<String, Any>(
-        "title" to safe({ title }, ""),
-        "url" to normalizeMediaUrl(safe({ url }, "")),
-        "cover" to safe({ thumbnail_url }, ""),
-        "description" to safe({ description }, ""),
-        "author" to safe({ author }, ""),
-        "artist" to safe({ artist }, ""),
-        "genre" to safe({ getGenres() }, emptyList<String>()),
-        "status" to safe({ status }, 0),
-        "background_url" to safe({ background_url }, ""),
-        "update_strategy" to safe({ update_strategy.name }, "UNKNOWN"),
-        "fetch_type" to safe({ fetch_type.name }, "UNKNOWN"),
-        "season_number" to safe({ season_number }, -1.0),
-        "initialized" to safe({ initialized }, false)
-    )
+    private fun SAnime.toDetailsMap(): Map<String, Any?> {
+        safe({ memo }, null)?.let { m ->
+            if (m.isNotEmpty()) {
+                val norm = normalizeMediaUrl(safe({ url }, ""))
+                if (norm.isNotBlank()) mangaMemoCache[norm] = m
+            }
+        }
+        return mapOf<String, Any?>(
+            "title" to safe({ title }, ""),
+            "url" to normalizeMediaUrl(safe({ url }, "")),
+            "cover" to safe({ thumbnail_url }, ""),
+            "description" to safe({ description }, ""),
+            "author" to safe({ author }, ""),
+            "artist" to safe({ artist }, ""),
+            "genre" to safe({ getGenres() }, emptyList<String>()),
+            "status" to safe({ status }, 0),
+            "background_url" to safe({ background_url }, ""),
+            "update_strategy" to safe({ update_strategy.name }, "UNKNOWN"),
+            "fetch_type" to safe({ fetch_type.name }, "UNKNOWN"),
+            "season_number" to safe({ season_number }, -1.0),
+            "initialized" to safe({ initialized }, false),
+            "memo" to safe({ memo.takeIf { it.isNotEmpty() }?.toString() }, null)
+        )
+    }
 
-    private fun SManga.toDetailsMap() = mapOf<String, Any>(
-        "title" to safe({ title }, ""),
-        "url" to normalizeMediaUrl(safe({ url }, "")),
-        "cover" to safe({ thumbnail_url }, ""),
-        "description" to safe({ description }, ""),
-        "author" to safe({ author }, ""),
-        "artist" to safe({ artist }, ""),
-        "genre" to safe({ getGenres() }, emptyList<String>()),
-        "status" to safe({ status }, 0),
-        "update_strategy" to safe({ update_strategy.name }, "UNKNOWN"),
-        "initialized" to safe({ initialized }, false)
-    )
+    private fun SManga.toDetailsMap(): Map<String, Any?> {
+        safe({ memo }, null)?.let { m ->
+            if (m.isNotEmpty()) {
+                val norm = normalizeMediaUrl(safe({ url }, ""))
+                if (norm.isNotBlank()) mangaMemoCache[norm] = m
+            }
+        }
+        return mapOf<String, Any?>(
+            "title" to safe({ title }, ""),
+            "url" to normalizeMediaUrl(safe({ url }, "")),
+            "cover" to safe({ thumbnail_url }, ""),
+            "description" to safe({ description }, ""),
+            "author" to safe({ author }, ""),
+            "artist" to safe({ artist }, ""),
+            "genre" to safe({ getGenres() }, emptyList<String>()),
+            "status" to safe({ status }, 0),
+            "update_strategy" to safe({ update_strategy.name }, "UNKNOWN"),
+            "initialized" to safe({ initialized }, false),
+            "memo" to safe({ memo?.takeIf { it.isNotEmpty() }?.toString() }, null)
+        )
+    }
 
     private fun parseEpisodeInfoFromName(name: String): Pair<Float, Int?> {
         val seasonRegex = Regex("""(?i)\b(?:s|season)\s*(\d+)""")
@@ -183,9 +202,9 @@ object AniyomiSourceMethods {
                 gson.toJson(map)
             }
         } catch (e: Exception) {
-            System.err.println("[ERROR] fetchPopular failed for source '$className' (page $page, isAnime: $anime)")
+            System.err.println("[ERROR] fetchPopular failed for source '$className' (page $page, isAnime: $anime): ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
-            "{\"list\": [], \"hasNextPage\": false, \"error\": \"${e.message}\"}"
+            gson.toJson(mapOf("list" to emptyList<Any>(), "hasNextPage" to false, "error" to (e.message ?: e.javaClass.simpleName)))
         }
     }
 
@@ -215,9 +234,9 @@ object AniyomiSourceMethods {
                 gson.toJson(mapOf("list" to result.mangas.map { it.toDetailsMap() }, "hasNextPage" to result.hasNextPage))
             }
         } catch (e: Exception) {
-            System.err.println("[ERROR] fetchLatestUpdates failed for source '$className' (page $page, isAnime: $anime)")
+            System.err.println("[ERROR] fetchLatestUpdates failed for source '$className' (page $page, isAnime: $anime): ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
-            "{\"list\": [], \"hasNextPage\": false, \"error\": \"${e.message}\"}"
+            gson.toJson(mapOf("list" to emptyList<Any>(), "hasNextPage" to false, "error" to (e.message ?: e.javaClass.simpleName)))
         }
     }
 
@@ -255,9 +274,9 @@ object AniyomiSourceMethods {
                 gson.toJson(mapOf("list" to result.mangas.map { it.toDetailsMap() }, "hasNextPage" to result.hasNextPage))
             }
         } catch (e: Exception) {
-            System.err.println("[ERROR] search failed for source '$className' (query '$query', page $page, isAnime: $anime)")
+            System.err.println("[ERROR] search failed for source '$className' (query '$query', page $page, isAnime: $anime): ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
-            "{\"list\": [], \"hasNextPage\": false, \"error\": \"${e.message}\"}"
+            gson.toJson(mapOf("list" to emptyList<Any>(), "hasNextPage" to false, "error" to (e.message ?: e.javaClass.simpleName)))
         }
     }
 
@@ -359,7 +378,8 @@ object AniyomiSourceMethods {
         }
     }
 
-    suspend fun fetchDetails(className: String, url: String, title: String, cover: String, isAnimeObj: Any?): String {
+    @JvmOverloads
+    suspend fun fetchDetails(className: String, url: String, title: String, cover: String, isAnimeObj: Any?, rawMemo: String? = null): String {
         val anime = when (isAnimeObj) {
             is Boolean -> isAnimeObj
             is String -> isAnimeObj.toBoolean()
@@ -368,17 +388,31 @@ object AniyomiSourceMethods {
         System.err.println("[INFO] fetchDetails called for source '$className' (url '$url', title '$title', isAnime: $anime)")
         return try {
             val map = mutableMapOf<String, Any?>()
+            val parsedMemo = rawMemo?.takeIf { it.isNotBlank() }?.let { raw ->
+                try {
+                    kotlinx.serialization.json.Json.parseToJsonElement(raw).let {
+                        if (it is kotlinx.serialization.json.JsonObject) it else null
+                    }
+                } catch (_: Throwable) {
+                    null
+                }
+            }
             if (anime) {
                 val source = DesktopExtensionLoader.loadedAnimeSources[className]
                     ?: run {
                         System.err.println("[WARN] AnimeSource not found for ID: '$className'. Available: ${DesktopExtensionLoader.loadedAnimeSources.keys}")
                         return "{}"
                     }
+                val bUrl = (source as? AnimeHttpSource)?.baseUrl
+                val normUrl = normalizeMediaUrl(url, bUrl)
                 val animeObj = SAnime.create().apply {
-                    val bUrl = (source as? AnimeHttpSource)?.baseUrl
-                    this.url = normalizeMediaUrl(url, bUrl)
+                    this.url = normUrl
                     this.title = title
                     this.thumbnail_url = cover.takeIf { it.isNotBlank() }?.normalizeUrl()
+                    val memoToUse = parsedMemo ?: mangaMemoCache[normUrl]
+                    if (memoToUse != null) {
+                        this.memo = memoToUse
+                    }
                 }
                 var details: SAnime? = null
                 var episodes: List<SEpisode>? = null
@@ -413,20 +447,20 @@ object AniyomiSourceMethods {
                         System.err.println("[WARN] MangaSource not found for ID: '$className'. Available: ${DesktopExtensionLoader.loadedMangaSources.keys}")
                         return "{}"
                     }
+                val bUrl = (source as? HttpSource)?.baseUrl
+                val normUrl = normalizeMediaUrl(url, bUrl)
                 val manga = SManga.create().apply {
-                    val bUrl = (source as? HttpSource)?.baseUrl
-                    this.url = normalizeMediaUrl(url, bUrl)
+                    this.url = normUrl
                     this.title = title
                     this.thumbnail_url = cover.takeIf { it.isNotBlank() }?.normalizeUrl()
+                    this.memo = parsedMemo ?: mangaMemoCache[normUrl] ?: kotlinx.serialization.json.JsonObject(emptyMap())
                 }
                 var details: SManga? = null
                 var chapters: List<SChapter>? = null
                 try {
                     val update = source.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = true)
-                    if (update.manga != manga && update.manga.initialized) {
-                        details = update.manga
-                        chapters = update.chapters
-                    }
+                    details = update.manga
+                    chapters = update.chapters
                 } catch (e: Throwable) {
                     if (e !is UnsupportedOperationException && e !is IllegalStateException && e !is AbstractMethodError && e !is NoSuchMethodError) {
                         throw e
@@ -460,9 +494,9 @@ object AniyomiSourceMethods {
             }
             gson.toJson(map)
         } catch (e: Exception) {
-            System.err.println("[ERROR] fetchDetails failed for source '$className' (url '$url')")
+            System.err.println("[ERROR] fetchDetails failed for source '$className' (url '$url'): ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
-            "{\"error\": \"${e.message}\"}"
+            gson.toJson(mapOf("error" to (e.message ?: e.javaClass.simpleName)))
         }
     }
 
@@ -605,7 +639,7 @@ object AniyomiSourceMethods {
                 )
             })
         } catch (e: Throwable) {
-            System.err.println("[ERROR] fetchVideoList failed for source '$className' (url '$url')")
+            System.err.println("[ERROR] fetchVideoList failed for source '$className' (url '$url'): ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
             "[]"
         }
@@ -722,7 +756,7 @@ object AniyomiSourceMethods {
                 }
             })
         } catch (e: Exception) {
-            System.err.println("[ERROR] fetchPageList failed for source '$className' (url '$url')")
+            System.err.println("[ERROR] fetchPageList failed for source '$className' (url '$url'): ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
             "[]"
         }
@@ -763,7 +797,7 @@ object AniyomiSourceMethods {
         }
 
         val list = mutableListOf<Map<String, Any?>>()
-        val store = sourcePreferences.getOrPut(sourceId) { mutableMapOf() }
+        val store = sourcePreferences.getOrPut(sourceId) { ConcurrentHashMap() }
         val prefs = context.getSharedPreferences("source_$sourceId", Context.MODE_PRIVATE)
 
         fun walk(group: PreferenceGroup) {

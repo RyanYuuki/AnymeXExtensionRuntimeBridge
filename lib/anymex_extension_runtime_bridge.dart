@@ -49,4 +49,18 @@ export './Services/Shared/PackagedSource.dart';
 export './Services/Shared/TachiyomiRepo.dart';
 export './Extensions/Addon.dart';
 export './Engines/TorrentEngine/TorrentEngine.dart';
+export './Services/Stremio/Models/StremioManifest.dart';
+export './Services/Stremio/Models/StremioMeta.dart';
+export './Services/Stremio/Models/StremioStream.dart';
+export './Services/Stremio/StremioHttpClient.dart';
+export './Services/Stremio/StremioConfigManager.dart';
+export './Services/Stremio/StremioSubtitleResolver.dart';
+export './Services/Stremio/StremioSourceMethods.dart';
+export './Services/Stremio/StremioExtensions.dart';
+export './Services/Nuvio/Models/PluginManifest.dart';
+export './Services/Nuvio/NuvioPluginRuntime.dart';
+export './Services/Nuvio/NuvioScraperStore.dart';
+export './Services/Nuvio/NuvioPluginSourceMethods.dart';
+export './Services/Nuvio/NuvioPluginExtensions.dart';
+export './Services/Debrid/DebridResolverService.dart';
 

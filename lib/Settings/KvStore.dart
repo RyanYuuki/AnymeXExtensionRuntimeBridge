@@ -18,56 +18,82 @@ class KvEntry {
 }
 
 class KvStore {
-  static final Isar _isar = AnymeXExtensionBridge.context.isar;
+  static Isar? get _isar {
+    try {
+      return AnymeXExtensionBridge.context.isar;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static void setSync(String key, dynamic value) {
-    _isar.writeTxnSync(() {
-      final existing = _isar.kvEntrys.filter().keyEqualTo(key).findFirstSync();
+    final isar = _isar;
+    if (isar == null) return;
+    try {
+      isar.writeTxnSync(() {
+        final existing = isar.kvEntrys.filter().keyEqualTo(key).findFirstSync();
 
-      final entry = existing ?? KvEntry();
-      entry.key = key;
-      entry.value = _encode(value);
+        final entry = existing ?? KvEntry();
+        entry.key = key;
+        entry.value = _encode(value);
 
-      _isar.kvEntrys.putSync(entry);
-    });
+        isar.kvEntrys.putSync(entry);
+      });
+    } catch (_) {
+      isar.writeTxn(() async {
+        final existing =
+            await isar.kvEntrys.filter().keyEqualTo(key).findFirst();
+
+        final entry = existing ?? KvEntry();
+        entry.key = key;
+        entry.value = _encode(value);
+
+        await isar.kvEntrys.put(entry);
+      });
+    }
   }
 
   static T? get<T>(String key) {
-    final entry = _isar.kvEntrys.filter().keyEqualTo(key).findFirstSync();
+    final isar = _isar;
+    if (isar == null) return null;
+    try {
+      final entry = isar.kvEntrys.filter().keyEqualTo(key).findFirstSync();
 
-    if (entry == null) return null;
+      if (entry == null) return null;
 
-    final decoded = _decode(entry.value);
+      final decoded = _decode(entry.value);
 
-    // Direct match
-    if (decoded is T) return decoded;
+      if (decoded is T) return decoded;
 
-    // Handle List<T>
-    if (decoded is List) {
-      if (T.toString() == 'List<String>') {
-        return List<String>.from(decoded) as T;
+      if (decoded is List) {
+        if (T.toString() == 'List<String>') {
+          return List<String>.from(decoded) as T;
+        }
+        if (T.toString() == 'List<int>') {
+          return List<int>.from(decoded) as T;
+        }
+        if (T.toString() == 'List<double>') {
+          return List<double>.from(decoded) as T;
+        }
+        if (T.toString() == 'List<bool>') {
+          return List<bool>.from(decoded) as T;
+        }
       }
-      if (T.toString() == 'List<int>') {
-        return List<int>.from(decoded) as T;
-      }
-      if (T.toString() == 'List<double>') {
-        return List<double>.from(decoded) as T;
-      }
-      if (T.toString() == 'List<bool>') {
-        return List<bool>.from(decoded) as T;
-      }
+
+      return decoded as T?;
+    } catch (_) {
+      return null;
     }
-
-    throw StateError(
-      'Stored value for key "$key" is not of expected type $T '
-      '(actual: ${decoded.runtimeType})',
-    );
   }
 
   static Future<void> remove(String key) async {
-    await _isar.writeTxn(() async {
-      await _isar.kvEntrys.filter().keyEqualTo(key).deleteAll();
-    });
+    final isar = _isar;
+    if (isar == null) return;
+    try {
+      await isar.writeTxn(() async {
+        await isar.kvEntrys.filter().keyEqualTo(key).deleteAll();
+      });
+    } catch (_) {}
   }
 
   static String _encode(dynamic value) => jsonEncode(_wrap(value));

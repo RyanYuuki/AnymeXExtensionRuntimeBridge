@@ -34,13 +34,15 @@ object CloudStreamExtensionLoader {
         if (initialized) return
         
         try {
-            val context = Application()
-            com.lagradost.cloudstream3.CloudStreamApp.context = context
-            try { com.lagradost.cloudstream3.utils.DataStore.init(context) } catch (_: Throwable) {}
+            val app = Application()
+            val activity = androidx.appcompat.app.AppCompatActivity()
+            com.lagradost.cloudstream3.CloudStreamApp.context = activity
+            com.lagradost.cloudstream3.AcraApplication.context = activity
+            try { com.lagradost.cloudstream3.utils.DataStore.init(activity) } catch (_: Throwable) {}
             
-            try { Injekt.addSingletonFactory<Application> { context } } catch (_: Throwable) {}
-            try { Injekt.addSingletonFactory<Context> { context } } catch (_: Throwable) {}
-            try { Injekt.addSingletonFactory { NetworkHelper(context) } } catch (_: Throwable) {}
+            try { Injekt.addSingletonFactory<Application> { app } } catch (_: Throwable) {}
+            try { Injekt.addSingletonFactory<Context> { activity } } catch (_: Throwable) {}
+            try { Injekt.addSingletonFactory { NetworkHelper(activity) } } catch (_: Throwable) {}
             try { Injekt.addSingletonFactory<okhttp3.OkHttpClient> { Injekt.get<NetworkHelper>().client } } catch (_: Throwable) {}
             try {
                 Injekt.addSingletonFactory<Json> {
@@ -134,17 +136,18 @@ object CloudStreamExtensionLoader {
         
         if (instance is com.lagradost.cloudstream3.plugins.Plugin) {
             val preApis = com.lagradost.cloudstream3.APIHolder.apis.toList()
-            val context = android.app.Application()
+            val context = androidx.appcompat.app.AppCompatActivity()
             val loadThread = Thread {
                 try {
-                    val contextClass = android.content.Context::class.java
-                    val loadWithContext = try {
-                        pluginClass.getMethod("load", contextClass)
-                    } catch (e: NoSuchMethodException) { null }
+                    val loadMethod = try {
+                        pluginClass.methods.firstOrNull {
+                            it.name == "load" && it.parameterCount == 1 && it.parameterTypes[0].isAssignableFrom(context.javaClass)
+                        }
+                    } catch (_: Throwable) { null }
 
-                    if (loadWithContext != null) {
-                        System.err.println("  [CS] Calling load(Context) on $className")
-                        loadWithContext.invoke(instance, context)
+                    if (loadMethod != null) {
+                        System.err.println("  [CS] Calling load(${loadMethod.parameterTypes[0].simpleName}) on $className")
+                        loadMethod.invoke(instance, context)
                     } else {
                         System.err.println("  [CS] Calling load() on $className (no Context overload)")
                         instance.load(null)
@@ -152,6 +155,7 @@ object CloudStreamExtensionLoader {
                 } catch (e: Throwable) {
                     val cause = e.cause ?: e
                     System.err.println("  [CS] load() failed for $className: ${cause.javaClass.simpleName}: ${cause.message}")
+                    cause.printStackTrace()
                 }
             }
             loadThread.isDaemon = true
