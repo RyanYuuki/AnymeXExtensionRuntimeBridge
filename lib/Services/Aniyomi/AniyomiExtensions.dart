@@ -332,10 +332,12 @@ class AniyomiExtensions extends Extension {
                 : name.startsWith('Tachiyomi: ')
                     ? name.substring(10)
                     : name,
-            pkgName: map['pkg'],
-            apkName: rawApkUrl.startsWith('http') ? rawApkUrl : map['apk'],
-            lang: map['lang'],
-            version: map['version'],
+            pkgName: map['pkg']?.toString(),
+            apkName: (rawApkUrl.startsWith('http') ? rawApkUrl : map['apk'])?.toString(),
+            lang: map['lang'] is List
+                ? (map['lang'] as List).map((e) => e.toString()).join(',')
+                : map['lang']?.toString(),
+            version: map['version']?.toString(),
             isNsfw: map['isNsfw'] ?? false,
             itemType: detectedType,
             repo: repoUrl,
@@ -725,17 +727,41 @@ class AniyomiExtensions extends Extension {
   }
 
   List<Repo> _loadRepos(ItemType type) {
-    final newKey = '$id${type.name}Repos';
-    final oldKey = 'aniyomi${type.name}ReposV2';
+    try {
+      final newKey = '$id${type.name}Repos';
+      final oldKey = 'aniyomi${type.name}ReposV2';
 
-    final encoded =
-        getVal<List<String>>(newKey) ?? getVal<List<String>>(oldKey);
-    if (encoded == null || encoded.isEmpty) return const [];
+      final raw = getVal(newKey) ?? getVal(oldKey);
+      if (raw == null) return const [];
 
-    return encoded
-        .map((e) => Repo.fromJson(jsonDecode(e)))
-        .toSet()
-        .toList(growable: false);
+      final repos = <Repo>[];
+      if (raw is List) {
+        for (final item in raw) {
+          try {
+            if (item is String) {
+              final trimmed = item.trim();
+              if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                final decoded = jsonDecode(trimmed);
+                if (decoded is Map<String, dynamic>) {
+                  repos.add(Repo.fromJson(decoded));
+                } else if (decoded is Map) {
+                  repos.add(Repo.fromJson(Map<String, dynamic>.from(decoded)));
+                }
+              } else if (trimmed.isNotEmpty) {
+                repos.add(Repo(url: trimmed, managerId: id));
+              }
+            } else if (item is Map<String, dynamic>) {
+              repos.add(Repo.fromJson(item));
+            } else if (item is Map) {
+              repos.add(Repo.fromJson(Map<String, dynamic>.from(item)));
+            }
+          } catch (_) {}
+        }
+      }
+      return repos.toSet().toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
   }
 
   void _saveRepos(List<Repo> repos, ItemType type) {

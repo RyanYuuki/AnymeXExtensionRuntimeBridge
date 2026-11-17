@@ -66,17 +66,17 @@ class KvStore {
       if (decoded is T) return decoded;
 
       if (decoded is List) {
-        if (T.toString() == 'List<String>') {
-          return List<String>.from(decoded) as T;
+        if (<String>[] is T || T.toString() == 'List<String>') {
+          return decoded.map((e) => e is String ? e : e?.toString() ?? '').toList().cast<String>() as T;
         }
-        if (T.toString() == 'List<int>') {
-          return List<int>.from(decoded) as T;
+        if (<int>[] is T || T.toString() == 'List<int>') {
+          return decoded.map((e) => e is int ? e : int.tryParse(e?.toString() ?? '') ?? 0).toList().cast<int>() as T;
         }
-        if (T.toString() == 'List<double>') {
-          return List<double>.from(decoded) as T;
+        if (<double>[] is T || T.toString() == 'List<double>') {
+          return decoded.map((e) => e is double ? e : double.tryParse(e?.toString() ?? '') ?? 0.0).toList().cast<double>() as T;
         }
-        if (T.toString() == 'List<bool>') {
-          return List<bool>.from(decoded) as T;
+        if (<bool>[] is T || T.toString() == 'List<bool>') {
+          return decoded.map((e) => e is bool ? e : e?.toString().toLowerCase() == 'true').toList().cast<bool>() as T;
         }
       }
 

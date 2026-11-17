@@ -203,12 +203,15 @@ class Repo {
   });
 
   factory Repo.fromJson(Map<String, dynamic> json) {
+    final rawExtensions = json['extensions'];
     return Repo(
-      url: json['url'],
-      name: json['name'],
-      iconUrl: json['iconUrl'],
-      extensions: json['extensions'],
-      managerId: json['managerId'],
+      url: (json['url'] ?? '').toString(),
+      name: json['name']?.toString(),
+      iconUrl: json['iconUrl']?.toString(),
+      extensions: rawExtensions is List
+          ? rawExtensions.map((e) => e.toString()).join(',')
+          : rawExtensions?.toString(),
+      managerId: json['managerId']?.toString(),
     );
   }
 

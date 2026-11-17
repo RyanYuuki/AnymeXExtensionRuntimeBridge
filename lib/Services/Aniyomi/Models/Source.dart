@@ -24,23 +24,33 @@ class ASource extends Source {
     this.apkName,
   });
   factory ASource.fromJson(Map<String, dynamic> json) {
+    final rawLang = json['lang'];
+    final parsedLang = rawLang is List
+        ? rawLang.map((e) => e.toString()).join(',')
+        : rawLang?.toString();
+    final rawItemType = json['itemType'];
+    final itemTypeIndex = rawItemType is int
+        ? rawItemType
+        : int.tryParse(rawItemType?.toString() ?? '') ?? 0;
+
     return ASource(
       id: json['id']?.toString(),
-      name: json['name'],
-      baseUrl: json['baseUrl'],
-      lang: json['lang'],
-      iconUrl: json['iconUrl'],
-      isNsfw: json['isNsfw'],
-      version: json['version'],
-      versionLast: json['versionLast'],
-      repo: json['repo'],
+      name: json['name']?.toString(),
+      baseUrl: json['baseUrl']?.toString(),
+      lang: parsedLang,
+      iconUrl: json['iconUrl']?.toString(),
+      isNsfw: json['isNsfw'] as bool? ?? false,
+      version: json['version']?.toString(),
+      versionLast: json['versionLast']?.toString(),
+      repo: json['repo']?.toString(),
       hasUpdate: json['hasUpdate'] ?? false,
-      isPrivate: json['isPrivate'] ?? (json['isShared'] != null ? !(json['isShared'] as bool) : null),
+      isPrivate: json['isPrivate'] ??
+          (json['isShared'] != null ? !(json['isShared'] as bool) : null),
       supportsLatest: json['supportsLatest'] ?? false,
       supportsPopular: json['supportsPopular'] ?? false,
-      itemType: ItemType.values[json['itemType'] ?? 0],
-      pkgName: json['pkgName'],
-      apkName: json['apkName'] ?? json['apkUrl'],
+      itemType: ItemType.values[itemTypeIndex.clamp(0, ItemType.values.length - 1)],
+      pkgName: json['pkgName']?.toString(),
+      apkName: (json['apkName'] ?? json['apkUrl'])?.toString(),
     );
   }
 
