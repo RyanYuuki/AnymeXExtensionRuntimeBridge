@@ -87,7 +87,7 @@ class StremioExtensions extends Extension {
     getReposRx(ItemType.anime).value = _loadRepos(ItemType.anime);
     await super.initialize();
     await _loadInstalledFromStorage();
-    await fetchAnimeExtensions();
+    unawaited(fetchAnimeExtensions());
   }
 
   List<Repo> _loadRepos(ItemType type) {
@@ -150,14 +150,28 @@ class StremioExtensions extends Extension {
       }
 
       final installedSources = <Source>[];
+      final missingUrls = <String>[];
       for (final url in urls) {
-        final manifest = _manifests[url] ?? await _fetchAndCacheManifest(url);
+        final manifest = _manifests[url];
         if (manifest != null) {
           installedSources.add(_manifestToSource(manifest, repoUrl: url));
+        } else {
+          missingUrls.add(url);
         }
       }
 
       getInstalledRx(ItemType.anime).value = installedSources;
+      if (missingUrls.isNotEmpty) {
+        unawaited(Future.wait(missingUrls.map((url) async {
+          final manifest = await _fetchAndCacheManifest(url);
+          if (manifest != null) {
+            final current = getInstalledRx(ItemType.anime).value;
+            if (!current.any((s) => s.baseUrl == manifest.transportUrl || s.id == manifest.id)) {
+              getInstalledRx(ItemType.anime).value = [...current, _manifestToSource(manifest, repoUrl: url)];
+            }
+          }
+        })));
+      }
     } catch (e) {
       Logger.log('Failed to load installed Stremio addons: $e');
     }
@@ -229,17 +243,27 @@ class StremioExtensions extends Extension {
     final installed = getInstalledRx(ItemType.anime).value;
     final available = <Source>[];
 
-    for (final repo in repos) {
-      final manifest = _manifests[repo.url] ?? await _fetchAndCacheManifest(repo.url);
+    final manifestResults = await Future.wait(
+      repos.map((repo) async {
+        return _manifests[repo.url] ?? await _fetchAndCacheManifest(repo.url);
+      }),
+    );
+
+    for (int i = 0; i < repos.length; i++) {
+      final repo = repos[i];
+      final manifest = manifestResults[i];
       if (manifest != null) {
         final src = _manifestToSource(manifest, repoUrl: repo.url);
         if (!installed.any((s) => s.id == src.id || s.baseUrl == src.baseUrl)) {
-          available.add(src);
+          if (!available.any((s) => s.id == src.id || s.baseUrl == src.baseUrl)) {
+            available.add(src);
+          }
         }
       }
     }
 
     getAvailableRx(ItemType.anime).value = available;
+    saveCachedSources(ItemType.anime, available);
   }
 
   @override
@@ -361,13 +385,24 @@ class StremioExtensions extends Extension {
   Future<void> removeRepo(String repoUrl, ItemType type) async {
     final normUrl = StremioHttpClient.normalizeManifestUrl(repoUrl);
     final repos = _loadRepos(type);
-    repos.removeWhere((r) => r.url == normUrl || r.url == repoUrl);
+    repos.removeWhere((r) =>
+        r.url == normUrl ||
+        r.url == repoUrl ||
+        Extension.isMatchingRepoUrl(r.url, repoUrl));
     _saveRepos(repos, type);
     getReposRx(type).value = repos;
 
-    final currentAvailable = getAvailableRx(type).value;
-    getAvailableRx(type).value =
-        currentAvailable.where((s) => s.repo != normUrl && s.baseUrl != normUrl && s.repo != repoUrl).toList();
+    _manifests.remove(repoUrl);
+    _manifests.remove(normUrl);
+    _manifests.removeWhere((k, v) =>
+        Extension.isMatchingRepoUrl(k, repoUrl) ||
+        Extension.isMatchingRepoUrl(v.transportUrl, repoUrl));
+    _persistManifestCache();
+
+    purgeRepoFromAvailable(repoUrl, type);
+    if (normUrl != repoUrl) {
+      purgeRepoFromAvailable(normUrl, type);
+    }
   }
 
   @override

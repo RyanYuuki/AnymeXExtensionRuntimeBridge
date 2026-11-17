@@ -187,23 +187,25 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
   @override
   Future<void> fetchAnimeExtensions() async {
     final repos = _loadRepos();
-    final allAvailable = <Source>[];
 
-    for (final repo in repos) {
-      try {
-        final response = await http.get(Uri.parse(repo.url));
-        if (response.statusCode == 200) {
-          final List<dynamic> data =
-              await compute(_decodeJsonList, response.body);
-          for (final item in data) {
-            allAvailable
-                .add(CloudStreamSource.fromJson(item..['repo'] = repo.url));
+    final repoResults = await Future.wait(
+      repos.map((repo) async {
+        try {
+          final response = await http.get(Uri.parse(repo.url));
+          if (response.statusCode == 200) {
+            final List<dynamic> data =
+                await compute(_decodeJsonList, response.body);
+            return data
+                .map((item) => CloudStreamSource.fromJson(item..['repo'] = repo.url))
+                .toList();
           }
+        } catch (e, st) {
+          Logger.log("Failed to fetch CloudStream repo ${repo.url}: $e - $st");
         }
-      } catch (e, st) {
-        Logger.log("Failed to fetch CloudStream repo ${repo.url}: $e - $st");
-      }
-    }
+        return <CloudStreamSource>[];
+      }),
+    );
+    final allAvailable = repoResults.expand((e) => e).toList();
 
     if (repos.isNotEmpty && allAvailable.isEmpty) {
       Logger.log("No CloudStream sources fetched from repos. Keeping cached sources.");
@@ -285,9 +287,10 @@ class DesktopCloudStreamExtensions extends DesktopExtensionBase {
   @override
   Future<void> removeRepo(String repoUrl, ItemType type) async {
     final repos = _loadRepos();
-    repos.removeWhere((r) => r.url == repoUrl);
+    repos.removeWhere((r) => Extension.isMatchingRepoUrl(r.url, repoUrl));
     _saveRepos(repos);
-    await fetchAnimeExtensions();
+
+    purgeRepoFromAvailable(repoUrl, type);
   }
 
   @override

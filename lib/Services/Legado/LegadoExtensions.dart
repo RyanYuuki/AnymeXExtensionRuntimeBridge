@@ -126,15 +126,13 @@ class LegadoExtensions extends Extension {
 
     try {
       final repos = _loadRepos(type)
-          .where((r) => r.url != repoUrl)
+          .where((r) => !Extension.isMatchingRepoUrl(r.url, repoUrl))
           .toList(growable: false);
 
       _saveRepos(repos, type);
-
-      final rx = getAvailableRx(type);
-      rx.value = rx.value.where((s) => s.repo != repoUrl).toList();
-
       getReposRx(type).value = repos;
+
+      purgeRepoFromAvailable(repoUrl, type);
     } catch (e) {
       Logger.log("Failed to remove Legado repo $repoUrl: $e");
     }

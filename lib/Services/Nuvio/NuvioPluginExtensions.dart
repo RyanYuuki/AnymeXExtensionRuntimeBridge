@@ -99,7 +99,7 @@ class NuvioPluginExtensions extends Extension {
     await super.initialize();
     getReposRx(ItemType.anime).value = _loadRepos(ItemType.anime);
     await _loadFromStorage();
-    await fetchAnimeExtensions();
+    unawaited(fetchAnimeExtensions());
   }
 
   List<Repo> _loadRepos(ItemType type) {
@@ -274,8 +274,13 @@ class NuvioPluginExtensions extends Extension {
     final installed = getInstalledRx(ItemType.anime).value;
     final available = <Source>[];
 
-    for (final repo in repos) {
-      final scrapers = await fetchRepositoryScrapers(repo.url);
+    final repoResults = await Future.wait(
+      repos.map((repo) => fetchRepositoryScrapers(repo.url).catchError((_) => <PluginScraper>[])),
+    );
+
+    for (int i = 0; i < repos.length; i++) {
+      final repo = repos[i];
+      final scrapers = repoResults[i];
       for (final s in scrapers) {
         final src = _scraperToSource(s, repoUrl: repo.url);
         if (!installed.any((i) => i.id == src.id)) {
@@ -294,6 +299,7 @@ class NuvioPluginExtensions extends Extension {
     }
 
     getAvailableRx(ItemType.anime).value = available;
+    saveCachedSources(ItemType.anime, available);
   }
 
   @override
@@ -475,15 +481,15 @@ class NuvioPluginExtensions extends Extension {
   @override
   Future<void> removeRepo(String repoUrl, ItemType type) async {
     final repos = _loadRepos(type);
-    repos.removeWhere((r) => r.url == repoUrl);
+    repos.removeWhere((r) => Extension.isMatchingRepoUrl(r.url, repoUrl));
     _saveRepos(repos, type);
     getReposRx(type).value = repos;
 
-    _scrapers.removeWhere((id, scraper) => scraper.repositoryUrl == repoUrl);
+    _scrapers.removeWhere((id, scraper) =>
+        Extension.isMatchingRepoUrl(scraper.repositoryUrl, repoUrl));
     _persistCache();
 
-    final currentAvailable = getAvailableRx(ItemType.anime).value;
-    getAvailableRx(ItemType.anime).value = currentAvailable.where((s) => s.repo != repoUrl).toList();
+    purgeRepoFromAvailable(repoUrl, type);
   }
 
   @override

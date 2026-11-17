@@ -73,12 +73,50 @@ abstract class Extension {
 
   Source parseSourceJson(Map<String, dynamic> json) => Source.fromJson(json);
 
+  bool supportsType(ItemType type) {
+    switch (type) {
+      case ItemType.anime:
+        return supportsAnime;
+      case ItemType.manga:
+        return supportsManga;
+      case ItemType.novel:
+        return supportsNovel;
+    }
+  }
+
+  static bool isMatchingRepoUrl(String? sourceRepo, String targetRepoUrl) {
+    if (sourceRepo == null || sourceRepo.trim().isEmpty) return false;
+
+    String clean(String u) {
+      var s = u.trim().toLowerCase();
+      s = s.replaceAll(RegExp(r'^https?://'), '');
+      s = s.replaceAll(RegExp(r'/(index\.min\.json|index\.json|index\.pb\.gz|index\.pb|manifest\.json|plugin\.jar|plugins\.json)$'), '');
+      s = s.replaceAll(RegExp(r'/+$'), '');
+      return s;
+    }
+
+    final cSource = clean(sourceRepo);
+    final cTarget = clean(targetRepoUrl);
+
+    if (cSource == cTarget) return true;
+    if (cSource.startsWith('$cTarget/') || cTarget.startsWith('$cSource/')) return true;
+    return false;
+  }
+
+  void purgeRepoFromAvailable(String repoUrl, ItemType type) {
+    final avail = getAvailableRx(type);
+    avail.value = avail.value.where((s) => !isMatchingRepoUrl(s.repo ?? s.baseUrl, repoUrl)).toList();
+    saveCachedSources(type, avail.value);
+
+    final raw = getRawAvailableRx(type);
+    raw.value = raw.value.where((s) => !isMatchingRepoUrl(s.repo ?? s.baseUrl, repoUrl)).toList();
+    saveCachedSources(type, raw.value, raw: true);
+  }
+
   void loadCachedAvailable() {
     for (final type in ItemType.values) {
-      final cachedRaw = loadCachedSources(type, raw: true);
-      if (cachedRaw.isNotEmpty) {
-        getRawAvailableRx(type).value = cachedRaw;
-      }
+      if (!supportsType(type)) continue;
+
       final cached = loadCachedSources(type);
       if (cached.isNotEmpty) {
         getAvailableRx(type).value = cached;
@@ -138,7 +176,6 @@ abstract class Extension {
 
   void handleSchemes(Uri uri) {}
 
-  /// Helpers
   Rx<List<Source>> getInstalledRx(ItemType type) => _installed[type]!;
 
   Rx<List<Source>> getAvailableRx(ItemType type) => _available[type]!;

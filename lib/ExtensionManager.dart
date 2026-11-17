@@ -152,7 +152,7 @@ class ExtensionManager extends GetxController {
   void _scheduleAggregatedUpdate(ItemType type) {
     _pendingAggregations.add(type);
     _aggregateTimer?.cancel();
-    _aggregateTimer = Timer(const Duration(milliseconds: 50), () {
+    _aggregateTimer = Timer(const Duration(milliseconds: 200), () {
       for (final pendingType in _pendingAggregations) {
         _updateAggregatedLists(pendingType);
       }
@@ -307,9 +307,14 @@ class ExtensionManager extends GetxController {
   }
 
   Future<void> removeRepo(Repo repo, ItemType type) async {
-    final manager = findById(repo.managerId ?? '');
+    var manager = findById(repo.managerId ?? '');
+    if (manager == null) {
+      manager = managers.firstWhereOrNull((m) =>
+          m.getReposRx(type).value.any((r) => Extension.isMatchingRepoUrl(r.url, repo.url)));
+    }
     if (manager != null) {
       await manager.removeRepo(repo.url, type);
+      manager.purgeRepoFromAvailable(repo.url, type);
       _updateAggregatedLists(type);
     }
   }

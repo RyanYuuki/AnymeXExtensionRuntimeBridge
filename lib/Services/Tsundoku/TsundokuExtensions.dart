@@ -15,6 +15,7 @@ import '../../Models/Source.dart';
 import 'package:http/http.dart' as http;
 
 import '../../ExtensionBridge.dart';
+import '../../Settings/KvStore.dart';
 import '../../Runtime/RuntimePaths.dart';
 import '../Shared/TachiyomiRepo.dart';
 import 'Models/Source.dart';
@@ -55,6 +56,29 @@ class TsundokuExtensions extends Extension {
       TsundokuSourceMethods(source);
 
   @override
+  Future<void> initialize() async {
+    getReposRx(ItemType.novel).value = _loadRepos(ItemType.novel);
+    await super.initialize();
+  }
+
+  List<Repo> _loadRepos(ItemType type) {
+    final encoded = getVal<List<String>>('$id${type.name}Repos');
+    if (encoded == null || encoded.isEmpty) return [];
+    try {
+      return encoded.map((e) => Repo.fromJson(jsonDecode(e))).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _saveRepos(List<Repo> repos, ItemType type) {
+    setVal(
+      '$id${type.name}Repos',
+      repos.map((e) => jsonEncode(e.toJson())).toList(),
+    );
+  }
+
+  @override
   Future<void> fetchInstalledNovelExtensions() async {
     final list = await _loadInstalled('getInstalledNovelExtensions', ItemType.novel);
     getInstalledRx(ItemType.novel).value = list;
@@ -78,21 +102,24 @@ class TsundokuExtensions extends Extension {
 
   @override
   Future<void> fetchNovelExtensions() async {
-    final repos = getReposRx(ItemType.novel).value;
-    final allSources = <Source>[];
+    final repos = _loadRepos(ItemType.novel);
+    getReposRx(ItemType.novel).value = repos;
 
-    for (final repo in repos) {
-      try {
-        final index = await fetchTachiyomiRepoIndex(_client, repo.url);
-        final parsed = await compute(
-          _parseExtensions,
-          (index.body, index.url, ItemType.novel),
-        );
-        allSources.addAll(parsed);
-      } catch (e) {
-        Logger.log('Tsundoku failed to fetch repo ${repo.url}: $e');
-      }
-    }
+    final repoResults = await Future.wait(
+      repos.map((repo) async {
+        try {
+          final index = await fetchTachiyomiRepoIndex(_client, repo.url);
+          return await compute(
+            _parseExtensions,
+            (index.body, index.url, ItemType.novel),
+          );
+        } catch (e) {
+          Logger.log('Tsundoku failed to fetch repo ${repo.url}: $e');
+          return <Source>[];
+        }
+      }),
+    );
+    final allSources = repoResults.expand((s) => s).toList();
 
     if (repos.isNotEmpty && allSources.isEmpty) {
       Logger.log("No Tsundoku sources fetched. Keeping cached sources.");
@@ -161,6 +188,7 @@ class TsundokuExtensions extends Extension {
       );
 
       final updated = List<Repo>.from(currentRepos)..add(repo);
+      _saveRepos(updated, type);
       getReposRx(type).value = updated;
       await fetchNovelExtensions();
     } catch (e) {
@@ -171,10 +199,12 @@ class TsundokuExtensions extends Extension {
 
   @override
   Future<void> removeRepo(String repoUrl, ItemType type) async {
-    final normalizedUrl = repoUrl.replaceAll(RegExp(r'/+$'), '');
-    final current = getReposRx(type).value;
-    getReposRx(type).value = current.where((r) => r.url != normalizedUrl).toList();
-    await fetchNovelExtensions();
+    final repos = _loadRepos(type);
+    repos.removeWhere((r) => Extension.isMatchingRepoUrl(r.url, repoUrl));
+    _saveRepos(repos, type);
+    getReposRx(type).value = repos;
+
+    purgeRepoFromAvailable(repoUrl, type);
   }
 
   @override

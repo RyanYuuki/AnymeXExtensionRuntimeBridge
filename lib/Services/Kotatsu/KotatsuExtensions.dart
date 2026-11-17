@@ -106,7 +106,7 @@ class KotatsuExtensions extends Extension {
   Future<void> removeRepo(String repoUrl, ItemType type) async {
     try {
       final repos = _loadRepos(type)
-          .where((r) => r.url != repoUrl)
+          .where((r) => !Extension.isMatchingRepoUrl(r.url, repoUrl))
           .toList(growable: false);
       _saveRepos(repos, type);
 
@@ -126,7 +126,7 @@ class KotatsuExtensions extends Extension {
       setVal('kotatsu_active_sources', <String>[]);
 
       await setInstalled(ItemType.manga, const []);
-      getAvailableRx(ItemType.manga).value = const [];
+      purgeRepoFromAvailable(repoUrl, type);
       getReposRx(type).value = repos;
     } catch (e) {
       Logger.log("Failed to remove Kotatsu repo $repoUrl: $e");
