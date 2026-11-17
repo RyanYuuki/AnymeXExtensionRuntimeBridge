@@ -12,6 +12,8 @@ import 'StremioSourceMethods.dart';
 class StremioExtensions extends Extension {
   static const String _installedAddonUrlsKey = 'stremio_installed_manifest_urls';
   static const String _cachedManifestsKey = 'stremio_cached_manifests';
+  static const String _userAddedRepoKey = 'stremio_user_added_repo';
+  static const String _defaultsSeededKey = 'stremio_defaults_seeded';
 
   final Map<String, StremioManifest> _manifests = {};
 
@@ -19,6 +21,27 @@ class StremioExtensions extends Extension {
     'https://torrentio.strem.fun/manifest.json',
     'https://v3-cinemeta.strem.io/manifest.json',
     'https://opensubtitles-v3.strem.io/manifest.json',
+  ];
+
+  List<Repo> get defaultRepos => [
+    Repo(
+      url: 'https://torrentio.strem.fun/manifest.json',
+      name: 'Torrentio',
+      iconUrl: 'https://torrentio.strem.fun/images/logo_v1.png',
+      managerId: id,
+    ),
+    Repo(
+      url: 'https://v3-cinemeta.strem.io/manifest.json',
+      name: 'Cinemeta',
+      iconUrl: 'https://v3-cinemeta.strem.io/logo.png',
+      managerId: id,
+    ),
+    Repo(
+      url: 'https://opensubtitles-v3.strem.io/manifest.json',
+      name: 'OpenSubtitles',
+      iconUrl: 'https://opensubtitles-v3.strem.io/logo.png',
+      managerId: id,
+    ),
   ];
 
   @override
@@ -61,8 +84,8 @@ class StremioExtensions extends Extension {
 
   @override
   Future<void> initialize() async {
-    await super.initialize();
     getReposRx(ItemType.anime).value = _loadRepos(ItemType.anime);
+    await super.initialize();
     await _loadInstalledFromStorage();
     await fetchAnimeExtensions();
   }
@@ -71,32 +94,24 @@ class StremioExtensions extends Extension {
     final encoded = getVal<List<String>>('$id${type.name}Repos');
     if (encoded != null && encoded.isNotEmpty) {
       try {
-        return encoded.map((e) => Repo.fromJson(jsonDecode(e))).toList();
+        final repos = encoded.map((e) => Repo.fromJson(jsonDecode(e))).toList();
+        final userAdded = getVal<bool>(_userAddedRepoKey) ?? false;
+        if (!userAdded) {
+          final defaultUrls = defaultCommunityAddons.toSet();
+          final onlyDefaults = repos.every((r) => defaultUrls.contains(r.url));
+          if (onlyDefaults) {
+            _saveRepos([], type);
+            return [];
+          } else {
+            setVal(_userAddedRepoKey, true);
+            setVal(_defaultsSeededKey, true);
+            return repos;
+          }
+        }
+        return repos;
       } catch (_) {}
     }
-
-    final initialRepos = [
-      Repo(
-        url: 'https://torrentio.strem.fun/manifest.json',
-        name: 'Torrentio',
-        iconUrl: 'https://torrentio.strem.fun/images/logo_v1.png',
-        managerId: id,
-      ),
-      Repo(
-        url: 'https://v3-cinemeta.strem.io/manifest.json',
-        name: 'Cinemeta',
-        iconUrl: 'https://v3-cinemeta.strem.io/logo.png',
-        managerId: id,
-      ),
-      Repo(
-        url: 'https://opensubtitles-v3.strem.io/manifest.json',
-        name: 'OpenSubtitles',
-        iconUrl: 'https://opensubtitles-v3.strem.io/logo.png',
-        managerId: id,
-      ),
-    ];
-    _saveRepos(initialRepos, type);
-    return initialRepos;
+    return [];
   }
 
   void _saveRepos(List<Repo> repos, ItemType type) {
@@ -322,17 +337,24 @@ class StremioExtensions extends Extension {
     } else {
       updatedRepos.add(repoItem);
     }
+
+    final defaultsSeeded = getVal<bool>(_defaultsSeededKey) ?? false;
+    if (!defaultsSeeded) {
+      setVal(_defaultsSeededKey, true);
+      setVal(_userAddedRepoKey, true);
+      for (final defRepo in defaultRepos) {
+        if (!updatedRepos.any((r) => r.url == defRepo.url)) {
+          updatedRepos.add(defRepo);
+        }
+      }
+    } else {
+      setVal(_userAddedRepoKey, true);
+    }
+
     _saveRepos(updatedRepos, type);
     getReposRx(type).value = updatedRepos;
 
-    final source = _manifestToSource(manifest, repoUrl: normUrl);
-    final installed = getInstalledRx(type).value;
-    if (!installed.any((s) => s.id == source.id || s.baseUrl == source.baseUrl)) {
-      final currentAvailable = getAvailableRx(type).value;
-      final updated = currentAvailable.where((s) => s.id != source.id && s.baseUrl != source.baseUrl).toList()
-        ..add(source);
-      getAvailableRx(type).value = updated;
-    }
+    await fetchAnimeExtensions();
   }
 
   @override
