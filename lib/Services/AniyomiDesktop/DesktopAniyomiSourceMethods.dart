@@ -121,6 +121,29 @@ class DesktopAniyomiSourceMethods extends SourceMethods {
   }
 
   @override
+  Stream<Video> getVideoListStream(DEpisode episode,
+      {SourceParams? parameters}) {
+    return BridgeDispatcher().invokeStreamMethod('aniyomiGetVideoListStream', {
+      'sourceId': source.id,
+      'isAnime': isAnime,
+      'episode': {
+        'name': episode.name,
+        'url': _sanitizeUrl(episode.url),
+        'date_upload': episode.dateUpload,
+        'description': episode.description,
+        'episode_number': episode.episodeNumber,
+        'scanlator': episode.scanlator,
+      },
+      if (parameters != null) 'parameters': parameters.toJson(),
+    }).map((event) {
+      final data = (event is String)
+          ? jsonDecode(event)
+          : Map<String, dynamic>.from(event as Map);
+      return Video.fromJson(Map<String, dynamic>.from(data));
+    });
+  }
+
+  @override
   Future<List<PageUrl>> getPageList(DEpisode episode,
       {SourceParams? parameters}) async {
     final result = await BridgeDispatcher().invokeMethod('getPageList', {

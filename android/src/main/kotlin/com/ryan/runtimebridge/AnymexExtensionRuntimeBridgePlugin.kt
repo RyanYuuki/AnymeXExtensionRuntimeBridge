@@ -41,6 +41,7 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     private lateinit var tsundokuChannel: MethodChannel
     private lateinit var ireaderChannel: MethodChannel
     private lateinit var videoStreamEventChannel: EventChannel
+    private lateinit var aniyomiVideoStreamEventChannel: EventChannel
     private lateinit var loggingChannel: MethodChannel
 
     private var context: Context? = null
@@ -50,9 +51,12 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     private var bridgeClass: Class<*>? = null
     private val methodCache = java.util.concurrent.ConcurrentHashMap<String, Method>()
     private var videoStreamJob: kotlinx.coroutines.Job? = null
+    private var aniyomiVideoStreamJob: kotlinx.coroutines.Job? = null
     
     private var currentVideoStreamToken: String? = null
     private var currentVideoStreamUrl: String? = null
+    private var currentAniyomiVideoStreamToken: String? = null
+    private var currentAniyomiVideoStreamUrl: String? = null
     private var isDevLoad: Boolean = false
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -101,6 +105,25 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
             }
         })
 
+        aniyomiVideoStreamEventChannel = EventChannel(binding.binaryMessenger, "aniyomiExtensionBridge/videoStream")
+        aniyomiVideoStreamEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: MethodEventSink?) {
+                val args = arguments as? Map<*, *> ?: return
+                val sourceId = args["sourceId"] as? String ?: return
+                val episode = (args["episode"] as? Map<String, Any?>) ?: return
+                val sessionToken = (args["parameters"] as? Map<String, Any?>)?.get("token") as? String
+                val params = (args["parameters"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()
+                if (args.containsKey("token")) {
+                    params["token"] = args["token"]
+                }
+                handleAniyomiVideoStream(sourceId, episode, params, events, sessionToken)
+            }
+            override fun onCancel(arguments: Any?) {
+                aniyomiVideoStreamJob?.cancel()
+                aniyomiVideoStreamJob = null
+            }
+        })
+
         loggingChannel = MethodChannel(binding.binaryMessenger, "anymexLogger")
         loggingChannel.setMethodCallHandler { call, result ->
             if (call.method == "ready") {
@@ -127,6 +150,8 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         ireaderChannel.setMethodCallHandler(null)
         videoStreamEventChannel.setStreamHandler(null)
         videoStreamJob?.cancel()
+        aniyomiVideoStreamEventChannel.setStreamHandler(null)
+        aniyomiVideoStreamJob?.cancel()
         scope.cancel()
     }
 
@@ -621,6 +646,94 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                         events?.endOfStream()
                     }
                 }, methodName = "videoStream", e = e)
+                withContext(Dispatchers.Main) { events?.endOfStream() }
+            }
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun handleAniyomiVideoStream(sourceId: String, episode: Map<String, Any?>, parameters: Map<String, Any?>?, events: MethodEventSink?, sessionToken: String?) {
+        val ctx = effectiveContext() ?: run {
+            events?.error("NO_CTX", "No context available", null)
+            events?.endOfStream()
+            return
+        }
+
+        val url = episode["url"] as? String ?: ""
+        if (aniyomiVideoStreamJob?.isActive == true && currentAniyomiVideoStreamToken == sessionToken && currentAniyomiVideoStreamUrl == url) {
+            Log.d(TAG, "Redundant aniyomi stream request for token $sessionToken, ignoring.")
+            return
+        }
+
+        aniyomiVideoStreamJob?.cancel()
+        aniyomiVideoStreamJob = scope.launch {
+            currentAniyomiVideoStreamToken = sessionToken
+            currentAniyomiVideoStreamUrl = url
+            val active = java.util.concurrent.atomic.AtomicBoolean(true)
+            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+            try {
+                val cls = bridgeClass ?: throw IllegalStateException("Runtime Host not loaded")
+                val loader = cls.classLoader ?: throw IllegalStateException("No Host ClassLoader")
+                val function1Class = loader.loadClass("kotlin.jvm.functions.Function1")
+                val unitClass = loader.loadClass("kotlin.Unit")
+                val unitInstance = unitClass.getField("INSTANCE").get(null)
+
+                val pendingVideos = java.util.concurrent.ConcurrentLinkedQueue<Any?>()
+                val flushScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+
+                val flushRunnable = object : Runnable {
+                    override fun run() {
+                        flushScheduled.set(false)
+                        if (!active.get()) return
+                        while (pendingVideos.isNotEmpty()) {
+                            val item = pendingVideos.poll() ?: break
+                            try { events?.success(item) } catch (_: Exception) {}
+                        }
+                    }
+                }
+
+                val proxyCallback = Proxy.newProxyInstance(
+                    loader,
+                    arrayOf(function1Class),
+                    object : InvocationHandler {
+                        override fun invoke(proxy: Any?, method: Method?, args: Array<out Any?>?): Any? {
+                            if (method?.name == "invoke" && active.get()) {
+                                val video = args?.get(0)
+                                pendingVideos.add(video)
+                                if (flushScheduled.compareAndSet(false, true)) {
+                                    mainHandler.post(flushRunnable)
+                                }
+                                return unitInstance
+                            }
+                            return null
+                        }
+                    }
+                )
+
+                call("aniyomiGetVideoListStream", ctx, sourceId, episode, proxyCallback, parameters)
+
+                active.set(false)
+                mainHandler.post {
+                    while (pendingVideos.isNotEmpty()) {
+                        val item = pendingVideos.poll() ?: break
+                        try { events?.success(item) } catch (_: Exception) {}
+                    }
+                    events?.endOfStream()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                active.set(false)
+                throw e
+            } catch (e: Throwable) {
+                active.set(false)
+                sendError(result = object : MethodResult {
+                    override fun success(res: Any?) {}
+                    override fun error(code: String, msg: String?, details: Any?) {
+                        events?.error(code, msg, details)
+                    }
+                    override fun notImplemented() {
+                        events?.endOfStream()
+                    }
+                }, methodName = "aniyomiVideoStream", e = e)
                 withContext(Dispatchers.Main) { events?.endOfStream() }
             }
         }

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'PbDecoder.dart';
 import 'package:device_apps/device_apps.dart';
@@ -246,7 +245,7 @@ class AniyomiExtensions extends Extension {
     try {
       final res = await _client.get(Uri.parse(repo.url));
       if (res.statusCode != 200) return const [];
-      return compute(_parseExtensions, (res.bodyBytes, repo.url, type, id));
+      return await compute(_parseExtensions, (res.bodyBytes, repo.url, type, id));
     } catch (e) {
       Logger.log("Repo failed ${repo.url}: $e");
       return const [];
@@ -278,8 +277,51 @@ class AniyomiExtensions extends Extension {
       if (isJson) {
         final body = utf8.decode(bytes);
         final parsed = jsonDecode(body);
-        if (parsed is! List) return const [];
-        decoded = parsed;
+        if (parsed is List) {
+          decoded = parsed;
+        } else if (parsed is Map && parsed['extensionList'] != null) {
+          final extList = parsed['extensionList'];
+          if (extList is Map && extList['extensions'] is List) {
+            decoded = (extList['extensions'] as List).map((ext) {
+              final extMap = ext as Map<String, dynamic>;
+              final res = extMap['resources'] as Map<String, dynamic>?;
+              final sources = extMap['sources'] as List<dynamic>?;
+              final warning = extMap['contentWarning'];
+              final isNsfw = warning == 'CONTENT_WARNING_NSFW' ||
+                  warning == 'CONTENT_WARNING_MIXED' ||
+                  warning == 2 ||
+                  warning == 3;
+              return {
+                'name': extMap['name'],
+                'pkg': extMap['packageName'] ?? extMap['pkg'],
+                'apk': res?['apkUrl']?.toString().split('/').last ??
+                    extMap['apk'],
+                'apkUrl': res?['apkUrl'],
+                'iconUrl': res?['iconUrl'],
+                'lang': (sources != null && sources.isNotEmpty)
+                    ? (sources.first as Map<String, dynamic>)['language'] ??
+                        'all'
+                    : 'all',
+                'code': extMap['versionCode'] ?? extMap['code'],
+                'version': extMap['versionName'] ?? extMap['version'],
+                'isNsfw': isNsfw,
+                'sources': sources?.map((s) {
+                  final sm = s as Map<String, dynamic>;
+                  return {
+                    'id': sm['id'],
+                    'name': sm['name'],
+                    'lang': sm['language'] ?? sm['lang'],
+                    'baseUrl': sm['homeUrl'] ?? sm['baseUrl'],
+                  };
+                }).toList(),
+              };
+            }).toList();
+          } else {
+            return const [];
+          }
+        } else {
+          return const [];
+        }
       } else {
         decoded = PbDecoder.decodeIndex(bytes);
       }
@@ -299,7 +341,8 @@ class AniyomiExtensions extends Extension {
         final name = map['name'] as String? ?? '';
         final pkg = map['pkg'] as String? ?? '';
 
-        var detectedType = name.startsWith('Aniyomi: ')
+        var detectedType = (name.startsWith('AniZen: ') ||
+                name.startsWith('Aniyomi: '))
             ? ItemType.anime
             : name.startsWith('Tachiyomi: ')
                 ? ItemType.manga
@@ -320,6 +363,15 @@ class AniyomiExtensions extends Extension {
         final rawIconUrl = map['iconUrl'] as String? ?? '';
         final rawApkUrl = map['apkUrl'] as String? ?? '';
 
+        var cleanName = name;
+        if (cleanName.startsWith('AniZen: ')) {
+          cleanName = cleanName.substring(8);
+        } else if (cleanName.startsWith('Aniyomi: ')) {
+          cleanName = cleanName.substring(9);
+        } else if (cleanName.startsWith('Tachiyomi: ')) {
+          cleanName = cleanName.substring(10);
+        }
+
         sources.add(
           ASource(
             id: map["sources"] != null &&
@@ -327,11 +379,7 @@ class AniyomiExtensions extends Extension {
                     (map["sources"] as List).isNotEmpty
                 ? (map["sources"] as List).first['id']?.toString() ?? ''
                 : '',
-            name: name.startsWith('Aniyomi: ')
-                ? name.substring(9)
-                : name.startsWith('Tachiyomi: ')
-                    ? name.substring(10)
-                    : name,
+            name: cleanName,
             pkgName: map['pkg']?.toString(),
             apkName: (rawApkUrl.startsWith('http') ? rawApkUrl : map['apk'])?.toString(),
             lang: map['lang'] is List
@@ -771,7 +819,7 @@ class AniyomiExtensions extends Extension {
   }
 
   @override
-  Set<String> get schemes => {"aniyomi", "tachiyomi"};
+  Set<String> get schemes => {"aniyomi", "tachiyomi", "anizen"};
 
   @override
   void handleSchemes(Uri uri) {
@@ -779,7 +827,9 @@ class AniyomiExtensions extends Extension {
     if (url != null && url.isNotEmpty) {
       addRepo(
         url,
-        uri.scheme == "aniyomi" ? ItemType.anime : ItemType.manga,
+        (uri.scheme == "aniyomi" || uri.scheme == "anizen")
+            ? ItemType.anime
+            : ItemType.manga,
       );
     }
   }

@@ -13,6 +13,8 @@ class AniyomiSourceMethods extends SourceMethods {
   AniyomiSourceMethods(Source source) : source = source as ASource;
 
   static const platform = MethodChannel('aniyomiExtensionBridge');
+  static const videoStreamChannel =
+      EventChannel('aniyomiExtensionBridge/videoStream');
 
   bool get isAnime => source.itemType?.index == 1;
 
@@ -107,6 +109,59 @@ class AniyomiSourceMethods extends SourceMethods {
       print("[Aniyomi_Flutter] Video: title='${v.title}', quality='${v.quality}', url='${v.url}'");
     }
     return parsed;
+  }
+
+  @override
+  Stream<Video>? getVideoListStream(DEpisode episode,
+      {SourceParams? parameters}) {
+    if (!isAnime) return null;
+
+    final controller = StreamController<Video>();
+
+    final subscription = videoStreamChannel.receiveBroadcastStream({
+      'sourceId': source.id,
+      'isAnime': isAnime,
+      'episode': {
+        'name': episode.name,
+        'url': _sanitizeUrl(episode.url),
+        'date_upload': episode.dateUpload,
+        'description': episode.description,
+        'episode_number': episode.episodeNumber,
+        'scanlator': episode.scanlator,
+      },
+      if (parameters != null) 'parameters': parameters.toJson(),
+    }).listen(
+      (event) {
+        try {
+          final Map<String, dynamic> data =
+              Map<String, dynamic>.from(event as Map);
+          final video = Video.fromJson(data);
+          if (!controller.isClosed) {
+            controller.add(video);
+          }
+        } catch (e) {
+          debugPrint("Error parsing video stream event: $e");
+        }
+      },
+      onError: (error) {
+        debugPrint("Video stream error: $error");
+        if (!controller.isClosed) {
+          controller.addError(error);
+        }
+      },
+      onDone: () {
+        if (!controller.isClosed) {
+          controller.close();
+        }
+      },
+      cancelOnError: false,
+    );
+
+    controller.onCancel = () {
+      subscription.cancel();
+    };
+
+    return controller.stream;
   }
 
   @override
