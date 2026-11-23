@@ -82,45 +82,71 @@ module={},exports=Function("return this")(),Object.defineProperties(module,{name
     JsHtmlParser(runtime).init();
     JsCheerio(runtime).init();
 
+    final pluginIdJson = jsonEncode(source.id ?? '');
+
     runtime.evaluate('''
+const pluginId = $pluginIdJson;
 const require = (package) => {
   switch (package) {
     case "htmlparser2":
-        return {Parser: Parser};
+      return {Parser: Parser};
     case "cheerio":
-        return {load: load};
+      return {load: load};
     case "dayjs":
-        return module.exports.dayjs;
+      return module.exports.dayjs;
     case "urlencode":
-        return {encode: urlencode, decode: urldecode};
+      return {encode: urlencode, decode: urldecode};
     case "@libs/fetch":
-        return {fetchApi: fetchApi};
+      return {
+        fetchApi: fetchApi,
+        fetchText: fetchText,
+        fetchProto: fetchProto,
+        fetchViaWebview: fetchViaWebview
+      };
+    case "@libs/pluginError":
+      return {
+        PluginError: PluginError,
+        createPluginError: createPluginError,
+        httpError: httpError,
+        checkResponse: checkResponse,
+        isChallengeHtml: isChallengeHtml,
+        assertNoChallenge: assertNoChallenge,
+        isPluginError: isPluginError
+      };
     case "@libs/novelStatus":
-        return {NovelStatus: NovelStatus};
+      return {NovelStatus: NovelStatus};
     case "@libs/isAbsoluteUrl":
-        return {isUrlAbsolute: isUrlAbsolute};
+      return {isUrlAbsolute: isUrlAbsolute};
     case "@libs/filterInputs":
-        return {
-          FilterTypes: FilterTypes,
-          isPickerValue: isPickerValue,
-          isCheckboxValue: isCheckboxValue,
-          isSwitchValue: isSwitchValue,
-          isTextValue: isTextValue,
-          isXCheckboxValue: isXCheckboxValue
-        };
+      return {
+        FilterTypes: FilterTypes,
+        isPickerValue: isPickerValue,
+        isCheckboxValue: isCheckboxValue,
+        isSwitchValue: isSwitchValue,
+        isTextValue: isTextValue,
+        isXCheckboxValue: isXCheckboxValue
+      };
     case "@libs/defaultCover":
-        return {defaultCover: 'https://raw.githubusercontent.com/LNReader/lnreader-plugins/refs/heads/master/public/static/coverNotAvailable.webp'};
+      return {defaultCover: 'https://raw.githubusercontent.com/LNReader/lnreader-plugins/refs/heads/master/public/static/coverNotAvailable.webp'};
     case "@libs/storage":
-        return {storage: {get: () => null, set: () => null}};
+      return {
+        storage: new Storage(pluginId),
+        localStorage: new LocalStorage(pluginId),
+        sessionStorage: new SessionStorage(pluginId)
+      };
+    case "@libs/aes":
+      return {gcm: gcm};
+    case "@libs/utils":
+      return {utf8ToBytes: utf8ToBytes, bytesToUtf8: bytesToUtf8};
     default:
-        return {};
+      return {};
   }
 };
 ''');
 
     runtime.evaluate('''
 $code
-const extension = exports.default;
+const extension = exports.default || exports;
 ''');
 
     _runtime = runtime;
@@ -139,7 +165,17 @@ const extension = exports.default;
     return raw
         .whereType<Map>()
         .map((e) => NovelItem.fromJson(Map<String, dynamic>.from(e)))
-        .map((n) => DMedia(title: n.name, url: n.path, cover: n.cover))
+        .map((n) {
+          String? cover = n.cover;
+          if (cover != null && cover.isNotEmpty && !cover.startsWith('http')) {
+            final base = source.baseUrl?.replaceAll(RegExp(r'/+$'), '');
+            final path = cover.replaceAll(RegExp(r'^/+'), '');
+            if (base != null && base.isNotEmpty) {
+              cover = '$base/$path';
+            }
+          }
+          return DMedia(title: n.name, url: n.path, cover: cover);
+        })
         .toList();
   }
 
@@ -205,10 +241,19 @@ const extension = exports.default;
       );
     }
 
+    String? cover = novel.cover ?? media.cover;
+    if (cover != null && cover.isNotEmpty && !cover.startsWith('http')) {
+      final base = source.baseUrl?.replaceAll(RegExp(r'/+$'), '');
+      final path = cover.replaceAll(RegExp(r'^/+'), '');
+      if (base != null && base.isNotEmpty) {
+        cover = '$base/$path';
+      }
+    }
+
     return DMedia(
       title: novel.name.isNotEmpty ? novel.name : media.title,
-      url: novel.path,
-      cover: novel.cover ?? media.cover,
+      url: novel.path.isNotEmpty ? novel.path : media.url,
+      cover: cover,
       description: novel.summary,
       author: novel.author,
       artist: novel.artist,

@@ -288,8 +288,31 @@ String _fixSelector(String selector) {
 extension DocumentExtension on Document? {
   List<Element>? select(String selector) {
     try {
-      _initPseudoSelector();
+      if (selector.contains(',')) {
+        final parts = selector.split(RegExp(r',\s*(?![^(]*\))'));
+        final results = <Element>[];
+        final seen = <Element>{};
+        for (final part in parts) {
+          final trimmed = part.trim();
+          if (trimmed.isEmpty) continue;
+          final matched = select(trimmed);
+          if (matched != null) {
+            for (final el in matched) {
+              if (seen.add(el)) {
+                results.add(el);
+              }
+            }
+          }
+        }
+        return results;
+      }
       final dom = this?.documentElement;
+      if (dom != null) {
+        try {
+          return dom.querySelectorAll(selector);
+        } catch (_) {}
+      }
+      _initPseudoSelector();
       return pseudom.parse(_fixSelector(selector)).select(dom!).toList();
     } catch (e) {
       return null;
@@ -298,8 +321,13 @@ extension DocumentExtension on Document? {
 
   Element? selectFirst(String selector) {
     try {
-      _initPseudoSelector();
       final dom = this?.documentElement;
+      if (dom != null) {
+        try {
+          return dom.querySelector(selector);
+        } catch (_) {}
+      }
+      _initPseudoSelector();
       return pseudom.parse(_fixSelector(selector)).selectFirst(dom!);
     } catch (e) {
       return null;
@@ -341,12 +369,34 @@ extension DocumentExtension on Document? {
 extension ElementtExtension on Element {
   List<Element>? select(String selector) {
     try {
+      if (selector.contains(',')) {
+        final parts = selector.split(RegExp(r',\s*(?![^(]*\))'));
+        final results = <Element>[];
+        final seen = <Element>{};
+        for (final part in parts) {
+          final trimmed = part.trim();
+          if (trimmed.isEmpty) continue;
+          final matched = select(trimmed);
+          if (matched != null) {
+            for (final el in matched) {
+              if (seen.add(el)) {
+                results.add(el);
+              }
+            }
+          }
+        }
+        return results;
+      }
+      try {
+        return querySelectorAll(selector);
+      } catch (_) {}
       _initPseudoSelector();
+      final target = parent != null
+          ? (parent!.nodes.firstWhere((element) => element == this, orElse: () => this) as Element)
+          : this;
       return pseudom
           .parse(_fixSelector(selector))
-          .select(
-            parent!.nodes.firstWhere((element) => element == this) as Element,
-          )
+          .select(target)
           .toList();
     } catch (e) {
       return null;

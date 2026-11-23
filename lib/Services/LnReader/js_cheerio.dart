@@ -15,10 +15,10 @@ class JsCheerio {
 
   void init() {
     runtime.onMessage('load', (dynamic args) {
-      final html = args[0];
+      final html = args[0] as String;
       final doc = parse(html);
       _elementKey++;
-      _elements[_elementKey] = doc.body;
+      _elements[_elementKey] = doc.documentElement ?? doc.body;
       return _elementKey;
     });
 
@@ -54,7 +54,10 @@ class JsCheerio {
           result = element.classes.contains(methodArgs[0]);
           break;
         case 'attr':
-          result = element.attributes[methodArgs[0]] ?? '';
+          final attrName = methodArgs[0].toString();
+          result = element.attributes[attrName] ??
+              element.attributes[attrName.toLowerCase()] ??
+              '';
           break;
         case 'setAttr':
           element.attributes[methodArgs[0]] = methodArgs[1];
@@ -87,7 +90,7 @@ class JsCheerio {
           }
           break;
         case 'find':
-          final selector = methodArgs[0];
+          final selector = methodArgs[0].toString();
           final elements = element.select(selector);
           List<int> keys = [];
           for (var el in elements ?? []) {
@@ -231,15 +234,22 @@ class Element {
     return sendMessage("element_call", JSON.stringify([method, this._key, args]));
   }
 
-  text() { return this._call("text"); }
-  html() { return this._call("html"); }
-  outerHtml() { return this._call("outerHtml"); }
-  val() { return this._call("val"); }
-  attr(name) { return this._call("attr", [name]); }
+  text() { return this._call("text") || ""; }
+  html(content) {
+    if (content !== undefined) {
+      this._call("empty");
+      this._call("append", [content]);
+      return this;
+    }
+    return this._call("html") || "";
+  }
+  outerHtml() { return this._call("outerHtml") || ""; }
+  val() { return this._call("val") || ""; }
+  attr(name) { return this._call("attr", [name]) || ""; }
   prop(name) { return this.attr(name); }
   data(name) { return this.attr("data-" + name) || this.attr(name); }
   trim() { return (this.text() || "").trim(); }
-  hasClass(cls) { return this._call("hasClass", [cls]); }
+  hasClass(cls) { return !!this._call("hasClass", [cls]); }
 
   addClass(cls) { this._call("addClass", [cls]); return this; }
   removeClass(cls) { this._call("removeClass", [cls]); return this; }
@@ -258,17 +268,20 @@ class Element {
   unwrap() { return this; }
 
   children() {
-    const keys = JSON.parse(this._call("children"));
+    const raw = this._call("children");
+    const keys = raw ? JSON.parse(raw) : [];
     return new ElementCollection(keys.map(k => new Element(k)));
   }
 
   find(selector) {
-    const keys = JSON.parse(this._call("find", [selector]));
+    const raw = this._call("find", [selector]);
+    const keys = raw ? JSON.parse(raw) : [];
     return new ElementCollection(keys.map(k => new Element(k)));
   }
 
   parent() {
-    return new Element(this._call("parent"));
+    const key = this._call("parent");
+    return key ? new Element(key) : new Stub();
   }
 
   parents() {
@@ -276,24 +289,29 @@ class Element {
   }
 
   next() {
-    return new Element(this._call("next"));
+    const key = this._call("next");
+    return key ? new Element(key) : new Stub();
   }
 
   prev() {
-    return new Element(this._call("prev"));
+    const key = this._call("prev");
+    return key ? new Element(key) : new Stub();
   }
 
   siblings() {
-    const keys = JSON.parse(this._call("siblings") || "[]");
+    const raw = this._call("siblings");
+    const keys = raw ? JSON.parse(raw) : [];
     return new ElementCollection(keys.map(k => new Element(k)));
   }
 
   first() {
-    return new Element(this._call("first"));
+    const key = this._call("first");
+    return key ? new Element(key) : new Stub();
   }
 
   last() {
-    return new Element(this._call("last"));
+    const key = this._call("last");
+    return key ? new Element(key) : new Stub();
   }
 
   eq(index) {
@@ -302,39 +320,41 @@ class Element {
 
   clone() {
     const key = this._call("clone");
-    return new Element(key);
+    return key ? new Element(key) : new Stub();
   }
 }
 
 class ElementCollection {
   constructor(elements) {
-    this.elements = elements;
+    this.elements = elements || [];
   }
 
   text() {
-    return this.map(function(i, el) {
-      return el.text();
-    }).toArray().join("\\n") ?? "";
+    return this.elements.map(el => el.text()).join("");
   }
 
-  html() {
-    return this.first()?.html() ?? "";
+  html(content) {
+    if (content !== undefined) {
+      this.elements.forEach(el => el.html(content));
+      return this;
+    }
+    return this.elements.length > 0 ? this.elements[0].html() : "";
   }
 
   outerHtml() {
-    return this.first()?.outerHtml() ?? "";
+    return this.elements.length > 0 ? this.elements[0].outerHtml() : "";
   }
 
   attr(name) {
-    return this.first()?.attr(name) ?? "";
+    return this.elements.length > 0 ? this.elements[0].attr(name) : "";
   }
 
   prop(name) {
-    return this.first()?.prop(name) ?? "";
+    return this.attr(name);
   }
 
   data(name) {
-    return this.first()?.data(name) ?? "";
+    return this.elements.length > 0 ? this.elements[0].data(name) : "";
   }
 
   trim() {
@@ -342,7 +362,7 @@ class ElementCollection {
   }
 
   hasClass(cls) {
-    return this.first()?.hasClass(cls) ?? false;
+    return this.elements.length > 0 ? this.elements[0].hasClass(cls) : false;
   }
 
   each(fn) {
@@ -466,22 +486,36 @@ class ElementCollection {
     return this;
   }
 
-  remove() {
-    this.elements.forEach(el => el.remove());
+  remove(selector) {
+    if (selector) {
+      this.find(selector).remove();
+    } else {
+      this.elements.forEach(el => el.remove());
+    }
     return this;
   }
 
   find(selector) {
-    const found = this.elements.flatMap(el => {
-      const keys = JSON.parse(el._call("find", [selector]));
-      return keys.map(k => new Element(k));
-    });
+    const found = [];
+    const seen = new Set();
+    for (var i = 0; i < this.elements.length; i++) {
+      var el = this.elements[i];
+      var raw = el._call("find", [selector]);
+      var keys = raw ? JSON.parse(raw) : [];
+      for (var j = 0; j < keys.length; j++) {
+        var k = keys[j];
+        if (!seen.has(k)) {
+          seen.add(k);
+          found.push(new Element(k));
+        }
+      }
+    }
     return new ElementCollection(found);
   }
 
   children() {
     const children = this.elements.flatMap(el => {
-      const keys = JSON.parse(el._call("children"));
+      const keys = JSON.parse(el._call("children") || "[]");
       return keys.map(k => new Element(k));
     });
     return new ElementCollection(children);
@@ -492,7 +526,7 @@ class ElementCollection {
   }
 
   parent() {
-    const parents = this.elements.map(el => new Element(el._call("parent")));
+    const parents = this.elements.map(el => el.parent());
     return new ElementCollection(parents);
   }
 
@@ -501,12 +535,12 @@ class ElementCollection {
   }
 
   next() {
-    const nextEls = this.elements.map(el => new Element(el._call("next")));
+    const nextEls = this.elements.map(el => el.next());
     return new ElementCollection(nextEls);
   }
 
   prev() {
-    const prevEls = this.elements.map(el => new Element(el._call("prev")));
+    const prevEls = this.elements.map(el => el.prev());
     return new ElementCollection(prevEls);
   }
 
@@ -519,11 +553,11 @@ class ElementCollection {
   }
 
   first() {
-    return this.get(0);
+    return this.elements.length > 0 ? this.elements[0] : new Stub();
   }
 
   last() {
-    return this.get(this.elements.length - 1);
+    return this.elements.length > 0 ? this.elements[this.elements.length - 1] : new Stub();
   }
 
   eq(index) {
@@ -533,7 +567,11 @@ class ElementCollection {
   }
 
   get(index) {
-    return this.elements[index] || new Stub();
+    if (index === undefined) {
+      return this.toArray();
+    }
+    const i = index < 0 ? this.elements.length + index : index;
+    return this.elements[i] || new Stub();
   }
 
   clone() {
@@ -541,6 +579,10 @@ class ElementCollection {
   }
 
   length() {
+    return this.elements.length;
+  }
+
+  get length() {
     return this.elements.length;
   }
 
@@ -603,7 +645,18 @@ function load(html) {
   const rootKey = sendMessage("load", JSON.stringify([html]));
   const root = new Element(rootKey);
 
-  const \$ = function(input) {
+  const \$ = function(input, context) {
+    if (context) {
+      if (typeof context === "string") {
+        return \$(context).find(input);
+      } else if (context instanceof ElementCollection) {
+        return context.find(input);
+      } else if (context instanceof Element) {
+        return context.find(input);
+      } else if (context && context._key) {
+        return new Element(context._key).find(input);
+      }
+    }
     if (input instanceof ElementCollection) {
       return input;
     } else if (input instanceof Element) {
@@ -624,10 +677,16 @@ function load(html) {
     }
   };
 
-  \$.html = function() {
+  \$.html = function(input) {
+    if (input) {
+      return \$(input).html();
+    }
     return root.html();
   };
-  \$.text = function() {
+  \$.text = function(input) {
+    if (input) {
+      return \$(input).text();
+    }
     return root.text();
   };
   \$.root = root;

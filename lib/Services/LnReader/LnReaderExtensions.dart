@@ -246,7 +246,7 @@ class LnReaderExtensions extends Extension {
           .timeout(const Duration(seconds: 15));
       if (res.statusCode != 200) return const [];
 
-      return compute(_parseExtensions, (res.body, repo.url, type));
+      return await compute(_parseExtensions, (res.body, repo.url, type));
     } catch (e) {
       Logger.log("LNReader repo failed ${repo.url}: $e");
       return const [];

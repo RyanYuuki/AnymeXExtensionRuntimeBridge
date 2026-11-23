@@ -38,6 +38,8 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
     private lateinit var aniyomiChannel: MethodChannel
     private lateinit var cloudStreamChannel: MethodChannel
     private lateinit var kotatsuChannel: MethodChannel
+    private lateinit var tsundokuChannel: MethodChannel
+    private lateinit var ireaderChannel: MethodChannel
     private lateinit var videoStreamEventChannel: EventChannel
     private lateinit var loggingChannel: MethodChannel
 
@@ -73,6 +75,12 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
 
         kotatsuChannel = MethodChannel(binding.binaryMessenger, "kotatsuExtensionBridge")
         kotatsuChannel.setMethodCallHandler { call, result -> handleKotatsu(call, result) }
+
+        tsundokuChannel = MethodChannel(binding.binaryMessenger, "tsundokuExtensionBridge")
+        tsundokuChannel.setMethodCallHandler { call, result -> handleNovelBridge(call, result) }
+
+        ireaderChannel = MethodChannel(binding.binaryMessenger, "ireaderExtensionBridge")
+        ireaderChannel.setMethodCallHandler { call, result -> handleNovelBridge(call, result) }
 
         videoStreamEventChannel = EventChannel(binding.binaryMessenger, "cloudstreamExtensionBridge/videoStream")
         videoStreamEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
@@ -115,6 +123,8 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
         aniyomiChannel.setMethodCallHandler(null)
         cloudStreamChannel.setMethodCallHandler(null)
         kotatsuChannel.setMethodCallHandler(null)
+        tsundokuChannel.setMethodCallHandler(null)
+        ireaderChannel.setMethodCallHandler(null)
         videoStreamEventChannel.setStreamHandler(null)
         videoStreamJob?.cancel()
         scope.cancel()
@@ -739,6 +749,32 @@ class AnymexExtensionRuntimeBridgePlugin : FlutterPlugin, ActivityAware {
                 withContext(Dispatchers.Main) { result.success(res) }
             } catch (e: Throwable) {
                 sendError(result, "Kotatsu.${call.method}", e)
+            }
+        }
+    }
+
+    private fun handleNovelBridge(call: MethodCall, result: MethodResult) {
+        if (!ensureLoaded(result)) return
+        val ctx = effectiveContext() ?: return result.error("NO_CTX", "No context", null)
+
+        scope.launch {
+            try {
+                when (call.method) {
+                    "getInstalledNovelExtensions" -> {
+                        val path = call.arguments as? String?
+                        val res = call("getInstalledMangaExtensions", ctx, path) as? List<*>
+                        val jsonString = if (res != null) org.json.JSONArray(res).toString() else "[]"
+                        withContext(Dispatchers.Main) { result.success(jsonString) }
+                    }
+                    "uninstallExtension" -> {
+                        withContext(Dispatchers.Main) { result.success(true) }
+                    }
+                    else -> {
+                        handleAniyomi(call, result)
+                    }
+                }
+            } catch (e: Throwable) {
+                withContext(Dispatchers.Main) { result.success("[]") }
             }
         }
     }

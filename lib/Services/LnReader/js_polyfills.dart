@@ -6,6 +6,80 @@ class JsPolyfills {
 
   void init() {
     runtime.evaluate('''
+if (typeof btoa === 'undefined') {
+  globalThis.btoa = function(str) {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    var encoded = '';
+    var c1, c2, c3, e1, e2, e3, e4;
+    for (var i = 0; i < str.length;) {
+      c1 = str.charCodeAt(i++);
+      c2 = str.charCodeAt(i++);
+      c3 = str.charCodeAt(i++);
+      e1 = c1 >> 2;
+      e2 = ((c1 & 3) << 4) | (c2 >> 4);
+      e3 = ((c2 & 15) << 2) | (c3 >> 6);
+      e4 = c3 & 63;
+      if (isNaN(c2)) { e3 = e4 = 64; }
+      else if (isNaN(c3)) { e4 = 64; }
+      encoded += chars.charAt(e1) + chars.charAt(e2) + chars.charAt(e3) + chars.charAt(e4);
+    }
+    return encoded;
+  };
+}
+
+if (typeof atob === 'undefined') {
+  globalThis.atob = function(input) {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    var str = String(input).replace(/=+\$/, '');
+    var output = '';
+    for (var bc = 0, bs = 0, buffer, idx = 0; buffer = str.charAt(idx++); ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer, bc++ % 4) ? output += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {
+      buffer = chars.indexOf(buffer);
+    }
+    return output;
+  };
+}
+
+if (typeof TextEncoder === 'undefined') {
+  globalThis.TextEncoder = class TextEncoder {
+    encode(str) {
+      var arr = [];
+      for (var i = 0; i < str.length; i++) {
+        var c = str.charCodeAt(i);
+        if (c < 128) {
+          arr.push(c);
+        } else if (c < 2048) {
+          arr.push((c >> 6) | 192, (c & 63) | 128);
+        } else {
+          arr.push((c >> 12) | 224, ((c >> 6) & 63) | 128, (c & 63) | 128);
+        }
+      }
+      return new Uint8Array(arr);
+    }
+  };
+}
+
+if (typeof TextDecoder === 'undefined') {
+  globalThis.TextDecoder = class TextDecoder {
+    decode(arr) {
+      if (!arr) return "";
+      var out = "";
+      var i = 0;
+      var len = arr.length;
+      while (i < len) {
+        var c = arr[i++];
+        if (c < 128) {
+          out += String.fromCharCode(c);
+        } else if (c > 191 && c < 224) {
+          out += String.fromCharCode(((c & 31) << 6) | (arr[i++] & 63));
+        } else {
+          out += String.fromCharCode(((c & 15) << 12) | ((arr[i++] & 63) << 6) | (arr[i++] & 63));
+        }
+      }
+      return out;
+    }
+  };
+}
+
 class FormData {
   constructor() {
     this.params = {};
@@ -15,18 +89,20 @@ class FormData {
     this.params[key] = value;
   }
 
+  get(key) {
+    return this.params[key] || null;
+  }
+
   toJSON() {
-    return this.params;
+    return {
+      _formData: true,
+      fields: this.params
+    };
   }
 }
+globalThis.FormData = FormData;
 ''');
     runtime.evaluate('''
-/**!
- * url-search-params-polyfill
- *
- * @author Jerry Bendy (https://github.com/jerrybendy)
- * @licence MIT
- */
 !function(t){"use strict";var n,r=function(){try{if(t.URLSearchParams&&"bar"===new t.URLSearchParams("foo=bar").get("foo"))return t.URLSearchParams}catch(t){}return null}(),e=r&&"a=1"===new r({a:1}).toString(),o=r&&"+"===new r("s=%2B").get("s"),i=r&&"size"in r.prototype,a="__URLSearchParams__",c=!r||((n=new r).append("s"," &"),"s=+%26"===n.toString()),s=p.prototype,u=!(!t.Symbol||!t.Symbol.iterator);if(!(r&&e&&o&&c&&i)){s.append=function(t,n){d(this[a],t,n)},s.delete=function(t){delete this[a][t]},s.get=function(t){var n=this[a];return this.has(t)?n[t][0]:null},s.getAll=function(t){var n=this[a];return this.has(t)?n[t].slice(0):[]},s.has=function(t){return b(this[a],t)},s.set=function(t,n){this[a][t]=[""+n]},s.toString=function(){var t,n,r,e,o=this[a],i=[];for(n in o)for(r=g(n),t=0,e=o[n];t<e.length;t++)i.push(r+"="+g(e[t]));return i.join("&")};var f,h=t.Proxy&&r&&(!o||!c||!e||!i);h?(f=new Proxy(r,{construct:function(t,n){return new t(new p(n[0]).toString())}})).toString=Function.prototype.toString.bind(p):f=p,Object.defineProperty(t,"URLSearchParams",{value:f});var l=t.URLSearchParams.prototype;l.polyfill=!0,!h&&t.Symbol&&(l[t.Symbol.toStringTag]="URLSearchParams"),"forEach"in l||(l.forEach=function(t,n){var r=v(this.toString());Object.getOwnPropertyNames(r).forEach((function(e){r[e].forEach((function(r){t.call(n,r,e,this)}),this)}),this)}),"sort"in l||(l.sort=function(){var t,n,r,e=v(this.toString()),o=[];for(t in e)o.push(t);for(o.sort(),n=0;n<o.length;n++)this.delete(o[n]);for(n=0;n<o.length;n++){var i=o[n],a=e[i];for(r=0;r<a.length;r++)this.append(i,a[r])}}),"keys"in l||(l.keys=function(){var t=[];return this.forEach((function(n,r){t.push(r)})),S(t)}),"values"in l||(l.values=function(){var t=[];return this.forEach((function(n){t.push(n)})),S(t)}),"entries"in l||(l.entries=function(){var t=[];return this.forEach((function(n,r){t.push([r,n])})),S(t)}),u&&(l[t.Symbol.iterator]=l[t.Symbol.iterator]||l.entries),"size"in l||Object.defineProperty(l,"size",{get:function(){var t=v(this.toString());if(l===this)throw new TypeError("Illegal invocation at URLSearchParams.invokeGetter");return Object.keys(t).reduce((function(n,r){return n+t[r].length}),0)}})}function p(t){((t=t||"")instanceof URLSearchParams||t instanceof p)&&(t=t.toString()),this[a]=v(t)}function g(t){var n={"!":"%21","'":"%27","(":"%28",")":"%29","~":"%7E","%20":"+","%00":"\\0"};return encodeURIComponent(t).replace(/[!'\\(\\)~]|%20|%00/g,(function(t){return n[t]}))}function y(t){return t.replace(/[ +]/g,"%20").replace(/(%[a-f0-9]{2})+/gi,(function(t){return decodeURIComponent(t)}))}function S(n){var r={next:function(){var t=n.shift();return{done:void 0===t,value:t}}};return u&&(r[t.Symbol.iterator]=function(){return r}),r}function v(t){var n={};if("object"==typeof t)if(m(t))for(var r=0;r<t.length;r++){var e=t[r];if(!m(e)||2!==e.length)throw new TypeError("Failed to construct 'URLSearchParams': Sequence initializer must only contain pair elements");d(n,e[0],e[1])}else for(var o in t)t.hasOwnProperty(o)&&d(n,o,t[o]);else{0===t.indexOf("?")&&(t=t.slice(1));for(var i=t.split("&"),a=0;a<i.length;a++){var c=i[a],s=c.indexOf("=");-1<s?d(n,y(c.slice(0,s)),y(c.slice(s+1))):c&&d(n,y(c),"")}}return n}function d(t,n,r){var e="string"==typeof r?r:null!=r&&"function"==typeof r.toString?r.toString():JSON.stringify(r);b(t,n)?t[n].push(e):t[n]=[e]}function m(t){return!!t&&"[object Array]"===Object.prototype.toString.call(t)}function b(t,n){return Object.prototype.hasOwnProperty.call(t,n)}}("undefined"!=typeof global?global:"undefined"!=typeof window?window:this);
 ''');
     runtime.evaluate('''
