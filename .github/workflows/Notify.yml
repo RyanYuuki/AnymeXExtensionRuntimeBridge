@@ -1,0 +1,54 @@
+name: Notify Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to announce (e.g. v1.6.1)"
+        required: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      RELEASE_NAME: ${{ github.event.release.name || inputs.tag }}
+    steps:
+      - name: Build message
+        run: |
+          TITLE="New Bridge Release: ${RELEASE_NAME:-$TAG}"
+          MESSAGE="A new AnymeX Extension Runtime Bridge update is out."
+          echo "TITLE=$TITLE" >> "$GITHUB_ENV"
+          echo "MESSAGE=$MESSAGE" >> "$GITHUB_ENV"
+
+      - name: Send to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK secret not set, skipping."; exit 0
+          fi
+          payload=$(jq -nc \
+            --arg title "$TITLE" \
+            --arg desc "$MESSAGE" \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+            '{embeds: [{title: $title, description: $desc, color: 1754309, timestamp: $ts}]}')
+          curl -sS -f -H "Content-Type: application/json" -X POST -d "$payload" "$DISCORD_WEBHOOK_URL"
+
+      - name: Send to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets not set, skipping."; exit 0
+          fi
+          esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+          TEXT="<b>$(printf '%s' "$TITLE" | esc)</b>"$'\n'"$(printf '%s' "$MESSAGE" | esc)"
+          args=(-d "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$TEXT" -d "parse_mode=HTML")
+          [ -n "$TELEGRAM_THREAD_ID" ] && args+=(-d "message_thread_id=$TELEGRAM_THREAD_ID")
+          curl -sS -f -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" "${args[@]}"
+          
